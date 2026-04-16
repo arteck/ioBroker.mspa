@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "news": {
+      "0.0.2": {
+        "en": "fix bubble_level",
+        "de": "fix bubble level",
+        "ru": "обсуждение buble-level",
+        "pt": "corrigir nível  bolha",
+        "nl": "bubble level repareren",
+        "fr": "correction du niveau bulle",
+        "it": "correzione bolla livello",
+        "es": "arreglar burbuja nivel",
+        "pl": "fix bubble _ level",
+        "uk": "фіксувати міхур рівень",
+        "zh-cn": "固定泡泡级别"
+      },
       "0.0.1": {
         "en": "Initial release – full port of the Home Assistant MSpa integration",
         "de": "Erstveröffentlichung – vollständiger Port der Home Assistant MSpa Integration"
@@ -97,7 +110,7 @@
   "protectedNative": [
     "password"
   ],
-   "objects": [],
+  "objects": [],
   "instanceObjects": [
     {
       "_id": "info",
