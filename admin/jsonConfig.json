@@ -1,0 +1,69 @@
+{ "i18n": true,
+  "type": "tabs",
+  "tabsStyle": {
+    "width": "calc(100% - 100px)"
+  },  
+  "items": {
+    "tab_connection": {
+      "type": "panel",
+      "label": "Verbindung",
+      "items": {
+        "email": {
+          "type": "text",
+          "label": "MSpa Konto E-Mail",
+          "help": "Die E-Mail-Adresse Ihres MSpa App-Kontos",
+          "validator": "email",
+          "validatorErrorText": "Keine gültige E-Mail-Adresse"
+        },
+        "password": {
+          "type": "password",
+          "label": "Passwort",
+          "help": "Passwort Ihres MSpa App-Kontos (wird als MD5-Hash übertragen)"
+        },
+        "region": {
+          "type": "select",
+          "label": "Region / Server",
+          "help": "Wählen Sie den MSpa Cloud-Server für Ihre Region",
+          "options": [
+            { "value": "ROW", "label": "Europa / Rest of World" },
+            { "value": "US",  "label": "USA / Kanada" },
+            { "value": "CH",  "label": "China" }
+          ],
+          "default": "ROW"
+        },
+        "pollInterval": {
+          "type": "number",
+          "label": "Abfrageintervall (Sekunden)",
+          "help": "Wie oft der Gerätestatus abgefragt wird (Minimum 10s)",
+          "default": 60,
+          "min": 10,
+          "max": 3600
+        }
+      }
+    },
+    "tab_options": {
+      "type": "panel",
+      "label": "Erweiterte Optionen",
+      "items": {
+        "restoreStateOnPowerCycle": {
+          "type": "checkbox",
+          "label": "Zustand nach Stromausfall wiederherstellen",
+          "help": "Heizung, Filter und andere Einstellungen nach Neustart des Whirlpools automatisch wiederherstellen",
+          "default": false
+        },
+        "trackTemperatureUnit": {
+          "type": "checkbox",
+          "label": "Temperatureinheit synchronisieren",
+          "help": "Temperatureinheit des Geräts nach Neustart auf Celsius zurücksetzen",
+          "default": false
+        },
+        "alwaysEnforceUnit": {
+          "type": "checkbox",
+          "label": "Temperatureinheit immer erzwingen (°C)",
+          "help": "Temperatureinheit bei jeder Abfrage auf Celsius korrigieren (nützlich bei Geräten die die Einstellung vergessen)",
+          "default": false
+        }
+      }
+    }
+  }
+}

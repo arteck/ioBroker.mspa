@@ -1,0 +1,136 @@
+{
+  "common": {
+    "name": "mspa",
+    "version": "0.0.1",
+    "news": {
+      "0.0.1": {
+        "en": "Initial release – full port of the Home Assistant MSpa integration",
+        "de": "Erstveröffentlichung – vollständiger Port der Home Assistant MSpa Integration"
+      }
+    },
+    "titleLang": {
+      "en": "MSpa Whirlpool",
+      "de": "MSpa Whirlpool",
+      "ru": "MSpa Whirlpool",
+      "pt": "MSpa Whirlpool",
+      "nl": "MSpa Whirlpool",
+      "fr": "MSpa Whirlpool",
+      "it": "MSpa Whirlpool",
+      "es": "MSpa Whirlpool",
+      "pl": "MSpa Whirlpool",
+      "zh-cn": "MSpa Whirlpool",
+      "uk": "MSpa Whirlpool"
+    },
+    "desc": {
+      "en": "Control your MSpa hot tub via the MSpa cloud API",
+      "de": "Steuern Sie Ihren MSpa Whirlpool über die MSpa Cloud API",
+      "ru": "Управляйте своим гидромассажным бассейном MSpa через облачный API MSpa",
+      "pt": "Controle sua banheira de hidromassagem MSpa via API de nuvem MSpa",
+      "nl": "Bedien uw MSpa bubbelbad via de MSpa cloud API",
+      "fr": "Contrôlez votre bain à remous MSpa via l'API cloud MSpa",
+      "it": "Controlla la tua vasca idromassaggio MSpa tramite l'API cloud MSpa",
+      "es": "Controle su jacuzzi MSpa a través de la API en la nube de MSpa",
+      "pl": "Steruj swoim jacuzzi MSpa za pomocą chmurowego API MSpa",
+      "zh-cn": "通过MSpa云API控制您的MSpa热水浴缸",
+      "uk": "Керуйте своим гидромассажным бассейном MSpa через облачный API MSpa"
+    },
+    "authors": [
+      "arteck <arteck@outlook.com>"
+    ],
+    "keywords": [
+      "mspa",
+      "whirlpool",
+      "hot tub"
+    ],
+    "licenseInformation": {
+      "license": "MIT",
+      "type": "free"
+    },
+    "platform": "Javascript/Node.js",
+    "main": "main.js",
+    "icon": "mspa.png",
+    "enabled": false,
+    "readme": "https://github.com/arteck/ioBroker.mspa/blob/main/README.md",
+    "tier": 2,
+    "loglevel": "info",
+    "mode": "daemon",
+    "type": "hardware",
+    "compact": true,
+    "connectionType": "cloud",
+    "dataSource": "poll",
+    "adminUI": {
+      "config": "json",
+      "tab": "materialize"
+    },
+    "docs": {
+      "en": [
+        "README_en.md"
+      ],
+      "de": [
+        "README.md"
+      ]
+    },
+    "globalDependencies": [
+      {
+        "admin": ">=7.6.17"
+      }
+    ],
+    "dependencies": [
+      {
+        "js-controller": ">=6.0.11"
+      }
+    ]
+  },
+  "native": {
+    "email": "",
+    "password": "",
+    "region": "ROW",
+    "pollInterval": 60,
+    "restoreStateOnPowerCycle": false,
+    "trackTemperatureUnit": false,
+    "alwaysEnforceUnit": false
+  },
+  "encryptedNative": [
+    "password"
+  ],
+  "protectedNative": [
+    "password"
+  ],
+   "objects": [],
+  "instanceObjects": [
+    {
+      "_id": "info",
+      "type": "channel",
+      "common": {
+        "name": "Information"
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "role": "indicator.connected",
+        "name": "If connected",
+        "type": "boolean",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.lastUpdate",
+      "type": "state",
+      "common": {
+        "role": "value.time",
+        "name": "Last update time",
+        "type": "number",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    }
+  ]
+}
