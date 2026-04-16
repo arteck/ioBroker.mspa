@@ -363,7 +363,7 @@ class MspaAdapter extends utils.Adapter {
         switch (feature) {
             case 'heater': return this._api.setHeaterState(state);
             case 'filter': return this._api.setFilterState(state);
-            case 'bubble': return this._api.setBubbleState(state, this._lastData.bubble_level || 0);
+            case 'bubble': return this._api.setBubbleState(state, this._lastData.bubble_level || 1);
             case 'jet':    return this._api.setJetState(state);
             case 'ozone':  return this._api.setOzoneState(state);
             case 'uvc':    return this._api.setUvcState(state);
