@@ -27,6 +27,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🚀 Rapid polling after commands (1-second interval for 15 s)
 
 ## Changelog
+### 0.0.4 (2026-04-16)
+* (arteck) create correct the channel
+
 ### 0.0.3 (2026-04-16)
 * (arteck) typo
 

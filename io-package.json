@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "news": {
+      "0.0.4": {
+        "en": "create correct the channel",
+        "de": "den kanal korrigieren",
+        "ru": "создайте правильный канал",
+        "pt": "criar corrigir o canal",
+        "nl": "het kanaal juist aanmaken",
+        "fr": "créer corriger le canal",
+        "it": "creare corretto il canale",
+        "es": "crear correcto el canal",
+        "pl": "stwórz poprawny kanał",
+        "uk": "створити правильний канал",
+        "zh-cn": "创建正确的频道"
+      },
       "0.0.3": {
         "en": "typo",
         "de": "typo",

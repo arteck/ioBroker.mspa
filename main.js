@@ -88,25 +88,47 @@ class MspaAdapter extends utils.Adapter {
     // State management
     // -------------------------------------------------------------------------
     async _createStates() {
+        // Create channel objects for each folder, matching helper.js type: 'channel' pattern
+        const channels = ['info', 'status', 'computed', 'device', 'control'];
+        for (const channel of channels) {
+            await this.setObjectNotExistsAsync(channel, {
+                type: 'channel',
+                common: { name: channel },
+                native: {},
+            });
+        }
+
         for (const [id, def] of Object.entries(STATE_DEFS)) {
+            // Build common following helper.js pattern (id, name, role, type, read, write, def, unit, min, max)
             const common = {
+                id:    id,
                 name:  def.name,
-                type:  def.type,
                 role:  def.role,
+                type:  def.type,
                 read:  def.read,
                 write: def.write,
+                def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit  !== undefined) {
-                common.unit  = def.unit;
-            }
-            if (def.min   !== undefined) {
-                common.min   = def.min;
-            }
-            if (def.max   !== undefined) {
-                common.max   = def.max;
-            }
+            if (def.unit !== undefined) {
+common.unit = def.unit;
+}
+            if (def.min  !== undefined) {
+common.min  = def.min;
+}
+            if (def.max  !== undefined) {
+common.max  = def.max;
+}
 
+            // Use setObjectAsync (not NotExists) so that updated common fields (unit, min, max, role)
+            // are reflected on every adapter restart – same approach as helper.js
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
+
+            // Patch common on existing objects so changes in constants.js are applied
+            const existing = await this.getObjectAsync(id);
+            if (existing) {
+                existing.common = { ...existing.common, ...common };
+                await this.setObjectAsync(id, existing);
+            }
         }
     }
 
@@ -187,9 +209,11 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async _publishStatus(data) {
+        // Use setStateChangedAsync – only writes to the DB when the value actually changed.
+        // This mirrors helper.js changeState(path, value, change=false) → setStateChanged().
         const set = async (id, val) => {
             if (val !== undefined && val !== null) {
-                await this.setStateAsync(id, val, true);
+                await this.setStateChangedAsync(id, val, true);
             }
         };
 
