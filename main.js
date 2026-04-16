@@ -68,8 +68,13 @@ class MspaAdapter extends utils.Adapter {
             await this.setStateAsync('info.connection', true, true);
             this.log.info(`MSpa connected – device: ${this._api.deviceAlias}`);
         } catch (err) {
-            this.log.error(`MSpa init failed: ${err.message}`);
             await this.setStateAsync('info.connection', false, true);
+            if (err.message && err.message.includes('no devices returned from API')) {
+                this.log.error('MSpa init failed: No devices found in your MSpa account. Please check your e-mail address, password and region in the adapter settings.');
+            } else {
+                this.log.error(`MSpa init failed: ${err.message}`);
+            }
+            // Still start polling so the adapter retries automatically via reconnect logic
         }
 
         this.subscribeStates('control.*');
