@@ -22,7 +22,7 @@ class MspaAdapter extends utils.Adapter {
         this._authStore    = { token: null, throttle: new MSpaThrottle() };
         this._pollTimer    = null;
         this._pollInterval = 60_000;  // ms
-        this._rapidUntil   = 0;       // timestamp – rapid poll while Date.now() < this._rapidUntil
+        this._rapidUntil   = 0;
         this._lastData     = {};
         this._savedState   = {};
         this._lastSnapshot = {};
@@ -33,17 +33,17 @@ class MspaAdapter extends utils.Adapter {
         this._heatTracker  = new RateTracker({ min: 0.05, max: 3.0 });
         this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
 
-        this.on('ready',        this._onReady.bind(this));
-        this.on('stateChange',  this._onStateChange.bind(this));
-        this.on('unload',       this._onUnload.bind(this));
+        this.on('ready',        this.onReady.bind(this));
+        this.on('stateChange',  this.onStateChange.bind(this));
+        this.on('unload',       this.onUnload.bind(this));
     }
 
     // -------------------------------------------------------------------------
     // Lifecycle
     // -------------------------------------------------------------------------
-    async _onReady() {
+    async onReady() {
         this.log.info('MSpa adapter starting…');
-        await this._createStates();
+        await this.createStates();
 
         const cfg      = this.config;
         const email    = cfg.email;
@@ -64,7 +64,7 @@ class MspaAdapter extends utils.Adapter {
 
         try {
             await this._api.init();
-            await this._updateDeviceInfo();
+            await this.updateDeviceInfo();
             await this.setStateAsync('info.connection', true, true);
             this.log.info(`MSpa connected – device: ${this._api.deviceAlias}`);
         } catch (err) {
@@ -74,26 +74,23 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.error(`MSpa init failed: ${err.message}`);
             }
-            // Still start polling so the adapter retries automatically via reconnect logic
         }
 
         this.subscribeStates('control.*');
-        // Daten sofort beim Start abholen; _doPoll() plant danach automatisch den nächsten Poll via _schedulePoll()
-        this._doPoll();
+        this.doPoll();
     }
 
-    _onUnload(callback) {
+    onUnload(callback) {
         if (this._pollTimer) {
             clearTimeout(this._pollTimer);
-            }
+        }
         callback();
     }
 
     // -------------------------------------------------------------------------
     // State management
     // -------------------------------------------------------------------------
-    async _createStates() {
-        // Create channel objects for each folder, matching helper.js type: 'channel' pattern
+    async createStates() {
         const channels = ['info', 'status', 'computed', 'device', 'control'];
         for (const channel of channels) {
             await this.setObjectNotExistsAsync(channel, {
@@ -104,7 +101,6 @@ class MspaAdapter extends utils.Adapter {
         }
 
         for (const [id, def] of Object.entries(STATE_DEFS)) {
-            // Build common following helper.js pattern (id, name, role, type, read, write, def, unit, min, max)
             const common = {
                 id:    id,
                 name:  def.name,
@@ -115,23 +111,20 @@ class MspaAdapter extends utils.Adapter {
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
             if (def.unit   !== undefined) {
-common.unit   = def.unit;
+ common.unit   = def.unit;   
 }
             if (def.min    !== undefined) {
-common.min    = def.min;
+ common.min    = def.min;    
 }
             if (def.max    !== undefined) {
-common.max    = def.max;
+ common.max    = def.max;    
 }
             if (def.states !== undefined) {
-common.states = def.states;
+ common.states = def.states; 
 }
 
-            // Use setObjectAsync (not NotExists) so that updated common fields (unit, min, max, role)
-            // are reflected on every adapter restart – same approach as helper.js
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
 
-            // Patch common on existing objects so changes in constants.js are applied
             const existing = await this.getObjectAsync(id);
             if (existing) {
                 existing.common = { ...existing.common, ...common };
@@ -140,32 +133,31 @@ common.states = def.states;
         }
     }
 
-    async _updateDeviceInfo() {
+    async updateDeviceInfo() {
         const api = this._api;
-        await this.setStateAsync('device.model',          api.model           || '', true);
-        await this.setStateAsync('device.series',         api.series          || '', true);
-        await this.setStateAsync('device.softwareVersion',api.softwareVersion || '', true);
-        await this.setStateAsync('device.wifiVersion',    api.wifiVersion     || '', true);
-        await this.setStateAsync('device.mcuVersion',     api.mcuVersion      || '', true);
-        await this.setStateAsync('device.serialNumber',   api.serialNumber    || '', true);
-        await this.setStateAsync('device.alias',          api.deviceAlias     || '', true);
+        await this.setStateAsync('device.model',           api.model           || '', true);
+        await this.setStateAsync('device.series',          api.series          || '', true);
+        await this.setStateAsync('device.softwareVersion', api.softwareVersion || '', true);
+        await this.setStateAsync('device.wifiVersion',     api.wifiVersion     || '', true);
+        await this.setStateAsync('device.mcuVersion',      api.mcuVersion      || '', true);
+        await this.setStateAsync('device.serialNumber',    api.serialNumber    || '', true);
+        await this.setStateAsync('device.alias',           api.deviceAlias     || '', true);
     }
 
     // -------------------------------------------------------------------------
     // Polling
     // -------------------------------------------------------------------------
-    _schedulePoll() {
-        const isRapid   = Date.now() < this._rapidUntil;
-        const interval  = isRapid ? 1000 : this._pollInterval;
-        this._pollTimer = setTimeout(() => this._doPoll(), interval);
+    schedulePoll() {
+        const isRapid  = Date.now() < this._rapidUntil;
+        const interval = isRapid ? 1000 : this._pollInterval;
+        this._pollTimer = setTimeout(() => this.doPoll(), interval);
     }
 
-    async _tryReconnect() {
+    async tryReconnect() {
         try {
-            // Reset auth token so a fresh login is performed
             this._authStore.token = null;
             await this._api.init();
-            await this._updateDeviceInfo();
+            await this.updateDeviceInfo();
             await this.setStateAsync('info.connection', true, true);
             return true;
         } catch (err) {
@@ -174,7 +166,7 @@ common.states = def.states;
         }
     }
 
-    async _doPoll() {
+    async doPoll() {
         try {
             let raw;
             if (this._api._lastStatus) {
@@ -187,9 +179,9 @@ common.states = def.states;
             const data     = transformStatus(raw);
             this._lastData = data;
 
-            await this._publishStatus(data);
-            await this._checkPowerCycle(data);
-            await this._checkAdaptivePolling(data);
+            await this.publishStatus(data);
+            await this.checkPowerCycle(data);
+            await this.checkAdaptivePolling(data);
             await this.setStateAsync('info.connection', true, true);
             await this.setStateAsync('info.lastUpdate', Date.now(), true);
             this._consecutiveErrors = 0;
@@ -201,10 +193,10 @@ common.states = def.states;
 
             if (this._consecutiveErrors <= this._maxReconnectTries) {
                 this.log.info(`MSpa attempting reconnect (try ${this._consecutiveErrors}/${this._maxReconnectTries})…`);
-                const reconnected = await this._tryReconnect();
+                const reconnected = await this.tryReconnect();
                 if (reconnected) {
                     this.log.info('MSpa reconnect successful – retrying poll immediately');
-                    this._schedulePoll();
+                    this.schedulePoll();
                     return;
                 }
             } else {
@@ -213,48 +205,48 @@ common.states = def.states;
             }
         }
 
-        this._schedulePoll();
+        this.schedulePoll();
     }
 
-    async _publishStatus(data) {
-        // Use setStateChangedAsync – only writes to the DB when the value actually changed.
-        // This mirrors helper.js changeState(path, value, change=false) → setStateChanged().
+    async publishStatus(data) {
         const set = async (id, val) => {
             if (val !== undefined && val !== null) {
                 await this.setStateChangedAsync(id, val, true);
             }
         };
 
-        await set('status.water_temperature',  data.water_temperature);
-        await set('status.target_temperature',  data.target_temperature);
-        await set('status.fault',               data.fault);
-        await set('status.heat_state',          data.heat_state);
-        await set('status.bubble_level',        data.bubble_level);
-        await set('status.is_online',           !!data.is_online);
-        await set('status.filter_current',      data.filter_current);
-        await set('status.filter_life',         data.filter_life);
-        await set('status.temperature_unit',    data.temperature_unit);
-        await set('status.safety_lock',         data.safety_lock);
-        await set('status.heat_time',           data.heat_time);
+        await set('status.water_temperature', data.water_temperature);
+        await set('status.target_temperature', data.target_temperature);
+        await set('status.fault',              data.fault);
+        await set('status.heat_state',         data.heat_state);
+        await set('status.bubble_level',       data.bubble_level);
+        await set('status.is_online',          !!data.is_online);
+        await set('status.filter_current',     data.filter_current);
+        await set('status.filter_life',        data.filter_life);
+        await set('status.temperature_unit',   data.temperature_unit);
+        await set('status.safety_lock',        data.safety_lock);
+        await set('status.heat_time',          data.heat_time);
 
-        // Mirror writable controls from current state
-        await set('control.heater',             data.heater  === 'on');
-        await set('control.filter',             data.filter  === 'on');
-        await set('control.bubble',             data.bubble  === 'on');
-        await set('control.jet',                data.jet     === 'on');
-        await set('control.ozone',              data.ozone   === 'on');
-        await set('control.uvc',                data.uvc     === 'on');
-        await set('control.target_temperature', data.target_temperature);
-        await set('control.bubble_level',       data.bubble_level);
+        const setCtrl = async (id, val) => {
+            if (val !== undefined && val !== null) {
+                await this.setStateAsync(id, val, true);
+            }
+        };
+        await setCtrl('control.heater',             data.heater  === 'on');
+        await setCtrl('control.filter',             data.filter  === 'on');
+        await setCtrl('control.bubble',             data.bubble  === 'on');
+        await setCtrl('control.jet',                data.jet     === 'on');
+        await setCtrl('control.ozone',              data.ozone   === 'on');
+        await setCtrl('control.uvc',                data.uvc     === 'on');
+        await setCtrl('control.target_temperature', data.target_temperature);
+        await setCtrl('control.bubble_level',       data.bubble_level);
 
-        // Heating rate
         const isHeating = data.heat_state === 3;
         const heatRate  = this._heatTracker.update(data.water_temperature, isHeating, true);
         if (heatRate !== null) {
             await set('computed.heat_rate_per_hour', Math.round(heatRate * 100) / 100);
         }
 
-        // Cooling rate
         const isNotHeating = ![2, 3].includes(data.heat_state);
         const coolRate = this._coolTracker.update(data.water_temperature, isNotHeating, false);
         if (coolRate !== null) {
@@ -263,29 +255,27 @@ common.states = def.states;
     }
 
     // -------------------------------------------------------------------------
-    // Adaptive polling (mirrors coordinator._check_adaptive_polling)
+    // Adaptive polling
     // -------------------------------------------------------------------------
-    async _checkAdaptivePolling(data) {
+    async checkAdaptivePolling(data) {
         if (data.heat_state === 2 && data.heater === 'on') {
-            // Preheat mode → keep rapid polling alive
             this._rapidUntil = Date.now() + 15_000;
         }
     }
 
-    _enableRapidPolling() {
+    enableRapidPolling() {
         this._rapidUntil = Date.now() + 15_000;
     }
 
     // -------------------------------------------------------------------------
-    // Power cycle detection + state restore (mirrors coordinator._check_power_cycle)
+    // Power cycle detection + state restore
     // -------------------------------------------------------------------------
-    async _checkPowerCycle(data) {
-        const currentOnline    = !!data.is_online;
-        let   powerCycle       = false;
+    async checkPowerCycle(data) {
+        const currentOnline = !!data.is_online;
+        let   powerCycle    = false;
 
         if (this._lastIsOnline !== null) {
             if (this._lastIsOnline && !currentOnline) {
-                // Power OFF – save state
                 this.log.info('MSpa power OFF detected – saving state');
                 this._savedState = {
                     heater:             data.heater,
@@ -301,24 +291,23 @@ common.states = def.states;
             }
         }
 
-        // Method 2: multiple simultaneous parameter changes
         if (!powerCycle && Object.keys(this._lastSnapshot).length) {
             const changes = [];
             if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
-                changes.push('temp_unit_reset');
-            }
+ changes.push('temp_unit_reset'); 
+}
             if (this._lastSnapshot.heater === 'on'  && data.heater  === 'off') {
-                changes.push('heater_off');
-            }
+ changes.push('heater_off'); 
+}
             if (this._lastSnapshot.filter === 'on'  && data.filter  === 'off') {
-                changes.push('filter_off');
-            }
+ changes.push('filter_off'); 
+}
             if (this._lastSnapshot.ozone  === 'on'  && data.ozone   === 'off') {
-                changes.push('ozone_off');
-            }
+ changes.push('ozone_off');  
+}
             if (this._lastSnapshot.uvc    === 'on'  && data.uvc     === 'off') {
-            changes.push('uvc_off');
-            }
+ changes.push('uvc_off');    
+}
             if (changes.length >= 2) {
                 powerCycle = true;
                 this.log.warn(`MSpa possible power cycle (${changes.join(', ')})`);
@@ -326,11 +315,11 @@ common.states = def.states;
         }
 
         this._lastSnapshot = {
-            temperature_unit: data.temperature_unit,
-            heater:           data.heater,
-            filter:           data.filter,
-            ozone:            data.ozone,
-            uvc:              data.uvc,
+            temperature_unit:   data.temperature_unit,
+            heater:             data.heater,
+            filter:             data.filter,
+            ozone:              data.ozone,
+            uvc:                data.uvc,
             target_temperature: data.target_temperature,
         };
         this._lastIsOnline = currentOnline;
@@ -338,59 +327,57 @@ common.states = def.states;
         if (powerCycle) {
             const cfg = this.config;
             if (cfg.trackTemperatureUnit) {
-                await this._enforceTemperatureUnit(data);
+                await this.enforceTemperatureUnit(data);
             }
             if (cfg.restoreStateOnPowerCycle && Object.keys(this._savedState).length) {
-                await this._restoreSavedState();
+                await this.restoreSavedState();
             }
         }
 
-        // Always-enforce unit option
         if (this.config.alwaysEnforceUnit && !powerCycle) {
-            await this._enforceTemperatureUnit(data);
+            await this.enforceTemperatureUnit(data);
         }
     }
 
-    async _enforceTemperatureUnit(data) {
-        // ioBroker has no built-in unit system like HA, default = Celsius (0)
-        const desired  = 0; // °C
+    async enforceTemperatureUnit(data) {
+        const desired = 0; // °C
         if ((data.temperature_unit || 0) !== desired) {
             this.log.info('MSpa enforcing temperature unit → Celsius');
             await this._api.setTemperatureUnit(desired);
         }
     }
 
-    async _restoreSavedState() {
+    async restoreSavedState() {
         this.log.info('MSpa restoring state after power cycle…');
-        await this._sleep(2000);
+        await this.sleep(2000);
 
         if (this._savedState.target_temperature) {
-            await this._safeCmd(() => this._api.setTemperatureSetting(this._savedState.target_temperature), 'temperature');
+            await this.safeCmd(() => this._api.setTemperatureSetting(this._savedState.target_temperature), 'temperature');
         }
         for (const feature of ['heater', 'filter', 'ozone', 'uvc']) {
             if (this._savedState[feature] === 'on') {
-                await this._safeCmd(() => this._setFeature(feature, true), feature);
-                await this._sleep(500);
+                await this.safeCmd(() => this.setFeature(feature, true), feature);
+                await this.sleep(500);
             }
         }
     }
 
-    async _safeCmd(fn, label) {
+    async safeCmd(fn, label) {
         try {
-         await fn();
+            await fn();
         } catch (err) {
-         this.log.error(`MSpa restore ${label} failed: ${err.message}`);
+            this.log.error(`MSpa restore ${label} failed: ${err.message}`);
         }
     }
 
-    _sleep(ms) {
-     return new Promise(r => setTimeout(r, ms));
+    sleep(ms) {
+        return new Promise(r => setTimeout(r, ms));
     }
 
     // -------------------------------------------------------------------------
     // Control – feature state helper
     // -------------------------------------------------------------------------
-    async _setFeature(feature, boolVal) {
+    async setFeature(feature, boolVal) {
         const state = boolVal ? 1 : 0;
         switch (feature) {
             case 'heater': return this._api.setHeaterState(state);
@@ -405,26 +392,26 @@ common.states = def.states;
     // -------------------------------------------------------------------------
     // State change handler (writable controls)
     // -------------------------------------------------------------------------
-    async _onStateChange(id, state) {
+    async onStateChange(id, state) {
         if (!state || state.ack) {
-            return;
-        } // ignore ack'd updates and deletions
+ return; 
+}
 
-        const key = id.split('.').pop();  // e.g. "heater" from "mspa.0.control.heater"
+        const key = id.split('.').pop();
 
         try {
             if (['heater', 'filter', 'bubble', 'jet', 'ozone', 'uvc'].includes(key)) {
                 this.log.info(`MSpa command: ${key} → ${state.val}`);
-                await this._setFeature(key, !!state.val);
-                this._enableRapidPolling();
+                await this.setFeature(key, !!state.val);
+                this.enableRapidPolling();
             } else if (key === 'target_temperature') {
                 this.log.info(`MSpa command: set temperature → ${state.val}°C`);
                 await this._api.setTemperatureSetting(state.val);
-                this._enableRapidPolling();
+                this.enableRapidPolling();
             } else if (key === 'bubble_level') {
                 this.log.info(`MSpa command: bubble level → ${state.val}`);
                 await this._api.setBubbleLevel(state.val);
-                this._enableRapidPolling();
+                this.enableRapidPolling();
             }
         } catch (err) {
             this.log.error(`MSpa command failed (${key}): ${err.message}`);

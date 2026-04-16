@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "news": {
+      "0.0.6": {
+        "en": "refactor",
+        "de": "refactor",
+        "ru": "рефактор",
+        "pt": "refator",
+        "nl": "refactor",
+        "fr": "nouveau facteur",
+        "it": "refattore",
+        "es": "refactor",
+        "pl": "współczynnik",
+        "uk": "рефактор",
+        "zh-cn": "重构"
+      },
       "0.0.5": {
         "en": "fix login error if find no devices",
         "de": "fehler beheben, wenn keine geräte gefunden werden",
