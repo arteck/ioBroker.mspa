@@ -114,10 +114,18 @@ class MspaAdapter extends utils.Adapter {
                 write: def.write,
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit   !== undefined) common.unit   = def.unit;
-            if (def.min    !== undefined) common.min    = def.min;
-            if (def.max    !== undefined) common.max    = def.max;
-            if (def.states !== undefined) common.states = def.states;
+            if (def.unit   !== undefined) {
+common.unit   = def.unit;
+}
+            if (def.min    !== undefined) {
+common.min    = def.min;
+}
+            if (def.max    !== undefined) {
+common.max    = def.max;
+}
+            if (def.states !== undefined) {
+common.states = def.states;
+}
 
             // Use setObjectAsync (not NotExists) so that updated common fields (unit, min, max, role)
             // are reflected on every adapter restart – same approach as helper.js

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "news": {
+      "0.0.5": {
+        "en": "fix login error if find no devices",
+        "de": "fehler beheben, wenn keine geräte gefunden werden",
+        "ru": "исправить ошибку входа, если не нашли устройства",
+        "pt": "corrigir erro de login se não encontrar nenhum dispositivo",
+        "nl": "aanmeldfout herstellen als er geen apparaten zijn gevonden",
+        "fr": "correction de l'erreur de connexion si aucun périphérique n'est trouvé",
+        "it": "correzione errore di login se non trovi dispositivi",
+        "es": "corregir error de inicio de sesión si no encuentra ningún dispositivo",
+        "pl": "naprawić błąd logowania, jeśli nie znajdziesz żadnych urządzeń",
+        "uk": "виправлено помилку входу, якщо не знайдено пристроїв",
+        "zh-cn": "如果没有找到设备, 则修正登录错误"
+      },
       "0.0.4": {
         "en": "create correct the channel",
         "de": "den kanal korrigieren",
