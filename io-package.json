@@ -49,6 +49,7 @@
     "platform": "Javascript/Node.js",
     "main": "main.js",
     "icon": "mspa.png",
+    "extIcon": "https://raw.githubusercontent.com/arteck/ioBroker.mspa/main/admin/mspa.png",
     "enabled": false,
     "readme": "https://github.com/arteck/ioBroker.mspa/blob/main/README.md",
     "tier": 2,
