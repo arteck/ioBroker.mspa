@@ -16,7 +16,7 @@ const { STATE_DEFS }                   = require('./lib/constants');
 // ---------------------------------------------------------------------------
 class MspaAdapter extends utils.Adapter {
     constructor(options = {}) {
-        super({ ...options, name: 'mspa' });
+        super({ ...options, name: 'mspa '});
 
         this._api          = null;
         this._authStore    = { token: null, throttle: new MSpaThrottle() };
@@ -32,6 +32,11 @@ class MspaAdapter extends utils.Adapter {
 
         this._heatTracker  = new RateTracker({ min: 0.05, max: 3.0 });
         this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
+
+        // PV surplus control
+        this._pvPower      = null;   // current PV generation (W)
+        this._pvHouse      = null;   // current house consumption (W)
+        this._pvActive     = false;  // surplus mode currently active?
 
         this.on('ready',        this.onReady.bind(this));
         this.on('stateChange',  this.onStateChange.bind(this));
@@ -77,6 +82,7 @@ class MspaAdapter extends utils.Adapter {
         }
 
         this.subscribeStates('control.*');
+        await this.initPvControl();
         this.doPoll();
     }
 
@@ -85,6 +91,149 @@ class MspaAdapter extends utils.Adapter {
             clearTimeout(this._pollTimer);
         }
         callback();
+    }
+
+    // -------------------------------------------------------------------------
+    // PV Surplus Control
+    // -------------------------------------------------------------------------
+    async initPvControl() {
+        const cfg = this.config;
+        if (!cfg.pv_enabled) {
+            this.log.debug( 'surplus control is disabled – skipping init');
+            return;
+        }
+        this.log.info(` initialising surplus control (threshold=${cfg.pv_threshold_w ?? 500} W, hysteresis=${cfg.pv_hysteresis_w ?? 100} W, heating=${!!cfg.pv_action_heating}, filter=${!!cfg.pv_action_filter}, targetTemp=${cfg.pv_target_temp ?? '—'}°C)`);
+
+        if (cfg.pv_power_generated_id) {
+            this.subscribeForeignStates(cfg.pv_power_generated_id);
+            const s = await this.getForeignStateAsync(cfg.pv_power_generated_id);
+            if (s && s.val !== null) {
+                this._pvPower = s.val;
+                this.log.info(` initial PV generation = ${this._pvPower} W  (id: ${cfg.pv_power_generated_id})`);
+            } else {
+                this.log.warn(` PV generation state not available yet (id: ${cfg.pv_power_generated_id})`);
+            }
+        } else {
+            this.log.warn( 'no Object-ID configured for PV generation – surplus control will not work');
+        }
+
+        if (cfg.pv_power_house_id) {
+            this.subscribeForeignStates(cfg.pv_power_house_id);
+            const s = await this.getForeignStateAsync(cfg.pv_power_house_id);
+            if (s && s.val !== null) {
+                this._pvHouse = s.val;
+                this.log.info(` initial house consumption = ${this._pvHouse} W  (id: ${cfg.pv_power_house_id})`);
+            } else {
+                this.log.warn(` house consumption state not available yet (id: ${cfg.pv_power_house_id})`);
+            }
+        } else {
+            this.log.warn( 'no Object-ID configured for house consumption – surplus control will not work');
+        }
+
+        this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvActive=${this._pvActive}`);
+    }
+
+    async onForeignStateChange(id, state) {
+        if (!state) {
+            this.log.debug(` onForeignStateChange – state is null for id=${id}`);
+            return;
+        }
+        if (state.ack === false) {
+            this.log.debug(` ignoring unacked state change for id=${id}`);
+            return;
+        }
+        const cfg = this.config;
+        if (!cfg.pv_enabled) return;
+
+        if (id === cfg.pv_power_generated_id) {
+            const prev = this._pvPower;
+            this._pvPower = state.val;
+            this.log.debug(` PV generation updated ${prev} → ${this._pvPower} W`);
+        } else if (id === cfg.pv_power_house_id) {
+            const prev = this._pvHouse;
+            this._pvHouse = state.val;
+            this.log.debug(` house consumption updated ${prev} → ${this._pvHouse} W`);
+        } else {
+            return;
+        }
+        await this.evaluatePvSurplus();
+    }
+
+    async evaluatePvSurplus() {
+        const cfg = this.config;
+        if (!cfg.pv_enabled) return;
+
+        if (this._pvPower === null || this._pvHouse === null) {
+            this.log.debug(` evaluation skipped – pvPower=${this._pvPower}, pvHouse=${this._pvHouse} (waiting for both values)`);
+            return;
+        }
+
+        const surplus    = this._pvPower - this._pvHouse;
+        const threshold  = cfg.pv_threshold_w  || 500;
+        const hysteresis = Math.min(cfg.pv_hysteresis_w || 100, threshold);
+        const offAt      = threshold - hysteresis;
+
+        this.log.debug(` surplus=${surplus} W | pvPower=${this._pvPower} W | pvHouse=${this._pvHouse} W | threshold=${threshold} W | hysteresis=${hysteresis} W | offAt=${offAt} W | pvActive=${this._pvActive}`);
+
+        const shouldActivate   = surplus >= threshold;
+        const shouldDeactivate = surplus < offAt;
+
+        if (!this._pvActive && shouldActivate) {
+            this._pvActive = true;
+            this.log.info(` surplus DETECTED (${surplus} W ≥ ${threshold} W) – activating whirlpool`);
+            try {
+                if (cfg.pv_action_heating) {
+                    this.log.debug( 'switching heater ON');
+                    await this.setFeature('heater', true);
+                    if (cfg.pv_target_temp) {
+                        this.log.debug(` setting target temperature to ${cfg.pv_target_temp}°C`);
+                        await this._api.setTemperatureSetting(cfg.pv_target_temp);
+                    }
+                }
+                if (cfg.pv_action_filter) {
+                    this.log.debug('PV: switching filter ON');
+                    await this.setFeature('filter', true);
+                    if (cfg.pv_action_uvc) {
+                        this.log.debug('PV: switching UVC ON (together with filter)');
+                        await this.setFeature('uvc', true);
+                    }
+                }
+                this.enableRapidPolling();
+                this.log.debug( 'activation complete – rapid polling enabled');
+            } catch (err) {
+                this._pvActive = false; // rollback so next cycle retries
+                this.log.error(` activation FAILED – ${err.message}`);
+                this.log.debug(` activation error stack: ${err.stack}`);
+            }
+
+        } else if (this._pvActive && shouldDeactivate) {
+            this._pvActive = false;
+            this.log.info(` surplus GONE (${surplus} W < ${offAt} W) – deactivating whirlpool`);
+            try {
+                if (cfg.pv_action_heating) {
+                    this.log.debug( 'switching heater OFF');
+                    await this.setFeature('heater', false);
+                }
+                if (cfg.pv_action_filter) {
+                    this.log.debug('PV: switching filter OFF');
+                    await this.setFeature('filter', false);
+                    if (cfg.pv_action_uvc) {
+                        this.log.debug('PV: switching UVC OFF (together with filter)');
+                        await this.setFeature('uvc', false);
+                    }
+                }
+                this.enableRapidPolling();
+                this.log.debug( 'deactivation complete – rapid polling enabled');
+            } catch (err) {
+                this._pvActive = true; // rollback so next cycle retries
+                this.log.error(` deactivation FAILED – ${err.message}`);
+                this.log.debug(` deactivation error stack: ${err.stack}`);
+            }
+
+        } else {
+            // no state change – log current status periodically via debug
+            this.log.debug(` no action (pvActive=${this._pvActive}, shouldActivate=${shouldActivate}, shouldDeactivate=${shouldDeactivate})`);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -108,7 +257,7 @@ class MspaAdapter extends utils.Adapter {
                 type:  def.type,
                 read:  def.read,
                 write: def.write,
-                def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
+                def:   def.def !== undefined ? def.def : (def.type === 'boolean '? false : (def.min ?? 0)),
             };
             if (def.unit   !== undefined) {
  common.unit   = def.unit;   
@@ -296,16 +445,16 @@ class MspaAdapter extends utils.Adapter {
             if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
  changes.push('temp_unit_reset'); 
 }
-            if (this._lastSnapshot.heater === 'on'  && data.heater  === 'off') {
+            if (this._lastSnapshot.heater === 'on ' && data.heater  === 'off') {
  changes.push('heater_off'); 
 }
-            if (this._lastSnapshot.filter === 'on'  && data.filter  === 'off') {
+            if (this._lastSnapshot.filter === 'on ' && data.filter  === 'off') {
  changes.push('filter_off'); 
 }
-            if (this._lastSnapshot.ozone  === 'on'  && data.ozone   === 'off') {
+            if (this._lastSnapshot.ozone  === 'on ' && data.ozone   === 'off') {
  changes.push('ozone_off');  
 }
-            if (this._lastSnapshot.uvc    === 'on'  && data.uvc     === 'off') {
+            if (this._lastSnapshot.uvc    === 'on ' && data.uvc     === 'off') {
  changes.push('uvc_off');    
 }
             if (changes.length >= 2) {

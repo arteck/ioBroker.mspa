@@ -27,6 +27,11 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🚀 Rapid polling after commands (1-second interval for 15 s)
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) add pv
+* (arteck) add time controll
+* (arteck) uvc is with filter on
+
 ### 0.0.6 (2026-04-16)
 * (arteck) refactor
 

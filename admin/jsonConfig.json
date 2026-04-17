@@ -54,7 +54,6 @@
         "trackTemperatureUnit": {
           "type": "checkbox",
           "label": "Synchronize temperature unit",
-          "help": "Reset device temperature unit to Celsius after restart",
           "default": false
         },
         "alwaysEnforceUnit": {
@@ -62,6 +61,150 @@
           "label": "Always enforce temperature unit (°C)",
           "help": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)",
           "default": false
+        }
+      }
+    },
+    "tab_pv": {
+      "type": "panel",
+      "label": "PV Surplus",
+      "items": {
+        "pv_header": {
+          "type": "header",
+          "text": "Photovoltaics – Surplus Control",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "pv_enabled": {
+          "type": "checkbox",
+          "label": "Enable PV surplus control",
+          "help": "Activate heating / filter automatically when PV surplus is available",
+          "default": false,
+          "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
+        },
+        "pv_power_generated_id": {
+          "type": "objectId",
+          "label": "Object ID PV generation power (W)",
+          "help": "Datapoint containing current PV generation in Watts",
+          "default": "",
+          "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
+        },
+        "pv_power_house_id": {
+          "type": "objectId",
+          "label": "Object ID house consumption (W)",
+          "help": "Datapoint containing current house consumption in Watts",
+          "default": "",
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
+        },
+        "pv_threshold_w": {
+          "type": "number",
+          "label": "PV surplus threshold (W)",
+          "help": "Minimum surplus (PV generation minus house consumption) to activate the whirlpool",
+          "default": 500,
+          "min": 0,
+          "max": 10000,
+          "step": 50,
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pv_hysteresis_w": {
+          "type": "number",
+          "label": "Hysteresis (W)",
+          "help": "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again",
+          "default": 100,
+          "min": 0,
+          "max": 2000,
+          "step": 50,
+          "validator": "data.pv_hysteresis_w < data.pv_threshold_w",
+          "validatorErrorText": "Hysteresis must be less than the surplus threshold",
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pv_action_header": {
+          "type": "header",
+          "text": "Actions on surplus",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "pv_action_heating": {
+          "type": "checkbox",
+          "label": "Enable heating on surplus",
+          "help": "Switch on the heater when PV surplus is sufficient",
+          "default": true,
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pv_target_temp": {
+          "type": "number",
+          "label": "Target temperature during surplus (°C)",
+          "help": "Target temperature to set when PV surplus heating is active",
+          "default": 38,
+          "min": 20,
+          "max": 42,
+          "step": 0.5,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pv_action_filter": {
+          "type": "checkbox",
+          "label": "Enable filter pump on surplus",
+          "help": "Switch on the filter pump when PV surplus is sufficient",
+          "default": true,
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pv_action_uvc": {
+          "type": "checkbox",
+          "label": "Enable UVC with filter pump",
+          "help": "Switch on the UVC lamp together with the filter pump when PV surplus is sufficient (only if your model has a UVC lamp)",
+          "default": true,
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         }
       }
     }
