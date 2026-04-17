@@ -93,6 +93,7 @@ class MspaAdapter extends utils.Adapter {
         this.subscribeStates('control.*');
         await this.initPvControl();
         this.initTimeControl();
+        await this.publishTimeWindowsJson();
         consumptionHelper.init(this);
         notificationHelper.init(this);
         this.computeUvcExpiry();
@@ -117,6 +118,16 @@ clearTimeout(t);
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
         callback();
+    }
+
+    // -------------------------------------------------------------------------
+    // Publish configured time windows as JSON datapoint
+    // -------------------------------------------------------------------------
+    async publishTimeWindowsJson() {
+        const windows = this.config.timeWindows;
+        const json    = JSON.stringify(Array.isArray(windows) ? windows : [], null, 2);
+        this.log.debug(`Time windows JSON: ${json}`);
+        await this.setStateAsync('status.time_windows_json', { val: json, ack: true });
     }
 
     // -------------------------------------------------------------------------
@@ -684,6 +695,12 @@ this.enableRapidPolling();
         await this.setObjectNotExistsAsync('status.uvc_expiry_date', {
             type: 'state',
             common: { name: 'UVC lamp expiry date', type: 'string', role: 'text', read: true, write: false, def: '' },
+            native: {},
+        });
+
+        await this.setObjectNotExistsAsync('status.time_windows_json', {
+            type: 'state',
+            common: { name: 'Configured time windows (JSON)', type: 'string', role: 'json', read: true, write: false, def: '[]' },
             native: {},
         });
 
