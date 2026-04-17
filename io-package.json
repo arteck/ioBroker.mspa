@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.0.6",
+    "version": "0.1.0",
     "news": {
+      "0.1.0": {
+        "en": "add pv \nadd time control\nuvc is with filter on\nuvc lifetime ticker\nadd consumption tracking per day\nadd telegramm message",
+        "de": "fügen sie pv\nzeitsteuerung hinzufügen\nuvc ist mit filter auf\nuvc life ticker\nverbrauchstracking pro tag hinzufügen\ntelegramm-nachricht hinzufügen",
+        "ru": "добавить pv\nдобавить time control\nuvc с фильтром на\nпожизненный тиккер uvc\nдобавить отслеживание потребления в день\nдобавить телеграмму",
+        "pt": "adicionar pv\nadicionar controle de tempo\nuvc é com filtro ligado\nticker de vida útil do uvc\nadicionar rastreamento de consumo por dia\nadicionar mensagem de telegrama",
+        "nl": "pv toevoegen\ntijdregeling toevoegen\nuvc is met filter aan\nuvc lifetime ticker\nverbruikstracking per dag toevoegen\ntelegrambericht toevoegen",
+        "fr": "ajouter pv\najouter le contrôle du temps\nuvc est avec filtre sur\nuvc à vie\najouter le suivi de la consommation par jour\najouter un message télégramme",
+        "it": "aggiungere pv\naggiungere il controllo del tempo\nuvc è con filtro su\nuv life ticker\naggiungere il monitoraggio dei consumi al giorno\naggiungere il messaggio telegramm",
+        "es": "añadir pv\nañadir control de tiempo\nuvc es con filtro en\nuvc life ticker\nañadir seguimiento de consumo por día\nañadir mensaje de telegrama",
+        "pl": "dodaj pv\ndodaj kontrolę czasu\nuvc jest z filtrem\nticker życia uvc\ndodawanie śledzenia zużycia na dzień\ndodaj wiadomość telegraficzną",
+        "uk": "додати pv\nдодати контроль часу\nuvc з фільтром на\nuvc життя ticker\nдодати відстеження споживання в день\nдодати повідомлення",
+        "zh-cn": "添加 pv 数据\n添加时间控制\nuvc 打开过滤器\n垂直寿命计\n每日增加消费跟踪\n添加电报消息"
+      },
       "0.0.6": {
         "en": "refactor",
         "de": "refactor",

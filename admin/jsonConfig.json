@@ -18,7 +18,9 @@
         "password": {
           "type": "password",
           "label": "Password",
-          "help": "Password of your MSpa app account"
+          "help": "Password of your MSpa app account",
+          "validator": "data.password.length > 0",
+          "validatorNoSaveOnError": true
         },
         "region": {
           "type": "select",
@@ -45,11 +47,12 @@
       "type": "panel",
       "label": "Advanced Options",
       "items": {
-        "restoreStateOnPowerCycle": {
-          "type": "checkbox",
-          "label": "Restore state after power cycle",
-          "help": "Automatically restore heating, filter and other settings after restarting the whirlpool",
-          "default": false
+        "temp_header": {
+          "type": "header",
+          "text": "Temperature",
+          "size": 4,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
         "trackTemperatureUnit": {
           "type": "checkbox",
@@ -61,6 +64,103 @@
           "label": "Always enforce temperature unit (°C)",
           "help": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)",
           "default": false
+        },
+        "restoreStateOnPowerCycle": {
+          "type": "checkbox",
+          "label": "Restore state after power cycle",
+          "help": "Automatically restore heating, filter and other settings after restarting the whirlpool",
+          "default": false
+        },
+        "uvc_header": {
+          "type": "header",
+          "text": "UVC Lamp Lifetime",
+          "size": 4,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+        },
+        "uvc_install_date": {
+          "type": "text",
+          "label": "UVC installation date (DD.MM.YYYY)",
+          "help": "Date when the UVC lamp was installed or last replaced",
+          "default": "",
+          "placeholder": "DD.MM.YYYY",
+          "validator": "!data.uvc_install_date || /^([0-2]\\d|3[01])\\.(0\\d|1[0-2])\\.\\d{4}$/.test(data.uvc_install_date)",
+          "validatorErrorText": "Please enter a valid date in the format DD.MM.YYYY",
+          "newLine": true,
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+        },
+        "uvc_operating_hours": {
+          "type": "number",
+          "label": "UVC lamp lifetime (hours)",
+          "help": "Rated operating hours of the UVC lamp (default 8000 h)",
+          "default": 8000,
+          "min": 100,
+          "max": 50000,
+          "step": 100,
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+        },
+
+        "season_header": {
+          "type": "header",
+          "text": "Activate Season control",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "season_enabled": {
+          "type": "checkbox",
+          "label": "Season control active",
+          "help": "Activate the adapter only within the defined season (DD.MM – DD.MM)",
+          "default": false,
+          "newLine": true
+        },
+        "season_start": {
+          "type": "text",
+          "label": "Season start (DD.MM)",
+          "help": "First day of the season, e.g. 01.05",
+          "default": "01.05",
+          "placeholder": "DD.MM",
+          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_start)",
+          "validatorErrorText": "Please enter a valid date in the format DD.MM",
+          "hidden": "!data.season_enabled",
+          "newLine": true,
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+        },
+        "season_end": {
+          "type": "text",
+          "label": "Season end (DD.MM)",
+          "help": "Last day of the season, e.g. 30.09",
+          "default": "30.09",
+          "placeholder": "DD.MM",
+          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_end)",
+          "validatorErrorText": "Please enter a valid date in the format DD.MM",
+          "hidden": "!data.season_enabled",
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+        },
+        "pump_header": {
+            "type": "header",
+            "text": "Pump settings",
+            "size": 4,
+            "newLine": true,
+            "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12,
+            "xl": 12
+        },
+        "pump_follow_up": {
+          "type": "number",
+          "label": "Pump follow-up time (minutes)",
+          "help": "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)",
+          "default": 60,
+          "min": 0,
+          "max": 50000,
+          "step": 5,
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
         }
       }
     },
@@ -78,18 +178,6 @@
           "md": 12,
           "lg": 12,
           "xl": 12
-        },
-        "pv_enabled": {
-          "type": "checkbox",
-          "label": "Enable PV surplus control",
-          "help": "Activate heating / filter automatically when PV surplus is available",
-          "default": false,
-          "newLine": true,
-          "xs": 12,
-          "sm": 6,
-          "md": 6,
-          "lg": 6,
-          "xl": 6
         },
         "pv_power_generated_id": {
           "type": "objectId",
@@ -139,72 +227,227 @@
           "step": 50,
           "validator": "data.pv_hysteresis_w < data.pv_threshold_w",
           "validatorErrorText": "Hysteresis must be less than the surplus threshold",
-          "xs": 12,
-          "sm": 3,
-          "md": 3,
-          "lg": 3,
-          "xl": 3
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
         },
-        "pv_action_header": {
+        "pv_deactivate_delay_min": {
+          "type": "number",
+          "label": "Cloud protection delay (minutes)",
+          "help": "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass",
+          "default": 5,
+          "min": 0,
+          "max": 60,
+          "step": 1,
+          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+        },
+        "consumption_header": {
           "type": "header",
-          "text": "Actions on surplus",
+          "text": "Consumption tracking",
           "size": 4,
           "newLine": true,
-          "xs": 12,
-          "sm": 12,
-          "md": 12,
-          "lg": 12,
-          "xl": 12
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
-        "pv_action_heating": {
+        "consumption_enabled": {
           "type": "checkbox",
-          "label": "Enable heating on surplus",
-          "help": "Switch on the heater when PV surplus is sufficient",
-          "default": true,
+          "label": "Enable consumption tracking",
+          "help": "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)",
+          "default": false,
           "newLine": true,
-          "xs": 12,
-          "sm": 3,
-          "md": 3,
-          "lg": 3,
-          "xl": 3
+          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6
         },
-        "pv_target_temp": {
-          "type": "number",
-          "label": "Target temperature during surplus (°C)",
-          "help": "Target temperature to set when PV surplus heating is active",
-          "default": 38,
-          "min": 20,
-          "max": 42,
-          "step": 0.5,
-          "xs": 12,
-          "sm": 3,
-          "md": 3,
-          "lg": 3,
-          "xl": 3
+        "external_energy_total_id": {
+          "type": "objectId",
+          "label": "Object ID external kWh meter (total kWh)",
+          "help": "Datapoint of the external energy meter – must provide a continuously rising kWh total value",
+          "default": "",
+          "newLine": true,
+          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6,
+          "hidden": "!data.consumption_enabled"
         },
-        "pv_action_filter": {
+        "consumption_hint": {
+          "type": "staticText",
+          "text": "Note: An external kWh meter is required (e.g. smart plug with energy monitoring). The daily counter resets automatically at midnight.",
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12,
+          "hidden": "!data.consumption_enabled"
+        }
+      }
+    },
+    "tab_timecontrol": {
+      "type": "panel",
+      "label": "Time Control",
+      "items": {
+        "tc_header": {
+          "type": "header",
+          "text": "Time Window Control",
+          "size": 4,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+        },
+        "tc_intro": {
+          "type": "staticText",
+          "text": "Define time windows in which the whirlpool is automatically activated. Outside these windows it will be switched off again. Enable the PV column to additionally activate a window when PV surplus is available (requires PV settings in the PV Surplus tab).",
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+        },
+        "timeWindows": {
+          "type": "table",
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12,
+          "items": [
+            {
+              "type": "checkbox",
+              "attr": "active",
+              "title": "Active",
+              "width": "40px",
+              "default": true
+            },
+            {
+              "type": "text",
+              "attr": "start",
+              "title": "Start (HH:MM)",
+              "default": "08:00",
+              "width": "8%"
+            },
+            {
+              "type": "text",
+              "attr": "end",
+              "title": "End (HH:MM)",
+              "default": "10:00",
+              "width": "8%"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_mon",
+              "title": "Mo",
+              "default": true,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_tue",
+              "title": "Tu",
+              "default": true,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_wed",
+              "title": "We",
+              "default": true,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_thu",
+              "title": "Th",
+              "default": true,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_fri",
+              "title": "Fr",
+              "default": true,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_sat",
+              "title": "Sa",
+              "default": false,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "day_sun",
+              "title": "Su",
+              "default": false,
+              "width": "30px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "pv_steu",
+              "title": "PV",
+              "default": false,
+              "width": "40px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "action_filter",
+              "title": "Filter/Pump",
+              "default": true,
+              "width": "40px"
+            },
+            {
+              "type": "checkbox",
+              "attr": "action_heating",
+              "title": "Heating",
+              "default": true,
+              "width": "50px",
+              "hidden": "!data.action_filter"
+            },
+            {
+              "type": "number",
+              "attr": "target_temp",
+              "title": "Temp (°C)",
+              "default": 38,
+              "min": 20,
+              "max": 42,
+              "step": 0.5,
+              "width": "8%",
+              "hidden": "!data.action_filter"
+            },
+            {
+              "type": "checkbox",
+              "attr": "action_uvc",
+              "title": "UVC",
+              "default": false,
+              "width": "40px",
+              "hidden": "!data.action_filter"
+            }
+          ]
+        }
+      }
+    },
+    "tab_notifications": {
+      "type": "panel",
+      "label": "Notifications",
+      "items": {
+        "notify_telegram_header": {
+          "type": "header",
+          "text": "Telegram",
+          "size": 4,
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+        },
+        "notify_telegram_enabled": {
           "type": "checkbox",
-          "label": "Enable filter pump on surplus",
-          "help": "Switch on the filter pump when PV surplus is sufficient",
-          "default": true,
-          "newLine": true,
-          "xs": 12,
-          "sm": 3,
-          "md": 3,
-          "lg": 3,
-          "xl": 3
+          "label": "Enable Telegram notifications",
+          "default": false,
+          "newLine": true
         },
-        "pv_action_uvc": {
-          "type": "checkbox",
-          "label": "Enable UVC with filter pump",
-          "help": "Switch on the UVC lamp together with the filter pump when PV surplus is sufficient (only if your model has a UVC lamp)",
-          "default": true,
+        "notify_telegram_instance": {
+          "type": "instance",
+          "adapter": "telegram",
+          "label": "Telegram instance",
+          "default": "telegram.0",
+          "hidden": "!data.notify_telegram_enabled",
           "newLine": true,
-          "xs": 12,
-          "sm": 3,
-          "md": 3,
-          "lg": 3,
-          "xl": 3
+          "xs": 12, "sm": 6, "md": 4, "lg": 4, "xl": 4
+        },
+        "notify_telegram_users": {
+          "type": "text",
+          "label": "Recipients (usernames, comma-separated – empty = all users)",
+          "help": "Example: John,Jane   (leave empty to send to all users)",
+          "default": "",
+          "hidden": "!data.notify_telegram_enabled",
+          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6
+        },
+        "notify_info": {
+          "type": "staticText",
+          "text": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning",
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         }
       }
     }
