@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "news": {
+      "0.1.3": {
+        "en": "fix i18n",
+        "de": "i18n",
+        "ru": "ремонт i18",
+        "pt": "corrigir i18n",
+        "nl": "i18n repareren",
+        "fr": "correction i18n",
+        "it": "fix i18n",
+        "es": "arreglar i18n",
+        "pl": "fix i18n",
+        "uk": "зафіксувати i18n",
+        "zh-cn": "修补 i18n"
+      },
       "0.1.2": {
         "en": "fix last_total_kwh",
         "de": "last total kwh",
@@ -80,19 +93,6 @@
         "pl": "stwórz poprawny kanał",
         "uk": "створити правильний канал",
         "zh-cn": "创建正确的频道"
-      },
-      "0.0.3": {
-        "en": "typo",
-        "de": "typo",
-        "ru": "опечатка",
-        "pt": "erro de digitação",
-        "nl": "type",
-        "fr": "typo",
-        "it": "tipo",
-        "es": "typo",
-        "pl": "typo",
-        "uk": "типо",
-        "zh-cn": "类型"
       }
     },
     "titleLang": {
