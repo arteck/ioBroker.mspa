@@ -101,20 +101,12 @@ class MspaAdapter extends utils.Adapter {
     }
 
     onUnload(callback) {
-        if (this._pollTimer)         {
-clearTimeout(this._pollTimer);
-}
-        if (this._timeTimer)         {
-clearInterval(this._timeTimer);
-}
-        if (this._pvDeactivateTimer) {
-clearTimeout(this._pvDeactivateTimer);
-}
+        if (this._pollTimer)         { clearTimeout(this._pollTimer); }
+        if (this._timeTimer)         { clearInterval(this._timeTimer); }
+        if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); }
         for (const t of this._pumpFollowUpTimers) {
- if (t) {
-clearTimeout(t);
-} 
-}
+            if (t) { clearTimeout(t); }
+        }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
         callback();
@@ -419,13 +411,9 @@ return true;
         const cur   = now.getHours() * 60 + now.getMinutes();
         const s     = toMin(start);
         const e     = toMin(end);
-        if (s === e) {
-return false;
-}          // empty window
-        if (s < e)   {
-return cur >= s && cur < e;
-}
-        return cur >= s || cur < e;         // overnight
+        if (s === e)  { return false; }   // empty window
+        if (s < e)    { return cur >= s && cur < e; }
+        return cur >= s || cur < e;        // overnight
     }
 
     // -------------------------------------------------------------------------
@@ -489,8 +477,8 @@ return cur >= s && cur < e;
         const cfg = this.config;
         const hasPvWindows = Array.isArray(cfg.timeWindows) && cfg.timeWindows.some(w => w.active && w.pv_steu);
         if (!hasPvWindows) {
-return;
-}
+            return;
+        }
 
         if (id === cfg.pv_power_generated_id) {
             const prev = this._pvPower;
@@ -534,8 +522,8 @@ return;
                         if (w.action_filter) {
                             await this.setFeature('filter', false);
                             if (w.action_uvc) {
-await this.setFeature('uvc', false);
-}
+                                await this.setFeature('uvc', false);
+                            }
                         }
                     } catch (err) {
                         this.log.error(`PV: season-deactivation FAILED – ${err.message}`);
@@ -613,8 +601,8 @@ await this.setFeature('uvc', false);
                 }
             }
             if (this._pvActive) {
-this.enableRapidPolling();
-}
+                this.enableRapidPolling();
+            }
 
         // --- Surplus recovered while timer is running: cancel timer ----------
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
@@ -657,8 +645,8 @@ this.enableRapidPolling();
                     }
                 }
                 if (!this._pvActive) {
-this.enableRapidPolling();
-}
+                    this.enableRapidPolling();
+                }
             }, debounceMs);
 
         } else {
@@ -714,18 +702,10 @@ this.enableRapidPolling();
                 write: def.write,
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit   !== undefined) {
-common.unit   = def.unit;
-}
-            if (def.min    !== undefined) {
-common.min    = def.min;
-}
-            if (def.max    !== undefined) {
-common.max    = def.max;
-}
-            if (def.states !== undefined) {
-common.states = def.states;
-}
+            if (def.unit   !== undefined) { common.unit   = def.unit; }
+            if (def.min    !== undefined) { common.min    = def.min; }
+            if (def.max    !== undefined) { common.max    = def.max; }
+            if (def.states !== undefined) { common.states = def.states; }
 
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
 

@@ -63,6 +63,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ## Changelog
 ### **WORK IN PROGRESS**
 * (arteck) save time lines in DP as array
+* (arteck) typo
 
 ### 0.1.3 (2026-04-17)
 * (arteck) fix i18n
