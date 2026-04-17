@@ -6,35 +6,35 @@
   "items": {
     "tab_connection": {
       "type": "panel",
-      "label": "Verbindung",
+      "label": "Connection",
       "items": {
         "email": {
           "type": "text",
-          "label": "MSpa Konto E-Mail",
-          "help": "Die E-Mail-Adresse Ihres MSpa App-Kontos",
+          "label": "MSpa Account E-Mail",
+          "help": "The e-mail address of your MSpa app account",
           "validator": "email",
-          "validatorErrorText": "Keine gültige E-Mail-Adresse"
+          "validatorErrorText": "No valid e-mail address"
         },
         "password": {
           "type": "password",
-          "label": "Passwort",
-          "help": "Passwort Ihres MSpa App-Kontos (wird als MD5-Hash übertragen)"
+          "label": "Password",
+          "help": "Password of your MSpa app account"
         },
         "region": {
           "type": "select",
           "label": "Region / Server",
-          "help": "Wählen Sie den MSpa Cloud-Server für Ihre Region",
+          "help": "Select the MSpa cloud server for your region",
           "options": [
-            { "value": "ROW", "label": "Europa / Rest of World" },
-            { "value": "US",  "label": "USA / Kanada" },
+            { "value": "ROW", "label": "Europe / Rest of World" },
+            { "value": "US",  "label": "USA / Canada" },
             { "value": "CH",  "label": "China" }
           ],
           "default": "ROW"
         },
         "pollInterval": {
           "type": "number",
-          "label": "Abfrageintervall (Sekunden)",
-          "help": "Wie oft der Gerätestatus abgefragt wird (Minimum 10s)",
+          "label": "Poll Interval (Seconds)",
+          "help": "How often the device status is polled (minimum 10s)",
           "default": 60,
           "min": 10,
           "max": 3600
@@ -43,24 +43,24 @@
     },
     "tab_options": {
       "type": "panel",
-      "label": "Erweiterte Optionen",
+      "label": "Advanced Options",
       "items": {
         "restoreStateOnPowerCycle": {
           "type": "checkbox",
-          "label": "Zustand nach Stromausfall wiederherstellen",
-          "help": "Heizung, Filter und andere Einstellungen nach Neustart des Whirlpools automatisch wiederherstellen",
+          "label": "Restore state after power cycle",
+          "help": "Automatically restore heating, filter and other settings after restarting the whirlpool",
           "default": false
         },
         "trackTemperatureUnit": {
           "type": "checkbox",
-          "label": "Temperatureinheit synchronisieren",
-          "help": "Temperatureinheit des Geräts nach Neustart auf Celsius zurücksetzen",
+          "label": "Synchronize temperature unit",
+          "help": "Reset device temperature unit to Celsius after restart",
           "default": false
         },
         "alwaysEnforceUnit": {
           "type": "checkbox",
-          "label": "Temperatureinheit immer erzwingen (°C)",
-          "help": "Temperatureinheit bei jeder Abfrage auf Celsius korrigieren (nützlich bei Geräten die die Einstellung vergessen)",
+          "label": "Always enforce temperature unit (°C)",
+          "help": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)",
           "default": false
         }
       }

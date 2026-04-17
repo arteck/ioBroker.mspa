@@ -1,0 +1,22 @@
+{
+    "Connection": "З'єднання",
+    "MSpa Account E-Mail": "E-Mail акаунту MSpa",
+    "The e-mail address of your MSpa app account": "Адреса електронної пошти вашого акаунту MSpa",
+    "No valid e-mail address": "Недійсна адреса електронної пошти",
+    "Password": "Пароль",
+    "Password of your MSpa app account": "Пароль акаунту MSpa",
+    "Region / Server": "Регіон / Сервер",
+    "Select the MSpa cloud server for your region": "Виберіть хмарний сервер MSpa для вашого регіону",
+    "Europe / Rest of World": "Європа / Решта світу",
+    "USA / Canada": "США / Канада",
+    "China": "Китай",
+    "Poll Interval (Seconds)": "Інтервал опитування (секунди)",
+    "How often the device status is polled (minimum 10s)": "Як часто опитується стан пристрою (мінімум 10с)",
+    "Advanced Options": "Розширені параметри",
+    "Restore state after power cycle": "Відновити стан після циклу живлення",
+    "Automatically restore heating, filter and other settings after restarting the whirlpool": "Автоматично відновлювати обігрів, фільтр та інші налаштування після перезапуску джакузі",
+    "Synchronize temperature unit": "Синхронізувати одиницю температури",
+    "Reset device temperature unit to Celsius after restart": "Скинути одиницю температури пристрою до Цельсія після перезапуску",
+    "Always enforce temperature unit (°C)": "Завжди примусово встановлювати одиницю температури (°C)",
+    "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)": "Коригувати одиницю температури до Цельсія при кожному опитуванні (корисно для пристроїв, які забувають налаштування)"
+}

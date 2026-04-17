@@ -1,0 +1,22 @@
+{
+    "Connection": "Connessione",
+    "MSpa Account E-Mail": "E-Mail account MSpa",
+    "The e-mail address of your MSpa app account": "L'indirizzo e-mail del tuo account MSpa",
+    "No valid e-mail address": "Indirizzo e-mail non valido",
+    "Password": "Password",
+    "Password of your MSpa app account": "Password del tuo account MSpa",
+    "Region / Server": "Regione / Server",
+    "Select the MSpa cloud server for your region": "Seleziona il server cloud MSpa per la tua regione",
+    "Europe / Rest of World": "Europa / Resto del mondo",
+    "USA / Canada": "USA / Canada",
+    "China": "Cina",
+    "Poll Interval (Seconds)": "Intervallo di polling (secondi)",
+    "How often the device status is polled (minimum 10s)": "Con quale frequenza viene interrogato lo stato del dispositivo (minimo 10s)",
+    "Advanced Options": "Opzioni avanzate",
+    "Restore state after power cycle": "Ripristina stato dopo il ciclo di alimentazione",
+    "Automatically restore heating, filter and other settings after restarting the whirlpool": "Ripristina automaticamente riscaldamento, filtro e altre impostazioni dopo il riavvio della vasca idromassaggio",
+    "Synchronize temperature unit": "Sincronizza unità di temperatura",
+    "Reset device temperature unit to Celsius after restart": "Ripristina l'unità di temperatura del dispositivo in Celsius dopo il riavvio",
+    "Always enforce temperature unit (°C)": "Imponi sempre l'unità di temperatura (°C)",
+    "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)": "Correggi l'unità di temperatura in Celsius ad ogni polling (utile per i dispositivi che dimenticano l'impostazione)"
+}

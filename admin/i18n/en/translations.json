@@ -1,0 +1,22 @@
+{
+    "Connection": "Connection",
+    "MSpa Account E-Mail": "MSpa Account E-Mail",
+    "The e-mail address of your MSpa app account": "The e-mail address of your MSpa app account",
+    "No valid e-mail address": "No valid e-mail address",
+    "Password": "Password",
+    "Password of your MSpa app account": "Password of your MSpa app account",
+    "Region / Server": "Region / Server",
+    "Select the MSpa cloud server for your region": "Select the MSpa cloud server for your region",
+    "Europe / Rest of World": "Europe / Rest of World",
+    "USA / Canada": "USA / Canada",
+    "China": "China",
+    "Poll Interval (Seconds)": "Poll Interval (Seconds)",
+    "How often the device status is polled (minimum 10s)": "How often the device status is polled (minimum 10s)",
+    "Advanced Options": "Advanced Options",
+    "Restore state after power cycle": "Restore state after power cycle",
+    "Automatically restore heating, filter and other settings after restarting the whirlpool": "Automatically restore heating, filter and other settings after restarting the whirlpool",
+    "Synchronize temperature unit": "Synchronize temperature unit",
+    "Reset device temperature unit to Celsius after restart": "Reset device temperature unit to Celsius after restart",
+    "Always enforce temperature unit (°C)": "Always enforce temperature unit (°C)",
+    "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)"
+}

@@ -1,0 +1,22 @@
+{
+    "Connection": "连接",
+    "MSpa Account E-Mail": "MSpa账户邮箱",
+    "The e-mail address of your MSpa app account": "您的MSpa应用账户的电子邮件地址",
+    "No valid e-mail address": "无效的电子邮件地址",
+    "Password": "密码",
+    "Password of your MSpa app account": "MSpa账户密码",
+    "Region / Server": "地区 / 服务器",
+    "Select the MSpa cloud server for your region": "选择您所在地区的MSpa云服务器",
+    "Europe / Rest of World": "欧洲 / 其他地区",
+    "USA / Canada": "美国 / 加拿大",
+    "China": "中国",
+    "Poll Interval (Seconds)": "轮询间隔（秒）",
+    "How often the device status is polled (minimum 10s)": "设备状态的轮询频率（最少10秒）",
+    "Advanced Options": "高级选项",
+    "Restore state after power cycle": "断电后恢复状态",
+    "Automatically restore heating, filter and other settings after restarting the whirlpool": "重启按摩浴缸后自动恢复加热、过滤等设置",
+    "Synchronize temperature unit": "同步温度单位",
+    "Reset device temperature unit to Celsius after restart": "重启后将设备温度单位重置为摄氏度",
+    "Always enforce temperature unit (°C)": "始终强制使用摄氏度（°C）",
+    "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)": "每次轮询时将温度单位更正为摄氏度（适用于会忘记该设置的设备）"
+}

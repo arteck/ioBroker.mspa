@@ -1,0 +1,22 @@
+{
+    "Connection": "Conexión",
+    "MSpa Account E-Mail": "Correo electrónico de la cuenta MSpa",
+    "The e-mail address of your MSpa app account": "La dirección de correo electrónico de su cuenta MSpa",
+    "No valid e-mail address": "Dirección de correo electrónico no válida",
+    "Password": "Contraseña",
+    "Password of your MSpa app account": "Contraseña de su cuenta MSpa",
+    "Region / Server": "Región / Servidor",
+    "Select the MSpa cloud server for your region": "Seleccione el servidor en la nube de MSpa para su región",
+    "Europe / Rest of World": "Europa / Resto del mundo",
+    "USA / Canada": "EE.UU. / Canadá",
+    "China": "China",
+    "Poll Interval (Seconds)": "Intervalo de consulta (segundos)",
+    "How often the device status is polled (minimum 10s)": "Con qué frecuencia se consulta el estado del dispositivo (mínimo 10s)",
+    "Advanced Options": "Opciones avanzadas",
+    "Restore state after power cycle": "Restaurar estado después del ciclo de encendido",
+    "Automatically restore heating, filter and other settings after restarting the whirlpool": "Restaurar automáticamente la calefacción, el filtro y otras configuraciones tras reiniciar el jacuzzi",
+    "Synchronize temperature unit": "Sincronizar unidad de temperatura",
+    "Reset device temperature unit to Celsius after restart": "Restablecer la unidad de temperatura del dispositivo a Celsius tras el reinicio",
+    "Always enforce temperature unit (°C)": "Aplicar siempre la unidad de temperatura (°C)",
+    "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)": "Corregir la unidad de temperatura a Celsius en cada consulta (útil para dispositivos que olvidan la configuración)"
+}
