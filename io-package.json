@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "news": {
+      "0.1.2": {
+        "en": "fix last_total_kwh",
+        "de": "last total kwh",
+        "ru": "исправить last total kwh",
+        "pt": "corrigir último  total  kwh",
+        "nl": "fix last total kwh",
+        "fr": "correction de la dernière total kwh",
+        "it": "fix last total kwh",
+        "es": "arreglar el último total kwh",
+        "pl": "fix last _ total _ kwh",
+        "uk": "виправлено last total kwh",
+        "zh-cn": "最后一个修整   总  kwh"
+      },
       "0.1.1": {
         "en": "typo",
         "de": "typo",
@@ -80,19 +93,6 @@
         "pl": "typo",
         "uk": "типо",
         "zh-cn": "类型"
-      },
-      "0.0.2": {
-        "en": "fix bubble_level",
-        "de": "fix bubble level",
-        "ru": "обсуждение buble-level",
-        "pt": "corrigir nível  bolha",
-        "nl": "bubble level repareren",
-        "fr": "correction du niveau bulle",
-        "it": "correzione bolla livello",
-        "es": "arreglar burbuja nivel",
-        "pl": "fix bubble _ level",
-        "uk": "фіксувати міхур рівень",
-        "zh-cn": "固定泡泡级别"
       }
     },
     "titleLang": {

@@ -61,6 +61,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - Supports multiple recipients (comma-separated usernames)
 
 ## Changelog
+### 0.1.2 (2026-04-17)
+* (arteck) fix last_total_kwh
+
 ### 0.1.1 (2026-04-17)
 * (arteck) typo
 
