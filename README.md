@@ -61,6 +61,8 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - Supports multiple recipients (comma-separated usernames)
 
 ## Changelog
+### 0.1.1 (2026-04-17)
+* (arteck) typo
 
 ### 0.1.0 (2026-04-17)
 * (arteck) add PV surplus control with threshold, hysteresis and cloud-protection delay

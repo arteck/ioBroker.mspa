@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "news": {
+      "0.1.1": {
+        "en": "typo",
+        "de": "typo",
+        "ru": "опечатка",
+        "pt": "erro de digitação",
+        "nl": "type",
+        "fr": "typo",
+        "it": "tipo",
+        "es": "typo",
+        "pl": "typo",
+        "uk": "типо",
+        "zh-cn": "类型"
+      },
       "0.1.0": {
         "en": "add pv \nadd time control\nuvc is with filter on\nuvc lifetime ticker\nadd consumption tracking per day\nadd telegramm message",
         "de": "fügen sie pv\nzeitsteuerung hinzufügen\nuvc ist mit filter auf\nuvc life ticker\nverbrauchstracking pro tag hinzufügen\ntelegramm-nachricht hinzufügen",
@@ -80,10 +93,6 @@
         "pl": "fix bubble _ level",
         "uk": "фіксувати міхур рівень",
         "zh-cn": "固定泡泡级别"
-      },
-      "0.0.1": {
-        "en": "Initial release – full port of the Home Assistant MSpa integration",
-        "de": "Erstveröffentlichung – vollständiger Port der Home Assistant MSpa Integration"
       }
     },
     "titleLang": {

@@ -18,7 +18,7 @@ const notificationHelper               = require('./lib/notificationHelper');
 // ---------------------------------------------------------------------------
 class MspaAdapter extends utils.Adapter {
     constructor(options = {}) {
-        super({ ...options, name: 'mspa '});
+        super({ ...options, name: 'mspa' });
 
         this._api          = null;
         this._authStore    = { token: null, throttle: new MSpaThrottle() };
