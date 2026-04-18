@@ -124,6 +124,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### 0.2.3 (2026-04-18)
+* (arteck) fix languages del BOM
+
 ### 0.2.2 (2026-04-18)
 * (arteck) fix languages
 
@@ -144,9 +147,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.1.6 (2026-04-18)
 * (arteck) Dependencies have been updated and icon is new
-
-### 0.1.5 (2026-04-18)
-* (arteck) icon update
 
 ## License
 

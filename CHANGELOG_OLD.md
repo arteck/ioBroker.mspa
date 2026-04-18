@@ -47,5 +47,8 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.1.5 (2026-04-18)
+* (arteck) icon update
+
 ## 0.0.1 (2026-04-16)
 * (arteck) first release

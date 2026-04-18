@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "news": {
+      "0.2.3": {
+        "en": "fix languages del BOM",
+        "de": "fix languages del BOM",
+        "ru": "языки дель БОМ",
+        "pt": "corrigir línguas do BOM",
+        "nl": "fix languages del BOM",
+        "fr": "fixer les langues del BOM",
+        "it": "lingue corrette del BOM",
+        "es": "arreglar idiomas del BOM",
+        "pl": "naprawić języki del BOM",
+        "uk": "english Русский Українська",
+        "zh-cn": "bOM 语言"
+      },
       "0.2.2": {
         "en": "fix languages",
         "de": "sprachen auswählen",
@@ -80,19 +93,6 @@
         "pl": "zapisać linie czasowe w formacie DP jako tablica\ntypo",
         "uk": "зберегти часові лінії в DP як масив\nтипо",
         "zh-cn": "在 DP 中保存时间线为数组\n类型"
-      },
-      "0.0.6": {
-        "en": "refactor",
-        "de": "refactor",
-        "ru": "рефактор",
-        "pt": "refator",
-        "nl": "refactor",
-        "fr": "nouveau facteur",
-        "it": "refattore",
-        "es": "refactor",
-        "pl": "współczynnik",
-        "uk": "рефактор",
-        "zh-cn": "重构"
       }
     },
     "titleLang": {
