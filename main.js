@@ -101,11 +101,19 @@ class MspaAdapter extends utils.Adapter {
     }
 
     onUnload(callback) {
-        if (this._pollTimer)         { clearTimeout(this._pollTimer); }
-        if (this._timeTimer)         { clearInterval(this._timeTimer); }
-        if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); }
+        if (this._pollTimer)         {
+ clearTimeout(this._pollTimer); 
+}
+        if (this._timeTimer)         {
+ clearInterval(this._timeTimer); 
+}
+        if (this._pvDeactivateTimer) {
+ clearTimeout(this._pvDeactivateTimer); 
+}
         for (const t of this._pumpFollowUpTimers) {
-            if (t) { clearTimeout(t); }
+            if (t) {
+ clearTimeout(t); 
+}
         }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
@@ -411,8 +419,12 @@ return true;
         const cur   = now.getHours() * 60 + now.getMinutes();
         const s     = toMin(start);
         const e     = toMin(end);
-        if (s === e)  { return false; }   // empty window
-        if (s < e)    { return cur >= s && cur < e; }
+        if (s === e)  {
+ return false; 
+}   // empty window
+        if (s < e)    {
+ return cur >= s && cur < e; 
+}
         return cur >= s || cur < e;        // overnight
     }
 
@@ -702,10 +714,18 @@ return true;
                 write: def.write,
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit   !== undefined) { common.unit   = def.unit; }
-            if (def.min    !== undefined) { common.min    = def.min; }
-            if (def.max    !== undefined) { common.max    = def.max; }
-            if (def.states !== undefined) { common.states = def.states; }
+            if (def.unit   !== undefined) {
+ common.unit   = def.unit; 
+}
+            if (def.min    !== undefined) {
+ common.min    = def.min; 
+}
+            if (def.max    !== undefined) {
+ common.max    = def.max; 
+}
+            if (def.states !== undefined) {
+ common.states = def.states; 
+}
 
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
 

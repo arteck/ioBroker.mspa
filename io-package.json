@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "news": {
+      "0.1.4": {
+        "en": "save time lines in DP as array\ntypo",
+        "de": "zeitleitungen in DP als Array speichern\ntypo",
+        "ru": "сохранить временные линии в DP как массив\nопечатка",
+        "pt": "salvar linhas de tempo no DP como array\nerro de digitação",
+        "nl": "tijdlijnen in DP opslaan als array\ntype",
+        "fr": "enregistrer des lignes de temps dans DP comme tableau\ntypo",
+        "it": "salvare le linee di tempo in DP come array\ntipo",
+        "es": "guardar líneas de tiempo en DP como matriz\ntypo",
+        "pl": "zapisać linie czasowe w formacie DP jako tablica\ntypo",
+        "uk": "зберегти часові лінії в DP як масив\nтипо",
+        "zh-cn": "在 DP 中保存时间线为数组\n类型"
+      },
       "0.1.3": {
         "en": "fix i18n",
         "de": "i18n",
@@ -80,19 +93,6 @@
         "pl": "naprawić błąd logowania, jeśli nie znajdziesz żadnych urządzeń",
         "uk": "виправлено помилку входу, якщо не знайдено пристроїв",
         "zh-cn": "如果没有找到设备, 则修正登录错误"
-      },
-      "0.0.4": {
-        "en": "create correct the channel",
-        "de": "den kanal korrigieren",
-        "ru": "создайте правильный канал",
-        "pt": "criar corrigir o canal",
-        "nl": "het kanaal juist aanmaken",
-        "fr": "créer corriger le canal",
-        "it": "creare corretto il canale",
-        "es": "crear correcto el canal",
-        "pl": "stwórz poprawny kanał",
-        "uk": "створити правильний канал",
-        "zh-cn": "创建正确的频道"
       }
     },
     "titleLang": {
