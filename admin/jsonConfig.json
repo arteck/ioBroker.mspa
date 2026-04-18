@@ -14,34 +14,42 @@
           "label": "MSpa Account E-Mail",
           "help": "The e-mail address of your MSpa app account",
           "validator": "email",
-          "validatorErrorText": "No valid e-mail address"
+          "validatorErrorText": "No valid e-mail address",
+          "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
         },
         "password": {
           "type": "password",
           "label": "Password",
           "help": "Password of your MSpa app account",
           "validator": "data.password.length > 0",
-          "validatorNoSaveOnError": true
+          "validatorNoSaveOnError": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
         },
         "region": {
           "type": "select",
           "label": "Region / Server",
           "help": "Select the MSpa cloud server for your region",
           "options": [
-            {
-              "value": "ROW",
-              "label": "Europe / Rest of World"
-            },
-            {
-              "value": "US",
-              "label": "USA / Canada"
-            },
-            {
-              "value": "CH",
-              "label": "China"
-            }
+            { "value": "ROW", "label": "Europe / Rest of World" },
+            { "value": "US",  "label": "USA / Canada" },
+            { "value": "CH",  "label": "China" }
           ],
-          "default": "ROW"
+          "default": "ROW",
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         },
         "pollInterval": {
           "type": "number",
@@ -49,7 +57,12 @@
           "help": "How often the device status is polled (minimum 10s)",
           "default": 60,
           "min": 10,
-          "max": 3600
+          "max": 3600,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         }
       }
     },
@@ -533,7 +546,12 @@
           "type": "checkbox",
           "label": "Enable Telegram notifications",
           "default": false,
-          "newLine": true
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "notify_telegram_instance": {
           "type": "instance",
@@ -562,7 +580,7 @@
         },
         "notify_info": {
           "type": "staticText",
-          "text": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning",
+          "text": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off",
           "newLine": true,
           "xs": 12,
           "sm": 12,

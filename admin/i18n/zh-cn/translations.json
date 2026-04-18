@@ -1,4 +1,4 @@
-{
+﻿{
     "Connection": "连接",
     "MSpa Account E-Mail": "MSpa 账户电子邮件",
     "The e-mail address of your MSpa app account": "您的 MSpa 应用账户的电子邮件地址",
@@ -76,7 +76,7 @@
     "Telegram instance": "Telegram 实例",
     "Recipients (usernames, comma-separated – empty = all users)": "接收人（用户名，逗号分隔 – 空 = 所有用户）",
     "Example: John,Jane   (leave empty to send to all users)": "示例：张三,李四   （留空以发送给所有用户）",
-    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "通知发送时机：光伏余电开/关 · 时间窗口开始/结束 · 季节开始/结束 · UVC 灯到期警告",
+    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off": "通知发送时机：光伏盈余开/关 · 时间窗口开始/结束 · 赛季开始/结束 · 紫外线灯到期警告 · 防冻保护开/关 · 手动覆盖开/关",
     "Pump follow-up time (minutes)": "水泵延时运行时间（分钟）",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "时间窗口结束后过滤泵继续运行的分钟数（0 = 立即关闭）",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "加热关闭后保持水泵运行这么多分钟（有助于均匀分布水中的热量）",

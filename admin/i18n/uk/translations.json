@@ -1,4 +1,4 @@
-{
+﻿{
     "Connection": "Підключення",
     "MSpa Account E-Mail": "E-mail акаунту MSpa",
     "The e-mail address of your MSpa app account": "Адреса електронної пошти вашого акаунту додатка MSpa",
@@ -76,7 +76,7 @@
     "Telegram instance": "Екземпляр Telegram",
     "Recipients (usernames, comma-separated – empty = all users)": "Одержувачі (імена користувачів через кому – порожньо = всі користувачі)",
     "Example: John,Jane   (leave empty to send to all users)": "Приклад: Іван,Марія   (залиште порожнім для відправки всім користувачам)",
-    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Сповіщення надсилаються при: надлишок ФВ увімк./вимк. · початок/кінець часового вікна · початок/кінець сезону · попередження про закінчення терміну лампи UVC",
+    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off": "Сповіщення надсилаються при: надлишок СЕ вкл/викл · Часове вікно початок/кінець · Початок/кінець сезону · Попередження про закінчення терміну служби УФ-лампи · Захист від морозу вкл/викл · Ручне перемикання вкл/викл",
     "Pump follow-up time (minutes)": "Час доходу насоса (хвилини)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Скільки хвилин насос фільтра продовжує працювати після закінчення часового вікна (0 = негайне вимкнення)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Тримайте насос увімкненим протягом стількох хвилин після вимкнення нагріву (допомагає рівномірно розподілити тепло у воді)",

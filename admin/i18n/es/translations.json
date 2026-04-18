@@ -1,4 +1,4 @@
-{
+﻿{
     "Connection": "Conexión",
     "MSpa Account E-Mail": "Correo electrónico de la cuenta MSpa",
     "The e-mail address of your MSpa app account": "La dirección de correo electrónico de su cuenta de la aplicación MSpa",
@@ -76,7 +76,7 @@
     "Telegram instance": "Instancia de Telegram",
     "Recipients (usernames, comma-separated – empty = all users)": "Destinatarios (nombres de usuario separados por comas – vacío = todos los usuarios)",
     "Example: John,Jane   (leave empty to send to all users)": "Ejemplo: Juan,María   (dejar vacío para enviar a todos los usuarios)",
-    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Las notificaciones se envían cuando: FV excedente encendido/apagado · Inicio/fin de ventana de tiempo · Inicio/fin de temporada · Aviso de caducidad de lámpara UVC",
+    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off": "Las notificaciones se envían cuando: PV excedente on/off · Ventana de tiempo inicio/fin · Inicio/fin de temporada · Aviso de caducidad de lámpara UVC · Protección antihelada on/off · Anulación manual on/off",
     "Pump follow-up time (minutes)": "Tiempo de marcha de la bomba (minutos)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Cuántos minutos continúa funcionando la bomba de filtro después de que termine una ventana de tiempo (0 = apagado inmediato)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Mantenga la bomba en funcionamiento durante estos minutos después de que se apague la calefacción (ayuda a distribuir el calor de manera uniforme en el agua)",

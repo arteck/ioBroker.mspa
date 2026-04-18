@@ -76,7 +76,7 @@
     "Telegram instance": "Telegram instance",
     "Recipients (usernames, comma-separated – empty = all users)": "Recipients (usernames, comma-separated – empty = all users)",
     "Example: John,Jane   (leave empty to send to all users)": "Example: John,Jane   (leave empty to send to all users)",
-    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning",
+    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off",
     "Pump follow-up time (minutes)": "Pump follow-up time (minutes)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)",

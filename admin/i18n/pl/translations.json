@@ -1,4 +1,4 @@
-{
+﻿{
     "Connection": "Połączenie",
     "MSpa Account E-Mail": "E-mail konta MSpa",
     "The e-mail address of your MSpa app account": "Adres e-mail konta aplikacji MSpa",
@@ -76,7 +76,7 @@
     "Telegram instance": "Instancja Telegram",
     "Recipients (usernames, comma-separated – empty = all users)": "Odbiorcy (nazwy użytkowników oddzielone przecinkami – puste = wszyscy użytkownicy)",
     "Example: John,Jane   (leave empty to send to all users)": "Przykład: Jan,Anna   (pozostaw puste, aby wysyłać do wszystkich użytkowników)",
-    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Powiadomienia są wysyłane przy: nadwyżka PV wł./wył. · start/koniec okna czasowego · start/koniec sezonu · ostrzeżenie o wygaśnięciu lampy UVC",
+    "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning · Frost protection on/off · Manual override on/off": "Powiadomienia są wysyłane przy: nadwyżka PV wł./wył. · Okno czasowe start/koniec · Początek/koniec sezonu · Ostrzeżenie o wygaśnięciu lampy UVC · Ochrona przeciwmrozowa wł./wył. · Ręczne zastąpienie wł./wył.",
     "Pump follow-up time (minutes)": "Czas doobiegu pompy (minuty)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Ile minut pompa filtracyjna działa po zakończeniu okna czasowego (0 = natychmiastowe wyłączenie)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Utrzymuj pompę włączoną przez tyle minut po wyłączeniu ogrzewania (pomaga równomiernie rozprowadzić ciepło w wodzie)",
