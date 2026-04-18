@@ -57,19 +57,22 @@
         "trackTemperatureUnit": {
           "type": "checkbox",
           "label": "Synchronize temperature unit",
-          "default": false
+          "default": false,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
         "alwaysEnforceUnit": {
           "type": "checkbox",
           "label": "Always enforce temperature unit (°C)",
           "help": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)",
-          "default": false
+          "default": false,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
         "restoreStateOnPowerCycle": {
           "type": "checkbox",
           "label": "Restore state after power cycle",
           "help": "Automatically restore heating, filter and other settings after restarting the whirlpool",
-          "default": false
+          "default": false,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
         "uvc_header": {
           "type": "header",
@@ -116,7 +119,8 @@
           "label": "Season control active",
           "help": "Activate the adapter only within the defined season (DD.MM – DD.MM)",
           "default": false,
-          "newLine": true
+          "newLine": true,
+          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
         },
         "season_start": {
           "type": "text",
