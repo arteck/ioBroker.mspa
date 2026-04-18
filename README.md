@@ -64,7 +64,8 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ### **WORK IN PROGRESS**
 * (arteck) new structure timecontrol
 * (arteck) new dp pv_deactivate_remaining
-* (arteck) fix filter 
+* (arteck) fix filter
+* (arteck) fix heat_time 
 
 ### 0.1.6 (2026-04-18)
 * (arteck) Dependencies have been updated and icon is new
