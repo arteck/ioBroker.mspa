@@ -1,8 +1,9 @@
-{ "i18n": true,
+{
+  "i18n": true,
   "type": "tabs",
   "tabsStyle": {
     "width": "calc(100% - 100px)"
-  },  
+  },
   "items": {
     "tab_connection": {
       "type": "panel",
@@ -27,9 +28,18 @@
           "label": "Region / Server",
           "help": "Select the MSpa cloud server for your region",
           "options": [
-            { "value": "ROW", "label": "Europe / Rest of World" },
-            { "value": "US",  "label": "USA / Canada" },
-            { "value": "CH",  "label": "China" }
+            {
+              "value": "ROW",
+              "label": "Europe / Rest of World"
+            },
+            {
+              "value": "US",
+              "label": "USA / Canada"
+            },
+            {
+              "value": "CH",
+              "label": "China"
+            }
           ],
           "default": "ROW"
         },
@@ -52,34 +62,54 @@
           "text": "Temperature",
           "size": 4,
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "trackTemperatureUnit": {
           "type": "checkbox",
           "label": "Synchronize temperature unit",
           "default": false,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "alwaysEnforceUnit": {
           "type": "checkbox",
           "label": "Always enforce temperature unit (°C)",
           "help": "Correct temperature unit to Celsius at every poll (useful for devices that forget the setting)",
           "default": false,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "restoreStateOnPowerCycle": {
           "type": "checkbox",
           "label": "Restore state after power cycle",
           "help": "Automatically restore heating, filter and other settings after restarting the whirlpool",
           "default": false,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "uvc_header": {
           "type": "header",
           "text": "UVC Lamp Lifetime",
           "size": 4,
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "uvc_install_date": {
           "type": "text",
@@ -90,7 +120,11 @@
           "validator": "!data.uvc_install_date || /^([0-2]\\d|3[01])\\.(0\\d|1[0-2])\\.\\d{4}$/.test(data.uvc_install_date)",
           "validatorErrorText": "Please enter a valid date in the format DD.MM.YYYY",
           "newLine": true,
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         },
         "uvc_operating_hours": {
           "type": "number",
@@ -100,71 +134,11 @@
           "min": 100,
           "max": 50000,
           "step": 100,
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
-        },
-
-        "season_header": {
-          "type": "header",
-          "text": "Activate Season control",
-          "size": 4,
-          "newLine": true,
           "xs": 12,
-          "sm": 12,
-          "md": 12,
-          "lg": 12,
-          "xl": 12
-        },
-        "season_enabled": {
-          "type": "checkbox",
-          "label": "Season control active",
-          "help": "Activate the adapter only within the defined season (DD.MM – DD.MM)",
-          "default": false,
-          "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
-        },
-        "season_start": {
-          "type": "text",
-          "label": "Season start (DD.MM)",
-          "help": "First day of the season, e.g. 01.05",
-          "default": "01.05",
-          "placeholder": "DD.MM",
-          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_start)",
-          "validatorErrorText": "Please enter a valid date in the format DD.MM",
-          "hidden": "!data.season_enabled",
-          "newLine": true,
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
-        },
-        "season_end": {
-          "type": "text",
-          "label": "Season end (DD.MM)",
-          "help": "Last day of the season, e.g. 30.09",
-          "default": "30.09",
-          "placeholder": "DD.MM",
-          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_end)",
-          "validatorErrorText": "Please enter a valid date in the format DD.MM",
-          "hidden": "!data.season_enabled",
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
-        },
-        "pump_header": {
-            "type": "header",
-            "text": "Pump settings",
-            "size": 4,
-            "newLine": true,
-            "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12
-        },
-        "pump_follow_up": {
-          "type": "number",
-          "label": "Pump follow-up time (minutes)",
-          "help": "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)",
-          "default": 60,
-          "min": 0,
-          "max": 50000,
-          "step": 5,
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         }
       }
     },
@@ -231,7 +205,11 @@
           "step": 50,
           "validator": "data.pv_hysteresis_w < data.pv_threshold_w",
           "validatorErrorText": "Hysteresis must be less than the surplus threshold",
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         },
         "pv_deactivate_delay_min": {
           "type": "number",
@@ -241,14 +219,22 @@
           "min": 0,
           "max": 60,
           "step": 1,
-          "xs": 12, "sm": 3, "md": 3, "lg": 3, "xl": 3
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
         },
         "consumption_header": {
           "type": "header",
           "text": "Consumption tracking",
           "size": 4,
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "consumption_enabled": {
           "type": "checkbox",
@@ -256,7 +242,11 @@
           "help": "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)",
           "default": false,
           "newLine": true,
-          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
         },
         "external_energy_total_id": {
           "type": "objectId",
@@ -264,14 +254,22 @@
           "help": "Datapoint of the external energy meter – must provide a continuously rising kWh total value",
           "default": "",
           "newLine": true,
-          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6,
           "hidden": "!data.consumption_enabled"
         },
         "consumption_hint": {
           "type": "staticText",
           "text": "Note: An external kWh meter is required (e.g. smart plug with energy monitoring). The daily counter resets automatically at midnight.",
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12,
           "hidden": "!data.consumption_enabled"
         }
       }
@@ -280,23 +278,114 @@
       "type": "panel",
       "label": "Time Control",
       "items": {
+        "season_header": {
+          "type": "header",
+          "text": "Activate Season control",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "season_enabled": {
+          "type": "checkbox",
+          "label": "Season control active",
+          "help": "Activate the adapter only within the defined season (DD.MM – DD.MM)",
+          "default": false,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "season_start": {
+          "type": "text",
+          "label": "Season start (DD.MM)",
+          "help": "First day of the season, e.g. 01.05",
+          "default": "01.05",
+          "placeholder": "DD.MM",
+          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_start)",
+          "validatorErrorText": "Please enter a valid date in the format DD.MM",
+          "hidden": "!data.season_enabled",
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "season_end": {
+          "type": "text",
+          "label": "Season end (DD.MM)",
+          "help": "Last day of the season, e.g. 30.09",
+          "default": "30.09",
+          "placeholder": "DD.MM",
+          "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_end)",
+          "validatorErrorText": "Please enter a valid date in the format DD.MM",
+          "hidden": "!data.season_enabled",
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
+        "pump_header": {
+          "type": "header",
+          "text": "Pump settings",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "pump_follow_up": {
+          "type": "number",
+          "label": "Pump follow-up time (minutes)",
+          "help": "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)",
+          "default": 60,
+          "min": 0,
+          "max": 50000,
+          "step": 5,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
         "tc_header": {
           "type": "header",
           "text": "Time Window Control",
           "size": 4,
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "tc_intro": {
           "type": "staticText",
           "text": "Define time windows in which the whirlpool is automatically activated. Outside these windows it will be switched off again. Enable the PV column to additionally activate a window when PV surplus is available (requires PV settings in the PV Surplus tab).",
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "timeWindows": {
           "type": "table",
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12,
           "items": [
             {
               "type": "checkbox",
@@ -422,7 +511,11 @@
           "text": "Telegram",
           "size": 4,
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         },
         "notify_telegram_enabled": {
           "type": "checkbox",
@@ -437,7 +530,11 @@
           "default": "telegram.0",
           "hidden": "!data.notify_telegram_enabled",
           "newLine": true,
-          "xs": 12, "sm": 6, "md": 4, "lg": 4, "xl": 4
+          "xs": 12,
+          "sm": 6,
+          "md": 4,
+          "lg": 4,
+          "xl": 4
         },
         "notify_telegram_users": {
           "type": "text",
@@ -445,13 +542,21 @@
           "help": "Example: John,Jane   (leave empty to send to all users)",
           "default": "",
           "hidden": "!data.notify_telegram_enabled",
-          "xs": 12, "sm": 6, "md": 6, "lg": 6, "xl": 6
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
         },
         "notify_info": {
           "type": "staticText",
           "text": "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning",
           "newLine": true,
-          "xs": 12, "sm": 12, "md": 12, "lg": 12, "xl": 12
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         }
       }
     }
