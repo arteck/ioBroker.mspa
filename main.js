@@ -36,10 +36,12 @@ class MspaAdapter extends utils.Adapter {
         this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
 
         // PV surplus control
-        this._pvPower            = null;
-        this._pvHouse            = null;
-        this._pvActive           = false;
-        this._pvDeactivateTimer  = null;  // debounce timer for deactivation
+        this._pvPower                  = null;
+        this._pvHouse                  = null;
+        this._pvActive                 = false;
+        this._pvDeactivateTimer        = null;  // debounce timer for deactivation
+        this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
+        this._pvDeactivateCountdownInt = null;  // 1-min interval for countdown
 
         // Time window control
         this._timeTimer             = null;
@@ -107,9 +109,8 @@ class MspaAdapter extends utils.Adapter {
         if (this._timeTimer)         {
  clearInterval(this._timeTimer); 
 }
-        if (this._pvDeactivateTimer) {
- clearTimeout(this._pvDeactivateTimer); 
-}
+        if (this._pvDeactivateTimer)         { clearTimeout(this._pvDeactivateTimer); }
+        if (this._pvDeactivateCountdownInt)  { clearInterval(this._pvDeactivateCountdownInt); }
         for (const t of this._pumpFollowUpTimers) {
             if (t) {
  clearTimeout(t); 
@@ -515,6 +516,9 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                this._pvDeactivateCountdown = 0;
+                await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             }
             if (this._pvActive) {
                 this._pvActive = false;
@@ -577,6 +581,9 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                this._pvDeactivateCountdown = 0;
+                await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${threshold} W) – deactivation timer cancelled`);
             }
             this._pvActive = true;
@@ -620,14 +627,29 @@ return true;
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
             clearTimeout(this._pvDeactivateTimer);
             this._pvDeactivateTimer = null;
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            this._pvDeactivateCountdown = 0;
+            await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation timer cancelled, staying active`);
 
         // --- Surplus gone: start debounce timer (don't switch off immediately)
         } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer) {
-            const debounceMs = (cfg.pv_deactivate_delay_min ?? 5) * 60 * 1000;
-            this.log.info(`PV: surplus BELOW threshold (${surplus} W < ${offAt} W) – waiting ${cfg.pv_deactivate_delay_min ?? 5} min before deactivating (cloud protection)`);
+            const delayMin = cfg.pv_deactivate_delay_min ?? 5;
+            const debounceMs = delayMin * 60 * 1000;
+            this.log.info(`PV: surplus BELOW threshold (${surplus} W < ${offAt} W) – waiting ${delayMin} min before deactivating (cloud protection)`);
+            // start countdown
+            this._pvDeactivateCountdown = delayMin;
+            await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
+            if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
+            this._pvDeactivateCountdownInt = setInterval(async () => {
+                this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
+                await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
+            }, 60 * 1000);
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                this._pvDeactivateCountdown = 0;
+                await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this._pvActive = false;
                 this.log.info(`PV: deactivation delay elapsed – switching off ${pvWindows.length} PV window(s)`);
                 await notificationHelper.send(`🌥️ *MSpa:* PV surplus gone – deactivating.`);
@@ -701,6 +723,12 @@ return true;
         await this.setObjectNotExistsAsync('status.time_windows_json', {
             type: 'state',
             common: { name: 'Configured time windows (JSON)', type: 'string', role: 'json', read: true, write: false, def: '[]' },
+            native: {},
+        });
+
+        await this.setObjectNotExistsAsync('computed.pv_deactivate_remaining', {
+            type: 'state',
+            common: { name: 'PV deactivate delay remaining (min)', type: 'number', role: 'value', unit: 'min', read: true, write: false, def: 0 },
             native: {},
         });
 
