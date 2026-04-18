@@ -116,22 +116,12 @@ class MspaAdapter extends utils.Adapter {
     }
 
     onUnload(callback) {
-        if (this._pollTimer)                 {
- clearTimeout(this._pollTimer); 
-}
-        if (this._timeTimer)                 {
- clearInterval(this._timeTimer); 
-}
-        if (this._pvDeactivateTimer)         {
- clearTimeout(this._pvDeactivateTimer); 
-}
-        if (this._pvDeactivateCountdownInt)  {
- clearInterval(this._pvDeactivateCountdownInt); 
-}
+        if (this._pollTimer)                 { clearTimeout(this._pollTimer); }
+        if (this._timeTimer)                 { clearInterval(this._timeTimer); }
+        if (this._pvDeactivateTimer)         { clearTimeout(this._pvDeactivateTimer); }
+        if (this._pvDeactivateCountdownInt)  { clearInterval(this._pvDeactivateCountdownInt); }
         for (const t of this._pumpFollowUpTimers) {
-            if (t) {
- clearTimeout(t); 
-}
+            if (t) { clearTimeout(t); }
         }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
@@ -381,14 +371,17 @@ this._timeWindowActive.push(false);
 
     /**
      * Returns true if today is within the configured season window (DD.MM – DD.MM).
-     * If season_enabled is false, always returns true (no season restriction).
+     * If season_enabled is false, always returns false – all automatic controls
+     * (time windows, PV surplus) are blocked. Only winter mode (frost protection)
+     * is allowed when season_enabled = false and winter_mode = true.
      * Supports seasons spanning the year boundary (e.g. 01.10 – 31.03).
      */
     isInSeason() {
         const cfg = this.config;
         if (!this._seasonEnabled) {
-return true;
-}
+            this.log.debug('Season check: season_enabled=false → automatic controls blocked (only winter mode allowed)');
+            return false;
+        }
 
         const parseDate = (ddmm) => {
             const parts = (ddmm || '').split('.');
@@ -533,9 +526,7 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             }
@@ -600,9 +591,7 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${threshold} W) – deactivation timer cancelled`);
@@ -648,9 +637,7 @@ return true;
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
             clearTimeout(this._pvDeactivateTimer);
             this._pvDeactivateTimer = null;
-            if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
             this._pvDeactivateCountdown = 0;
             await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation timer cancelled, staying active`);
@@ -663,18 +650,14 @@ return true;
             // start countdown
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
-            if (this._pvDeactivateCountdownInt) {
-clearInterval(this._pvDeactivateCountdownInt);
-}
+            if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
             this._pvDeactivateCountdownInt = setInterval(async () => {
                 this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
                 await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
             }, 60 * 1000);
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this._pvActive = false;
@@ -1058,9 +1041,7 @@ clearInterval(this._pvDeactivateCountdownInt);
         const threshold = cfg.winter_frost_temp ?? 5;
         const hysteresis = 3;
         const temp = data.water_temperature;
-        if (temp === undefined || temp === null) {
-return;
-}
+        if (temp === undefined || temp === null) return;
 
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
@@ -1119,9 +1100,7 @@ return;
                 this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
                 await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
                 // run frost check immediately with last known data
-                if (this._lastData) {
-await this.checkFrostProtection(this._lastData);
-}
+                if (this._lastData) await this.checkFrostProtection(this._lastData);
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
                 this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);

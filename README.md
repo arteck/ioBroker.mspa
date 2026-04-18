@@ -113,6 +113,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) fix season_enabled 
+
 ### 0.2.0 (2026-04-18)
 * (arteck) BREAKING CHANGES 
 * 
