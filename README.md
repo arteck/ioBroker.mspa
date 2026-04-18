@@ -61,7 +61,11 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - Supports multiple recipients (comma-separated usernames)
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.2.0 (2026-04-18)
+* (arteck) BREAKING CHANGES 
+* 
+* plz delete and install again
+* 
 * (arteck) new structure timecontrol
 * (arteck) new dp pv_deactivate_remaining
 * (arteck) fix filter

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.1.6",
+    "version": "0.2.0",
     "news": {
+      "0.2.0": {
+        "en": "BREAKING CHANGES  plz delete and install again see Readme",
+        "de": "WICHTIGE ÄNDERUNGEN! Bitte löschen und neu installieren. Siehe Readme.",
+        "ru": "ВНЕСЕНЫ КРИТИЧЕСКИ ВАЖНЫЕ ИЗМЕНЕНИЯ. Пожалуйста, удалите и установите заново. См. файл Readme.",
+        "pt": "ALTERAÇÕES QUE QUEBRAM A COMPATIBILIDADE. Por favor, desinstale e instale novamente. Consulte o arquivo Leia-me.",
+        "nl": "BELANGRIJKE WIJZIGINGEN, verwijder en installeer opnieuw. Zie de Readme.",
+        "fr": "Changements importants : veuillez supprimer et réinstaller le programme. Consultez le fichier Lisez-moi.",
+        "it": "MODIFICHE IMPORTANTI: disinstallare e reinstallare. Consultare il file Readme.",
+        "es": "CAMBIOS IMPORTANTES: por favor, elimine e instale de nuevo. Consulte el archivo Léame.",
+        "pl": "ZMIANY ŁAMAJĄCE proszę usunąć i zainstalować ponownie, patrz Readme",
+        "uk": "ВАЖЛИВІ ЗМІНИ, будь ласка, видаліть та встановіть знову, див. Readme",
+        "zh-cn": "重大变更，请删除并重新安装，请参阅自述文件。"
+      },
       "0.1.6": {
         "en": "Dependencies have been updated and icon is new",
         "de": "Abhängigkeiten wurden aktualisiert und Icon ist neu",
