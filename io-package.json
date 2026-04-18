@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "news": {
+      "0.2.2": {
+        "en": "fix languages",
+        "de": "sprachen auswählen",
+        "ru": "исправить языки",
+        "pt": "corrigir línguas",
+        "nl": "talen herstellen",
+        "fr": "fixer les langues",
+        "it": "lingue corrette",
+        "es": "fijar idiomas",
+        "pl": "naprawiać języki",
+        "uk": "фіксувати мови",
+        "zh-cn": "固定语言"
+      },
       "0.2.1": {
         "en": "fix season_enabled \nadd manual override an manual_override_duration",
         "de": "saison enabled\nmanuelle override duration hinzufügen",

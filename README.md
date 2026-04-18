@@ -124,6 +124,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### 0.2.2 (2026-04-18)
+* (arteck) fix languages
+
 ### 0.2.1 (2026-04-18)
 * (arteck) fix season_enabled 
 * (arteck) add manual override an manual_override_duration
@@ -144,9 +147,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.1.5 (2026-04-18)
 * (arteck) icon update
-
-### 0.0.1 (2026-04-16)
-* (arteck) first release
 
 ## License
 
