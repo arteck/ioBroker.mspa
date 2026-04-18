@@ -857,7 +857,7 @@ return true;
         await set('status.filter_life',        data.filter_life);
         await set('status.temperature_unit',   data.temperature_unit);
         await set('status.safety_lock',        data.safety_lock);
-        await set('status.heat_time_switch',   data.heat_time_switch);
+        await set('status.heat_time_switch',   !!data.heat_time_switch);
         await set('status.heat_time',          data.heat_time);
 
         const setCtrl = async (id, val) => {
