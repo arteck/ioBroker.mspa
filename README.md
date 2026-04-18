@@ -53,6 +53,14 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - Frost threshold configured in the adapter settings (Admin → Time Control tab)
 - Sends a Telegram notification when frost protection activates or deactivates
 
+### Manual Override
+- 🔧 Pauses **all automations** (time windows, PV surplus, frost protection) with a single switch
+- Set `control.manual_override = true` to pause – the adapter will no longer send any commands to the device
+- **Optional auto-resume:** set `control.manual_override_duration` (minutes) before enabling – the adapter resumes automatically after the configured time. `0` = indefinite (manual reset required)
+- When override is disabled again, all automations are **immediately re-evaluated** with the latest device data
+- `control.manual_override` is always **reset to `false`** on adapter restart
+- Typical use case: control the device via the MSpa app temporarily without the adapter interfering
+
 ### Consumption Tracking
 - 📈 Daily kWh tracking via external energy meter datapoint
 - Resets automatically at midnight
@@ -69,6 +77,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
   - Season started / ended
   - UVC lamp expiry warning
   - ❄️ Frost protection activated / deactivated
+  - 🔧 Manual override enabled / disabled (with duration if set)
 - Supports multiple recipients (comma-separated usernames)
 
 ---
@@ -109,12 +118,15 @@ Controls MSpa hot tubs via the MSpa Cloud API
 | `control.bubble_level` | ✅ | Bubble level (0–3) |
 | `control.winter_mode` | ✅ | Enable/disable frost protection (persisted) |
 | `control.season_enabled` | ✅ | Enable/disable season control (persisted) |
+| `control.manual_override` | ✅ | Pause all automations (time windows, PV, frost protection). Resets to `false` on adapter restart |
+| `control.manual_override_duration` | ✅ | Auto-resume after N minutes (0 = indefinite). Set before enabling `manual_override` |
 
 ---
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.2.1 (2026-04-18)
 * (arteck) fix season_enabled 
+* (arteck) add manual override an manual_override_duration
 
 ### 0.2.0 (2026-04-18)
 * (arteck) BREAKING CHANGES 

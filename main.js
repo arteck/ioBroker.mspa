@@ -124,12 +124,22 @@ class MspaAdapter extends utils.Adapter {
     }
 
     onUnload(callback) {
-        if (this._pollTimer)                 { clearTimeout(this._pollTimer); }
-        if (this._timeTimer)                 { clearInterval(this._timeTimer); }
-        if (this._pvDeactivateTimer)         { clearTimeout(this._pvDeactivateTimer); }
-        if (this._pvDeactivateCountdownInt)  { clearInterval(this._pvDeactivateCountdownInt); }
+        if (this._pollTimer)                 {
+ clearTimeout(this._pollTimer); 
+}
+        if (this._timeTimer)                 {
+ clearInterval(this._timeTimer); 
+}
+        if (this._pvDeactivateTimer)         {
+ clearTimeout(this._pvDeactivateTimer); 
+}
+        if (this._pvDeactivateCountdownInt)  {
+ clearInterval(this._pvDeactivateCountdownInt); 
+}
         for (const t of this._pumpFollowUpTimers) {
-            if (t) { clearTimeout(t); }
+            if (t) {
+ clearTimeout(t); 
+}
         }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
@@ -438,8 +448,12 @@ class MspaAdapter extends utils.Adapter {
         const cur   = now.getHours() * 60 + now.getMinutes();
         const s     = toMin(start);
         const e     = toMin(end);
-        if (s === e)  { return false; }   // empty window
-        if (s < e)    { return cur >= s && cur < e; }
+        if (s === e)  {
+ return false; 
+}   // empty window
+        if (s < e)    {
+ return cur >= s && cur < e; 
+}
         return cur >= s || cur < e;        // overnight
     }
 
@@ -530,7 +544,9 @@ class MspaAdapter extends utils.Adapter {
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             }
@@ -595,7 +611,9 @@ class MspaAdapter extends utils.Adapter {
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${threshold} W) – deactivation timer cancelled`);
@@ -641,7 +659,9 @@ class MspaAdapter extends utils.Adapter {
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
             clearTimeout(this._pvDeactivateTimer);
             this._pvDeactivateTimer = null;
-            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
             this._pvDeactivateCountdown = 0;
             await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation timer cancelled, staying active`);
@@ -654,14 +674,18 @@ class MspaAdapter extends utils.Adapter {
             // start countdown
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
-            if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
+            if (this._pvDeactivateCountdownInt) {
+clearInterval(this._pvDeactivateCountdownInt);
+}
             this._pvDeactivateCountdownInt = setInterval(async () => {
                 this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
                 await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
             }, 60 * 1000);
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this._pvActive = false;
@@ -756,10 +780,18 @@ class MspaAdapter extends utils.Adapter {
                 write: def.write,
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit   !== undefined) { common.unit   = def.unit;   }
-            if (def.min    !== undefined) { common.min    = def.min;    }
-            if (def.max    !== undefined) { common.max    = def.max;    }
-            if (def.states !== undefined) { common.states = def.states; }
+            if (def.unit   !== undefined) {
+ common.unit   = def.unit;   
+}
+            if (def.min    !== undefined) {
+ common.min    = def.min;    
+}
+            if (def.max    !== undefined) {
+ common.max    = def.max;    
+}
+            if (def.states !== undefined) {
+ common.states = def.states; 
+}
 
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
 
@@ -1038,7 +1070,9 @@ class MspaAdapter extends utils.Adapter {
         const threshold = cfg.winter_frost_temp ?? 5;
         const hysteresis = 3;
         const temp = data.water_temperature;
-        if (temp === undefined || temp === null) return;
+        if (temp === undefined || temp === null) {
+return;
+}
 
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
@@ -1147,7 +1181,9 @@ class MspaAdapter extends utils.Adapter {
                 this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
                 await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
                 // run frost check immediately with last known data
-                if (this._lastData) await this.checkFrostProtection(this._lastData);
+                if (this._lastData) {
+await this.checkFrostProtection(this._lastData);
+}
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
                 this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
