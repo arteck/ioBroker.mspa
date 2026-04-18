@@ -43,6 +43,10 @@ class MspaAdapter extends utils.Adapter {
         this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
         this._pvDeactivateCountdownInt = null;  // 1-min interval for countdown
 
+        // Manual override – pauses ALL automations (time windows, PV, frost protection)
+        this._manualOverride      = false;  // true = all automations paused
+        this._manualOverrideTimer = null;   // auto-reset timer (optional duration)
+
         // Winter mode (frost protection)
         this._winterModeActive  = false;  // runtime override (from control state)
         this._winterFrostActive = false;  // true while frost protection heating is running
@@ -106,6 +110,10 @@ class MspaAdapter extends utils.Adapter {
         this._seasonEnabled    = seState && seState.val !== null ? !!seState.val : false;
         await this.setStateAsync('control.winter_mode',    this._winterModeActive, true);
         await this.setStateAsync('control.season_enabled', this._seasonEnabled,    true);
+        // manual_override always resets to false on adapter restart
+        this._manualOverride = false;
+        await this.setStateAsync('control.manual_override',         false, true);
+        await this.setStateAsync('control.manual_override_duration', 0,    true);
         await this.initPvControl();
         this.initTimeControl();
         await this.publishTimeWindowsJson();
@@ -116,22 +124,12 @@ class MspaAdapter extends utils.Adapter {
     }
 
     onUnload(callback) {
-        if (this._pollTimer)                 {
- clearTimeout(this._pollTimer); 
-}
-        if (this._timeTimer)                 {
- clearInterval(this._timeTimer); 
-}
-        if (this._pvDeactivateTimer)         {
- clearTimeout(this._pvDeactivateTimer); 
-}
-        if (this._pvDeactivateCountdownInt)  {
- clearInterval(this._pvDeactivateCountdownInt); 
-}
+        if (this._pollTimer)                 { clearTimeout(this._pollTimer); }
+        if (this._timeTimer)                 { clearInterval(this._timeTimer); }
+        if (this._pvDeactivateTimer)         { clearTimeout(this._pvDeactivateTimer); }
+        if (this._pvDeactivateCountdownInt)  { clearInterval(this._pvDeactivateCountdownInt); }
         for (const t of this._pumpFollowUpTimers) {
-            if (t) {
- clearTimeout(t); 
-}
+            if (t) { clearTimeout(t); }
         }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
@@ -178,8 +176,8 @@ class MspaAdapter extends utils.Adapter {
     async checkTimeWindows() {
         const windows = this.config.timeWindows;
         if (!Array.isArray(windows)) {
-return;
-}
+            return;
+        }
 
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
@@ -203,8 +201,8 @@ return;
 
         // ensure tracking array is large enough
         while (this._timeWindowActive.length < windows.length) {
-this._timeWindowActive.push(false);
-}
+            this._timeWindowActive.push(false);
+        }
 
         for (let i = 0; i < windows.length; i++) {
             const w = windows[i];
@@ -440,12 +438,8 @@ this._timeWindowActive.push(false);
         const cur   = now.getHours() * 60 + now.getMinutes();
         const s     = toMin(start);
         const e     = toMin(end);
-        if (s === e)  {
- return false; 
-}   // empty window
-        if (s < e)    {
- return cur >= s && cur < e; 
-}
+        if (s === e)  { return false; }   // empty window
+        if (s < e)    { return cur >= s && cur < e; }
         return cur >= s || cur < e;        // overnight
     }
 
@@ -536,9 +530,7 @@ this._timeWindowActive.push(false);
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             }
@@ -603,9 +595,7 @@ this._timeWindowActive.push(false);
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${threshold} W) – deactivation timer cancelled`);
@@ -651,9 +641,7 @@ this._timeWindowActive.push(false);
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
             clearTimeout(this._pvDeactivateTimer);
             this._pvDeactivateTimer = null;
-            if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
             this._pvDeactivateCountdown = 0;
             await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation timer cancelled, staying active`);
@@ -666,18 +654,14 @@ this._timeWindowActive.push(false);
             // start countdown
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
-            if (this._pvDeactivateCountdownInt) {
-clearInterval(this._pvDeactivateCountdownInt);
-}
+            if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
             this._pvDeactivateCountdownInt = setInterval(async () => {
                 this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
                 await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
             }, 60 * 1000);
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this._pvActive = false;
@@ -772,18 +756,10 @@ clearInterval(this._pvDeactivateCountdownInt);
                 write: def.write,
                 def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
             };
-            if (def.unit   !== undefined) {
- common.unit   = def.unit; 
-}
-            if (def.min    !== undefined) {
- common.min    = def.min; 
-}
-            if (def.max    !== undefined) {
- common.max    = def.max; 
-}
-            if (def.states !== undefined) {
- common.states = def.states; 
-}
+            if (def.unit   !== undefined) { common.unit   = def.unit;   }
+            if (def.min    !== undefined) { common.min    = def.min;    }
+            if (def.max    !== undefined) { common.max    = def.max;    }
+            if (def.states !== undefined) { common.states = def.states; }
 
             await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
 
@@ -958,20 +934,20 @@ clearInterval(this._pvDeactivateCountdownInt);
         if (!powerCycle && Object.keys(this._lastSnapshot).length) {
             const changes = [];
             if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
- changes.push('temp_unit_reset'); 
-}
+                changes.push('temp_unit_reset');
+            }
             if (this._lastSnapshot.heater === 'on ' && data.heater  === 'off') {
- changes.push('heater_off'); 
-}
+                changes.push('heater_off');
+            }
             if (this._lastSnapshot.filter === 'on ' && data.filter  === 'off') {
- changes.push('filter_off'); 
-}
+                changes.push('filter_off');
+            }
             if (this._lastSnapshot.ozone  === 'on ' && data.ozone   === 'off') {
- changes.push('ozone_off');  
-}
+                changes.push('ozone_off');
+            }
             if (this._lastSnapshot.uvc    === 'on ' && data.uvc     === 'off') {
- changes.push('uvc_off');    
-}
+                changes.push('uvc_off');
+            }
             if (changes.length >= 2) {
                 powerCycle = true;
                 this.log.warn(`MSpa possible power cycle (${changes.join(', ')})`);
@@ -1041,6 +1017,7 @@ clearInterval(this._pvDeactivateCountdownInt);
     // -------------------------------------------------------------------------
     // Control – feature state helper
     // -------------------------------------------------------------------------
+
     // -------------------------------------------------------------------------
     // Winter mode – frost protection
     // -------------------------------------------------------------------------
@@ -1061,9 +1038,7 @@ clearInterval(this._pvDeactivateCountdownInt);
         const threshold = cfg.winter_frost_temp ?? 5;
         const hysteresis = 3;
         const temp = data.water_temperature;
-        if (temp === undefined || temp === null) {
-return;
-}
+        if (temp === undefined || temp === null) return;
 
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
@@ -1095,12 +1070,62 @@ return;
     }
 
     // -------------------------------------------------------------------------
+    // Manual override – pausiert alle Automationen (Zeitfenster, PV, Frostschutz)
+    // -------------------------------------------------------------------------
+    async _setManualOverride(enable, durationMin = null) {
+        // cancel any existing auto-reset timer
+        if (this._manualOverrideTimer) {
+            clearTimeout(this._manualOverrideTimer);
+            this._manualOverrideTimer = null;
+        }
+
+        this._manualOverride = enable;
+        await this.setStateAsync('control.manual_override', enable, true);
+
+        if (enable) {
+            // read duration from state if not explicitly passed
+            if (durationMin === null) {
+                const ds = await this.getStateAsync('control.manual_override_duration');
+                durationMin = ds && ds.val !== null ? Number(ds.val) : 0;
+            } else {
+                await this.setStateAsync('control.manual_override_duration', durationMin, true);
+            }
+
+            if (durationMin > 0) {
+                this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
+                await notificationHelper.send(`🔧 *MSpa:* Manuelle Übersteuerung aktiv für ${durationMin} min – alle Automationen pausiert.`);
+                this._manualOverrideTimer = setTimeout(async () => {
+                    this._manualOverrideTimer = null;
+                    this.log.info('Manual override: duration elapsed – automations RESUMED');
+                    await notificationHelper.send('▶️ *MSpa:* Manuelle Übersteuerung beendet – Automationen wieder aktiv.');
+                    this._manualOverride = false;
+                    await this.setStateAsync('control.manual_override', false, true);
+                    await this.setStateAsync('control.manual_override_duration', 0, true);
+                }, durationMin * 60 * 1000);
+            } else {
+                this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
+                await notificationHelper.send('🔧 *MSpa:* Manuelle Übersteuerung aktiv (dauerhaft) – alle Automationen pausiert.');
+            }
+        } else {
+            this.log.info('Manual override: DISABLED – all automations RESUMED');
+            await notificationHelper.send('▶️ *MSpa:* Manuelle Übersteuerung deaktiviert – Automationen wieder aktiv.');
+            await this.setStateAsync('control.manual_override_duration', 0, true);
+            // immediately re-evaluate automations with latest data
+            if (this._lastData && Object.keys(this._lastData).length) {
+                await this.checkFrostProtection(this._lastData);
+            }
+            await this.checkTimeWindows();
+            await this.evaluatePvSurplus();
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // State change handler (writable controls)
     // -------------------------------------------------------------------------
     async onStateChange(id, state) {
         if (!state || state.ack) {
- return; 
-}
+            return;
+        }
 
         const key = id.split('.').pop();
 
@@ -1122,13 +1147,23 @@ return;
                 this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
                 await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
                 // run frost check immediately with last known data
-                if (this._lastData) {
-await this.checkFrostProtection(this._lastData);
-}
+                if (this._lastData) await this.checkFrostProtection(this._lastData);
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
                 this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
                 await this.setStateAsync('control.season_enabled', this._seasonEnabled, true);
+
+            } else if (key === 'manual_override') {
+                const enable = !!state.val;
+                await this._setManualOverride(enable);
+
+            } else if (key === 'manual_override_duration') {
+                // duration change only relevant while override is active → restart timer
+                if (this._manualOverride) {
+                    await this._setManualOverride(true, Number(state.val) || 0);
+                } else {
+                    await this.setStateAsync('control.manual_override_duration', Number(state.val) || 0, true);
+                }
             }
         } catch (err) {
             this.log.error(`MSpa command failed (${key}): ${err.message}`);
