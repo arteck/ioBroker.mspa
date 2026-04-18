@@ -38,10 +38,20 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🌥️ Configurable cloud-protection delay before deactivation (minutes)
 - 📉 Hysteresis to prevent rapid on/off switching
 - 🔋 Independent of time window control – can be combined
+- ⏳ `computed.pv_deactivate_remaining` – shows remaining minutes of the cloud-protection delay in real time
 
 ### Season Control
-- 📅 Define a season (DD.MM – DD.MM) – adapter only controls within the season
+- 📅 Define a season window (DD.MM – DD.MM) in the adapter settings
+- Season can be **toggled at runtime** via `control.season_enabled` (e.g. from VIS) – survives adapter restarts
 - Outside the season: polling continues, all automation is paused
+
+### Winter Mode (Frost Protection)
+- ❄️ Protects the hot tub from freezing when left outdoors in winter
+- Activates heater + filter automatically when water temperature falls to or below the configured **frost threshold (°C)**
+- Deactivates again when temperature rises **3 °C above** the threshold (hysteresis)
+- Enabled/disabled via `control.winter_mode` (e.g. from VIS) – survives adapter restarts
+- Frost threshold configured in the adapter settings (Admin → Time Control tab)
+- Sends a Telegram notification when frost protection activates or deactivates
 
 ### Consumption Tracking
 - 📈 Daily kWh tracking via external energy meter datapoint
@@ -58,7 +68,49 @@ Controls MSpa hot tubs via the MSpa Cloud API
   - Time window started / ended
   - Season started / ended
   - UVC lamp expiry warning
+  - ❄️ Frost protection activated / deactivated
 - Supports multiple recipients (comma-separated usernames)
+
+---
+
+## Datapoints
+
+### `status.*`
+| Datapoint | Description |
+|---|---|
+| `status.water_temperature` | Current water temperature (°C) |
+| `status.target_temperature` | Target temperature (°C) |
+| `status.heat_state` | Heater state: 0=off, 2=preheat, 3=heating, 4=idle |
+| `status.filter_life` | Filter running hours (h) – current usage counter |
+| `status.filter_current` | Filter capacity (h) – total rated lifetime |
+| `status.heat_time_switch` | Heat timer active (boolean) |
+| `status.heat_time` | Heat timer remaining (min) – countdown until auto-off |
+| `status.safety_lock` | Safety lock active |
+| `status.uvc_expiry_date` | Calculated UVC lamp expiry date |
+| `status.time_windows_json` | Configured time windows as JSON |
+
+### `computed.*`
+| Datapoint | Description |
+|---|---|
+| `computed.heat_rate_per_hour` | Observed heating rate (°C/h) |
+| `computed.cool_rate_per_hour` | Observed cooling rate (°C/h) |
+| `computed.pv_deactivate_remaining` | Remaining minutes of PV cloud-protection delay |
+
+### `control.*`
+| Datapoint | Writable | Description |
+|---|---|---|
+| `control.heater` | ✅ | Turn heater on/off |
+| `control.filter` | ✅ | Turn filter on/off |
+| `control.bubble` | ✅ | Turn bubble on/off |
+| `control.jet` | ✅ | Turn jet on/off |
+| `control.ozone` | ✅ | Turn ozone on/off |
+| `control.uvc` | ✅ | Turn UVC on/off |
+| `control.target_temperature` | ✅ | Set target temperature (20–40 °C) |
+| `control.bubble_level` | ✅ | Bubble level (0–3) |
+| `control.winter_mode` | ✅ | Enable/disable frost protection (persisted) |
+| `control.season_enabled` | ✅ | Enable/disable season control (persisted) |
+
+---
 
 ## Changelog
 ### 0.2.0 (2026-04-18)
