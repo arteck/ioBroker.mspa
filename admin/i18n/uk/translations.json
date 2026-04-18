@@ -79,6 +79,12 @@
     "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Сповіщення надсилаються при: надлишок ФВ увімк./вимк. · початок/кінець часового вікна · початок/кінець сезону · попередження про закінчення терміну лампи UVC",
     "Pump follow-up time (minutes)": "Час доходу насоса (хвилини)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Скільки хвилин насос фільтра продовжує працювати після закінчення часового вікна (0 = негайне вимкнення)",
-    "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Держите насос включенным в течение этого количества минут после отключения нагрева (помогает равномерно распределить тепло в воде)",
-    "Pump settings": "Настройки насоса"
+    "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Тримайте насос увімкненим протягом стількох хвилин після вимкнення нагріву (допомагає рівномірно розподілити тепло у воді)",
+    "Pump settings": "Налаштування насоса",
+    "Temperature": "Температура",
+    "Winter Mode (frost protection)": "Зимовий режим (захист від заморозків)",
+    "Enable winter mode": "Увімкнути зимовий режим",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Автоматично вмикає нагрів + фільтр, коли температура води падає нижче порогу заморозку. Можна також перемикати через control.winter_mode у VIS.",
+    "Frost protection threshold (°C)": "Поріг захисту від заморозків (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Нагрів + фільтр вмикаються, коли температура води опускається до або нижче цього значення, і вимикаються, коли піднімається на 3°C вище"
 }

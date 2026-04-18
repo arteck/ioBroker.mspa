@@ -66,6 +66,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 * (arteck) new dp pv_deactivate_remaining
 * (arteck) fix filter
 * (arteck) fix heat_time 
+* (arteck) add winter mode
 
 ### 0.1.6 (2026-04-18)
 * (arteck) Dependencies have been updated and icon is new

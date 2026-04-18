@@ -80,6 +80,11 @@
     "Pump follow-up time (minutes)": "Czas doobiegu pompy (minuty)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Ile minut pompa filtracyjna działa po zakończeniu okna czasowego (0 = natychmiastowe wyłączenie)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Utrzymuj pompę włączoną przez tyle minut po wyłączeniu ogrzewania (pomaga równomiernie rozprowadzić ciepło w wodzie)",
-    "Pump settings": "Ustawienia pompy"
-
+    "Pump settings": "Ustawienia pompy",
+    "Temperature": "Temperatura",
+    "Winter Mode (frost protection)": "Tryb zimowy (ochrona przed mrozem)",
+    "Enable winter mode": "Włącz tryb zimowy",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Automatycznie włącza ogrzewanie + filtr, gdy temperatura wody spada poniżej progu mrozu. Można również przełączać za pomocą control.winter_mode w VIS.",
+    "Frost protection threshold (°C)": "Próg ochrony przed mrozem (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Ogrzewanie + filtr włączają się, gdy temperatura wody spada do lub poniżej tej wartości, i wyłączają się po przekroczeniu jej o 3°C"
 }

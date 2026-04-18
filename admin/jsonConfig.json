@@ -357,6 +357,45 @@
           "lg": 3,
           "xl": 3
         },
+        "winter_header": {
+          "type": "header",
+          "text": "Winter Mode (frost protection)",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "winter_mode": {
+          "type": "checkbox",
+          "label": "Enable winter mode",
+          "help": "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.",
+          "default": false,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "winter_frost_temp": {
+          "type": "number",
+          "label": "Frost protection threshold (°C)",
+          "help": "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it",
+          "default": 5,
+          "min": 0,
+          "max": 15,
+          "step": 1,
+          "hidden": "!data.winter_mode",
+          "newLine": true,
+          "xs": 12,
+          "sm": 3,
+          "md": 3,
+          "lg": 3,
+          "xl": 3
+        },
         "tc_header": {
           "type": "header",
           "text": "Time Window Control",

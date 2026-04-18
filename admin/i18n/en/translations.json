@@ -80,5 +80,11 @@
     "Pump follow-up time (minutes)": "Pump follow-up time (minutes)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)",
-    "Pump settings": "Pump settings"
+    "Pump settings": "Pump settings",
+    "Temperature": "Temperature",
+    "Winter Mode (frost protection)": "Winter Mode (frost protection)",
+    "Enable winter mode": "Enable winter mode",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.",
+    "Frost protection threshold (°C)": "Frost protection threshold (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it"
 }

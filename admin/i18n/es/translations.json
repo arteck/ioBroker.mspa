@@ -80,5 +80,11 @@
     "Pump follow-up time (minutes)": "Tiempo de marcha de la bomba (minutos)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Cuántos minutos continúa funcionando la bomba de filtro después de que termine una ventana de tiempo (0 = apagado inmediato)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Mantenga la bomba en funcionamiento durante estos minutos después de que se apague la calefacción (ayuda a distribuir el calor de manera uniforme en el agua)",
-    "Pump settings": "Configuración de la bomba"
+    "Pump settings": "Configuración de la bomba",
+    "Temperature": "Temperatura",
+    "Winter Mode (frost protection)": "Modo invierno (protección antiheladas)",
+    "Enable winter mode": "Activar modo invierno",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Activa automáticamente el calentador + filtro cuando la temperatura del agua cae por debajo del umbral de helada. También se puede activar mediante control.winter_mode en VIS.",
+    "Frost protection threshold (°C)": "Umbral de protección antiheladas (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "El calentador + filtro se activan cuando la temperatura del agua cae hasta o por debajo de este valor, y se desactivan cuando sube 3°C por encima"
 }

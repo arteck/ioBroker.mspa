@@ -43,6 +43,10 @@ class MspaAdapter extends utils.Adapter {
         this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
         this._pvDeactivateCountdownInt = null;  // 1-min interval for countdown
 
+        // Winter mode (frost protection)
+        this._winterModeActive  = false;
+        this._winterFrostActive = false;
+
         // Time window control
         this._timeTimer             = null;
         this._timeWindowActive      = [false, false, false]; // state per window (1-3)
@@ -93,6 +97,18 @@ class MspaAdapter extends utils.Adapter {
         }
 
         this.subscribeStates('control.*');
+
+        // restore runtime overrides from persisted control states
+        const wmState  = await this.getStateAsync('control.winter_mode');
+        const seState  = await this.getStateAsync('control.season_enabled');
+        if (wmState  && wmState.val  !== null) {
+this._winterModeActive  = !!wmState.val;
+}
+        if (seState  && seState.val  !== null) {
+this.config.season_enabled = !!seState.val;
+}
+        await this.setStateAsync('control.winter_mode',    this._winterModeActive,        true);
+        await this.setStateAsync('control.season_enabled', !!this.config.season_enabled,  true);
         await this.initPvControl();
         this.initTimeControl();
         await this.publishTimeWindowsJson();
@@ -109,8 +125,12 @@ class MspaAdapter extends utils.Adapter {
         if (this._timeTimer)         {
  clearInterval(this._timeTimer); 
 }
-        if (this._pvDeactivateTimer)         { clearTimeout(this._pvDeactivateTimer); }
-        if (this._pvDeactivateCountdownInt)  { clearInterval(this._pvDeactivateCountdownInt); }
+        if (this._pvDeactivateTimer)         {
+ clearTimeout(this._pvDeactivateTimer); 
+}
+        if (this._pvDeactivateCountdownInt)  {
+ clearInterval(this._pvDeactivateCountdownInt); 
+}
         for (const t of this._pumpFollowUpTimers) {
             if (t) {
  clearTimeout(t); 
@@ -516,7 +536,9 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             }
@@ -581,7 +603,9 @@ return true;
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${threshold} W) – deactivation timer cancelled`);
@@ -627,7 +651,9 @@ return true;
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
             clearTimeout(this._pvDeactivateTimer);
             this._pvDeactivateTimer = null;
-            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
             this._pvDeactivateCountdown = 0;
             await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
             this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation timer cancelled, staying active`);
@@ -640,14 +666,18 @@ return true;
             // start countdown
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
-            if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
+            if (this._pvDeactivateCountdownInt) {
+clearInterval(this._pvDeactivateCountdownInt);
+}
             this._pvDeactivateCountdownInt = setInterval(async () => {
                 this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
                 await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
             }, 60 * 1000);
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
-                if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                if (this._pvDeactivateCountdownInt) {
+ clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
+}
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
                 this._pvActive = false;
@@ -812,6 +842,7 @@ return true;
             this._lastData = data;
 
             await this.publishStatus(data);
+            await this.checkFrostProtection(data);
             await this.checkPowerCycle(data);
             await this.checkAdaptivePolling(data);
             await this.setStateAsync('info.connection', true, true);
@@ -1008,6 +1039,46 @@ return true;
     }
 
     // -------------------------------------------------------------------------
+    // Winter mode – frost protection
+    // -------------------------------------------------------------------------
+    async checkFrostProtection(data) {
+        const cfg        = this.config;
+        const winterMode = this._winterModeActive;
+        if (!winterMode) {
+            if (this._winterFrostActive) {
+                this._winterFrostActive = false;
+                this.log.info('Winter mode: disabled – switching heater + filter OFF');
+                await this.setFeature('heater', false);
+                await this.setFeature('filter', false);
+            }
+            return;
+        }
+
+        const threshold  = cfg.winter_frost_temp ?? 5;
+        const hysteresis = 3;
+        const temp       = data.water_temperature;
+        if (temp === undefined || temp === null) {
+return;
+}
+
+        if (!this._winterFrostActive && temp <= threshold) {
+            this._winterFrostActive = true;
+            this.log.info(`Winter mode: temp ${temp}°C ≤ ${threshold}°C – switching heater + filter ON`);
+            await notificationHelper.send(`❄️ *MSpa:* Frost protection active – water ${temp}°C ≤ ${threshold}°C, activating heater + filter.`);
+            await this.setFeature('filter', true);
+            await this.setFeature('heater', true);
+            this.enableRapidPolling();
+        } else if (this._winterFrostActive && temp >= threshold + hysteresis) {
+            this._winterFrostActive = false;
+            this.log.info(`Winter mode: temp ${temp}°C ≥ ${threshold + hysteresis}°C – switching heater + filter OFF`);
+            await notificationHelper.send(`🌡️ *MSpa:* Frost protection deactivated – water ${temp}°C ≥ ${threshold + hysteresis}°C.`);
+            await this.setFeature('heater', false);
+            await this.setFeature('filter', false);
+            this.enableRapidPolling();
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Control – feature state helper
     // -------------------------------------------------------------------------
     async setFeature(feature, boolVal) {
@@ -1045,6 +1116,17 @@ return true;
                 this.log.info(`MSpa command: bubble level → ${state.val}`);
                 await this._api.setBubbleLevel(state.val);
                 this.enableRapidPolling();
+            } else if (key === 'winter_mode') {
+                this._winterModeActive = !!state.val;
+                this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
+                await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
+                if (this._lastData) {
+await this.checkFrostProtection(this._lastData);
+}
+            } else if (key === 'season_enabled') {
+                this.config.season_enabled = !!state.val;
+                this.log.info(`Season control: ${this.config.season_enabled ? 'ENABLED' : 'DISABLED'} via control state`);
+                await this.setStateAsync('control.season_enabled', this.config.season_enabled, true);
             }
         } catch (err) {
             this.log.error(`MSpa command failed (${key}): ${err.message}`);

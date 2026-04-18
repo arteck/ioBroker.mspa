@@ -80,5 +80,11 @@
     "Pump follow-up time (minutes)": "Nalooptijd pomp (minuten)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Hoeveel minuten de filterpomp blijft draaien nadat een tijdvenster eindigt (0 = direct uit)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Houd de pomp nog zoveel minuten aan nadat de verwarming is uitgeschakeld (helpt om de warmte gelijkmatig in het water te verdelen)",
-    "Pump settings": "Pompsinstellingen"
+    "Pump settings": "Pompsinstellingen",
+    "Temperature": "Temperatuur",
+    "Winter Mode (frost protection)": "Wintermodus (vorstbeveiliging)",
+    "Enable winter mode": "Wintermodus inschakelen",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Schakelt automatisch verwarming + filter in als de watertemperatuur onder de vorstdrempel daalt. Kan ook worden omgeschakeld via control.winter_mode in VIS.",
+    "Frost protection threshold (°C)": "Vorstbeveiliging drempelwaarde (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Verwarming + filter schakelen IN als de watertemperatuur daalt tot of onder deze waarde, en UIT als deze 3°C daarboven stijgt"
 }

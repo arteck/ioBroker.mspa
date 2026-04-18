@@ -80,5 +80,11 @@
     "Pump follow-up time (minutes)": "水泵延时运行时间（分钟）",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "时间窗口结束后过滤泵继续运行的分钟数（0 = 立即关闭）",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "加热关闭后保持水泵运行这么多分钟（有助于均匀分布水中的热量）",
-    "Pump settings": "水泵设置"
+    "Pump settings": "水泵设置",
+    "Temperature": "温度",
+    "Winter Mode (frost protection)": "冬季模式（防冻保护）",
+    "Enable winter mode": "启用冬季模式",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "当水温低于防冻阈值时自动启动加热器和过滤器。也可通过 VIS 中的 control.winter_mode 切换。",
+    "Frost protection threshold (°C)": "防冻阈值（°C）",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "当水温降至或低于此值时，加热器和过滤器开启；当水温高于此值 3°C 时，再次关闭"
 }

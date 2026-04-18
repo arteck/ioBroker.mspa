@@ -80,5 +80,11 @@
     "Pump follow-up time (minutes)": "Время дохода насоса (минуты)",
     "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Сколько минут насос фильтра продолжает работать после окончания временного окна (0 = немедленное выключение)",
     "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Держите насос включенным в течение этого количества минут после отключения нагрева (помогает равномерно распределить тепло в воде)",
-    "Pump settings": "Настройки насоса"
+    "Pump settings": "Настройки насоса",
+    "Temperature": "Температура",
+    "Winter Mode (frost protection)": "Зимний режим (защита от замерзания)",
+    "Enable winter mode": "Включить зимний режим",
+    "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Автоматически активирует нагрев + фильтр, когда температура воды падает ниже порога замерзания. Можно также переключать через control.winter_mode в VIS.",
+    "Frost protection threshold (°C)": "Порог защиты от замерзания (°C)",
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Нагрев + фильтр включаются, когда температура воды опускается до или ниже этого значения, и выключаются, когда поднимается на 3°C выше"
 }
