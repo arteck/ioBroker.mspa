@@ -289,18 +289,6 @@
           "lg": 12,
           "xl": 12
         },
-        "season_enabled": {
-          "type": "checkbox",
-          "label": "Season control active",
-          "help": "Activate the adapter only within the defined season (DD.MM – DD.MM)",
-          "default": false,
-          "newLine": true,
-          "xs": 12,
-          "sm": 12,
-          "md": 12,
-          "lg": 12,
-          "xl": 12
-        },
         "season_start": {
           "type": "text",
           "label": "Season start (DD.MM)",
@@ -309,7 +297,6 @@
           "placeholder": "DD.MM",
           "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_start)",
           "validatorErrorText": "Please enter a valid date in the format DD.MM",
-          "hidden": "!data.season_enabled",
           "newLine": true,
           "xs": 12,
           "sm": 3,
@@ -325,7 +312,6 @@
           "placeholder": "DD.MM",
           "validator": "/^([0-2]\\d|3[01])\\.(0\\d|1[0-2])$/.test(data.season_end)",
           "validatorErrorText": "Please enter a valid date in the format DD.MM",
-          "hidden": "!data.season_enabled",
           "xs": 12,
           "sm": 3,
           "md": 3,
@@ -368,18 +354,6 @@
           "lg": 12,
           "xl": 12
         },
-        "winter_mode": {
-          "type": "checkbox",
-          "label": "Enable winter mode",
-          "help": "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.",
-          "default": false,
-          "newLine": true,
-          "xs": 12,
-          "sm": 12,
-          "md": 12,
-          "lg": 12,
-          "xl": 12
-        },
         "winter_frost_temp": {
           "type": "number",
           "label": "Frost protection threshold (°C)",
@@ -388,7 +362,6 @@
           "min": 0,
           "max": 15,
           "step": 1,
-          "hidden": "!data.winter_mode",
           "newLine": true,
           "xs": 12,
           "sm": 3,
