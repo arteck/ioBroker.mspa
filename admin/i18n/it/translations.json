@@ -78,5 +78,7 @@
     "Example: John,Jane   (leave empty to send to all users)": "Esempio: Mario,Anna   (lasciare vuoto per inviare a tutti gli utenti)",
     "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Le notifiche vengono inviate per: surplus FV acceso/spento · inizio/fine finestra temporale · inizio/fine stagione · avviso scadenza lampada UVC",
     "Pump follow-up time (minutes)": "Tempo di post-marcia della pompa (minuti)",
-    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Quanti minuti la pompa del filtro continua a funzionare dopo la fine di una finestra temporale (0 = spegnimento immediato)"
+    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Quanti minuti la pompa del filtro continua a funzionare dopo la fine di una finestra temporale (0 = spegnimento immediato)",
+    "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Mantieni la pompa in funzione per questi minuti dopo che il riscaldamento è spento (aiuta a distribuire il calore in modo uniforme nell'acqua)",
+    "Pump settings": "Impostazioni della pompa"
 }

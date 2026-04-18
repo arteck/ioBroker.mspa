@@ -78,5 +78,7 @@
     "Example: John,Jane   (leave empty to send to all users)": "Voorbeeld: Jan,Marie   (leeg laten om naar alle gebruikers te sturen)",
     "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Meldingen worden verzonden bij: PV-overschot aan/uit · start/einde tijdvenster · start/einde seizoen · waarschuwing UVC-lamp verlopen",
     "Pump follow-up time (minutes)": "Nalooptijd pomp (minuten)",
-    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Hoeveel minuten de filterpomp blijft draaien nadat een tijdvenster eindigt (0 = direct uit)"
+    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Hoeveel minuten de filterpomp blijft draaien nadat een tijdvenster eindigt (0 = direct uit)",
+    "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Houd de pomp nog zoveel minuten aan nadat de verwarming is uitgeschakeld (helpt om de warmte gelijkmatig in het water te verdelen)",
+    "Pump settings": "Pompsinstellingen"
 }

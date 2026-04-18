@@ -78,5 +78,7 @@
     "Example: John,Jane   (leave empty to send to all users)": "Пример: Иван,Мария   (оставьте пустым для отправки всем пользователям)",
     "Notifications are sent on: PV surplus on/off · Time window start/end · Season start/end · UVC lamp expiry warning": "Уведомления отправляются при: излишек ФВ вкл./выкл. · начало/конец временного окна · начало/конец сезона · предупреждение об истечении срока лампы UVC",
     "Pump follow-up time (minutes)": "Время дохода насоса (минуты)",
-    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Сколько минут насос фильтра продолжает работать после окончания временного окна (0 = немедленное выключение)"
+    "How many minutes the filter pump keeps running after a time window ends (0 = off immediately)": "Сколько минут насос фильтра продолжает работать после окончания временного окна (0 = немедленное выключение)",
+    "Keep the pump running for this many minutes after heating is turned off (helps to distribute heat evenly in the water)": "Держите насос включенным в течение этого количества минут после отключения нагрева (помогает равномерно распределить тепло в воде)",
+    "Pump settings": "Настройки насоса"
 }
