@@ -45,7 +45,11 @@
     "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again": "Überschuss muss unter Schwelle minus Hysterese fallen, bevor der Whirlpool wieder ausgeschaltet wird",
     "Hysteresis must be less than the surplus threshold": "Hysterese muss kleiner als die Überschussschwelle sein",
     "Cloud protection delay (minutes)": "Wolkenschutzverzögerung (Minuten)",
-    "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass": "Wartezeit in Minuten unterhalb der Schwelle vor dem Ausschalten – verhindert schnelles Ein-/Ausschalten beim Durchziehen von Wolken",
+    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "Wartezeit in Minuten unterhalb der Schwelle vor dem stufenweisen Ausschalten – verhindert schnelles Ein-/Ausschalten beim Durchziehen von Wolken",
+    "Staged shutdown delay between steps (minutes)": "Verzögerung zwischen den Abschaltstufen (Minuten)",
+    "After heater OFF, wait this long before UVC OFF; then wait again before filter OFF. Allows the heater to cool down with circulating water.": "Nach Heizung AUS diese Zeit warten, dann UVC AUS; danach nochmals warten, dann Filter AUS. Ermöglicht der Heizung, mit zirkulierendem Wasser abzukühlen.",
+    "UVC minimum daily runtime (hours)": "UVC-Mindestlaufzeit pro Tag (Stunden)",
+    "During staged shutdown, UVC is kept running until this daily minimum is reached (filter stays on too). Set to 0 to always allow immediate UVC off.": "Beim stufenweisen Ausschalten läuft die UVC-Lampe weiter, bis dieses Tagesmindest erreicht ist (Filter bleibt ebenfalls an). Auf 0 setzen, um UVC sofort abschalten zu dürfen.",
     "Consumption tracking": "Verbrauchserfassung",
     "Enable consumption tracking": "Verbrauchserfassung aktivieren",
     "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)": "Täglichen kWh-Verbrauch über einen externen Energiezähler berechnen (z. B. Smart-Plug)",
@@ -86,5 +90,11 @@
     "Enable winter mode": "Wintermodus aktivieren",
     "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Aktiviert automatisch Heizung + Filter, wenn die Wassertemperatur unter die Frostschwelle fällt. Kann auch über control.winter_mode in der VIS umgeschaltet werden.",
     "Frost protection threshold (°C)": "Frostschutz-Schwellwert (°C)",
-    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Heizung + Filter schalten EIN, wenn die Wassertemperatur auf diesen Wert oder darunter fällt, und AUS wieder, wenn sie 3 °C darüber steigt"
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Heizung + Filter schalten EIN, wenn die Wassertemperatur auf diesen Wert oder darunter fällt, und AUS wieder, wenn sie 3 °C darüber steigt",
+    "UVC daily ensure start time (HH:MM)": "UVC-Tagesmindest: Startzeit (HH:MM)",
+    "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum (uvc_daily_min_h). Filter is also started automatically if needed. Leave empty to disable.": "Ab dieser Uhrzeit stellt der Adapter sicher, dass die UVC-Lampe mindestens die konfigurierte Tagesmindestlaufzeit erreicht. Die Filterpumpe wird bei Bedarf automatisch mitgestartet. Leer lassen zum Deaktivieren.",
+    "Please enter a valid time in the format HH:MM": "Bitte eine gültige Uhrzeit im Format HH:MM eingeben",
+    "App Change Detection": "App-Änderungserkennung",
+    "Auto manual-override duration after app change (minutes)": "Automatische Übersteuerdauer nach App-Änderung (Minuten)",
+    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Ändert die MSpa-App Heizung, Filter, UVC oder Zieltemperatur während der Adapter aktiv ist, wird die manuelle Übersteuerung automatisch für diese Anzahl Minuten gesetzt. 0 = Erkennung deaktiviert."
 }

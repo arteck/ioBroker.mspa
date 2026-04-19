@@ -45,7 +45,7 @@
     "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again": "Надлишок повинен впасти нижче порогу мінус гістерезис, перш ніж джакузі знову вимкнеться",
     "Hysteresis must be less than the surplus threshold": "Гістерезис повинен бути меншим за поріг надлишку",
     "Cloud protection delay (minutes)": "Затримка захисту від хмар (хвилини)",
-    "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass": "Чекати стільки хвилин нижче порогу перед вимкненням – запобігає швидким циклам вмикання/вимикання при проходженні хмар",
+    "Wait this many minutes below threshold before starting the staged shutdown \u2013 prevents rapid on/off cycling when clouds pass": "Зачекати вказану кількість хвилин нижче порогу перед поетапним вимкненням – запобігає швидким циклам вмк/вимк при проходженні хмар",
     "Consumption tracking": "Облік споживання",
     "Enable consumption tracking": "Увімкнути облік споживання",
     "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)": "Розраховувати добове споживання кВт·год через зовнішній лічильник енергії (напр. розумна розетка)",
@@ -86,5 +86,18 @@
     "Enable winter mode": "Увімкнути зимовий режим",
     "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Автоматично вмикає нагрів + фільтр, коли температура води падає нижче порогу заморозку. Можна також перемикати через control.winter_mode у VIS.",
     "Frost protection threshold (°C)": "Поріг захисту від заморозків (°C)",
-    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Нагрів + фільтр вмикаються, коли температура води опускається до або нижче цього значення, і вимикаються, коли піднімається на 3°C вище"
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Нагрів + фільтр вмикаються, коли температура води опускається до або нижче цього значення, і вимикаються, коли піднімається на 3°C вище",
+    "Staged shutdown delay between steps (minutes)": "Затримка між етапами вимкнення (хвилини)",
+    "After heater OFF, wait this long before UVC OFF; then wait again before filter OFF. Allows the heater to cool down with circulating water.": "Після вимкнення нагрівача зачекати перед вимкненням UVC; потім знову зачекати перед вимкненням фільтра. Дає нагрівачу охолонути при циркуляції води.",
+    "UVC minimum daily runtime (hours)": "Мінімальний щоденний час роботи UVC (години)",
+    "During staged shutdown, UVC is kept running until this daily minimum is reached (filter stays on too). Set to 0 to always allow immediate UVC off.": "При поетапному вимкненні UVC продовжує працювати до досягнення денного мінімуму (фільтр також залишається увімкненим). Встановіть 0, щоб дозволити негайне вимкнення.",
+    "UVC daily ensure start time (HH:MM)": "Час початку щоденного мінімуму UVC (ГГ:ХХ)",
+    "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum (uvc_daily_min_h). Filter is also started automatically if needed. Leave empty to disable.": "З цього часу адаптер забезпечує мінімальний щоденний час роботи UVC-лампи. Фільтр також запускається автоматично за потреби. Залиште порожнім для вимкнення.",
+    "Please enter a valid time in the format HH:MM": "Введіть коректний час у форматі ГГ:ХХ",
+    "App Change Detection": "Виявлення змін через додаток",
+    "Auto manual-override duration after app change (minutes)": "Тривалість автоматичного ручного керування після зміни в додатку (хвилини)",
+    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Якщо додаток MSpa змінює нагрів, фільтр, UVC або цільову температуру, поки адаптер активний, ручне керування автоматично встановлюється на цей час. 0 = вимкнути виявлення.",
+    "The adapter ensures the UVC lamp runs at least this many hours per day (PV staged shutdown and daily ensure both respect this value). Set to 0 to disable.": "Адаптер гарантує роботу UVC-лампи не менше вказаної кількості годин на добу (поетапне вимкнення PV та щоденний запуск враховують це значення). Встановіть 0 для вимкнення.",
+    "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum. Filter is also started automatically if needed. Leave empty to disable.": "З цього часу адаптер забезпечує мінімальний щоденний час роботи UVC-лампи. Фільтр також запускається автоматично за потреби. Залиште порожнім для вимкнення.",
+    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "Зачекати вказану кількість хвилин нижче порогу перед поетапним вимкненням – запобігає швидким циклам вмк/вимк при проходженні хмар"
 }

@@ -45,7 +45,7 @@
     "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again": "Nadwyżka musi spaść poniżej progu minus histereza, zanim jacuzzi zostanie ponownie wyłączone",
     "Hysteresis must be less than the surplus threshold": "Histereza musi być mniejsza niż próg nadwyżki",
     "Cloud protection delay (minutes)": "Opóźnienie ochrony przed chmurami (minuty)",
-    "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass": "Odczekaj tyle minut poniżej progu przed wyłączeniem – zapobiega szybkiemu przełączaniu przy przejściu chmur",
+    "Wait this many minutes below threshold before starting the staged shutdown \u2013 prevents rapid on/off cycling when clouds pass": "Odczekaj tyle minut poniżej progu przed stopniowym wyłączeniem – zapobiega szybkiemu cyklicznemu włączaniu/wyłączaniu podczas przejścia chmur",
     "Consumption tracking": "Śledzenie zużycia",
     "Enable consumption tracking": "Włącz śledzenie zużycia",
     "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)": "Obliczaj dzienne zużycie kWh za pomocą zewnętrznego licznika energii (np. inteligentna wtyczka)",
@@ -86,5 +86,15 @@
     "Enable winter mode": "Włącz tryb zimowy",
     "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Automatycznie włącza ogrzewanie + filtr, gdy temperatura wody spada poniżej progu mrozu. Można również przełączać za pomocą control.winter_mode w VIS.",
     "Frost protection threshold (°C)": "Próg ochrony przed mrozem (°C)",
-    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Ogrzewanie + filtr włączają się, gdy temperatura wody spada do lub poniżej tej wartości, i wyłączają się po przekroczeniu jej o 3°C"
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Ogrzewanie + filtr włączają się, gdy temperatura wody spada do lub poniżej tej wartości, i wyłączają się po przekroczeniu jej o 3°C",
+    "Staged shutdown delay between steps (minutes)": "Opóźnienie między krokami wyłączania (minuty)",
+    "After heater OFF, wait this long before UVC OFF; then wait again before filter OFF. Allows the heater to cool down with circulating water.": "Po wyłączeniu grzałki odczekaj przed wyłączeniem UVC; następnie odczekaj przed wyłączeniem filtra. Umożliwia grzałce ostygnięcie z cyrkulującą wodą.",
+    "UVC minimum daily runtime (hours)": "Minimalny dzienny czas pracy UVC (godziny)",
+    "During staged shutdown, UVC is kept running until this daily minimum is reached (filter stays on too). Set to 0 to always allow immediate UVC off.": "Przy stopniowym wyłączaniu UVC działa do osiągnięcia dziennego minimum (filtr też pozostaje włączony). Ustaw 0, aby zawsze zezwalać na natychmiastowe wyłączenie.",
+    "UVC daily ensure start time (HH:MM)": "Czas startu dziennego minimum UVC (GG:MM)",
+    "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum (uvc_daily_min_h). Filter is also started automatically if needed. Leave empty to disable.": "Od tej godziny adapter zapewnia, że lampa UVC przepracowała co najmniej dzienne minimum. Filtr jest również uruchamiany automatycznie w razie potrzeby. Pozostaw puste, aby wyłączyć.",
+    "Please enter a valid time in the format HH:MM": "Wprowadź prawidłowy czas w formacie GG:MM",
+    "App Change Detection": "Wykrywanie zmian z aplikacji",
+    "Auto manual-override duration after app change (minutes)": "Czas automatycznego ręcznego nadpisania po zmianie w aplikacji (minuty)",
+    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Jeśli aplikacja MSpa zmieni ogrzewanie, filtr, UVC lub temperaturę docelową, gdy adapter jest aktywny, ręczne nadpisanie zostanie automatycznie ustawione na ten czas. 0 = wyłącz wykrywanie."
 }

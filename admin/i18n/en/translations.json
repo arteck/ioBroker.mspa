@@ -45,7 +45,11 @@
     "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again": "Surplus must drop below threshold minus hysteresis before the whirlpool is switched off again",
     "Hysteresis must be less than the surplus threshold": "Hysteresis must be less than the surplus threshold",
     "Cloud protection delay (minutes)": "Cloud protection delay (minutes)",
-    "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass": "Wait this many minutes below threshold before switching off – prevents rapid on/off cycling when clouds pass",
+    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass",
+    "Staged shutdown delay between steps (minutes)": "Staged shutdown delay between steps (minutes)",
+    "After heater OFF, wait this long before UVC OFF; then wait again before filter OFF. Allows the heater to cool down with circulating water.": "After heater OFF, wait this long before UVC OFF; then wait again before filter OFF. Allows the heater to cool down with circulating water.",
+    "UVC minimum daily runtime (hours)": "UVC minimum daily runtime (hours)",
+    "During staged shutdown, UVC is kept running until this daily minimum is reached (filter stays on too). Set to 0 to always allow immediate UVC off.": "During staged shutdown, UVC is kept running until this daily minimum is reached (filter stays on too). Set to 0 to always allow immediate UVC off.",
     "Consumption tracking": "Consumption tracking",
     "Enable consumption tracking": "Enable consumption tracking",
     "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)": "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)",
@@ -86,5 +90,11 @@
     "Enable winter mode": "Enable winter mode",
     "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.": "Automatically activates heater + filter when water temperature drops below the frost threshold. Can also be toggled via control.winter_mode in VIS.",
     "Frost protection threshold (°C)": "Frost protection threshold (°C)",
-    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it"
+    "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it": "Heater + filter switch ON when water temperature falls to or below this value, and OFF again when 3°C above it",
+    "UVC daily ensure start time (HH:MM)": "UVC daily ensure start time (HH:MM)",
+    "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum (uvc_daily_min_h). Filter is also started automatically if needed. Leave empty to disable.": "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum (uvc_daily_min_h). Filter is also started automatically if needed. Leave empty to disable.",
+    "Please enter a valid time in the format HH:MM": "Please enter a valid time in the format HH:MM",
+    "App Change Detection": "App Change Detection",
+    "Auto manual-override duration after app change (minutes)": "Auto manual-override duration after app change (minutes)",
+    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection."
 }

@@ -38,7 +38,13 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🌥️ Configurable cloud-protection delay before deactivation (minutes)
 - 📉 Hysteresis to prevent rapid on/off switching
 - 🔋 Independent of time window control – can be combined
-- ⏳ `computed.pv_deactivate_remaining` – shows remaining minutes of the cloud-protection delay in real time
+- `computed.pv_deactivate_remaining` – shows remaining minutes of the cloud-protection delay in real time
+- **Staged deactivation** – when surplus drops away, the system shuts down in steps:
+  1. **Heater OFF** (immediately) – if firmware already reached target temperature (heat_state=4), the API call is skipped
+  2. **UVC OFF** (after configurable delay) – but only when the daily UVC minimum runtime is reached; otherwise UVC keeps running until the minimum is met
+  3. **Filter OFF** (after another delay) – but only if the firmware is not actively heating (heat_state 2/3); prevents stopping the pump while the heater is still circulating
+- If PV surplus recovers **during** staged deactivation → all timers are cancelled and previously turned-off devices are re-activated
+- When firmware reaches target temperature while PV is active → staged deactivation of UVC/filter is triggered automatically (heater already idle)
 
 ### Season Control
 - 📅 Define a season window (DD.MM – DD.MM) in the adapter settings
@@ -67,8 +73,14 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - Independent of season and time window control
 
 ### UVC Lamp Lifetime
-- 🔦 Configure installation date and rated lifetime (hours)
-- Calculates expiry date, warns 30 days before and after expiry
+- 🔦 Configure installation date and rated lifetime (operating hours)
+- **Real operating hours** are counted – only while UVC is actually switched ON
+- Accumulated hours are persisted across adapter restarts
+- `status.uvc_hours_used` – total accumulated UVC operating hours
+- `status.uvc_today_hours` – UVC operating hours for today (resets at midnight)
+- `status.uvc_hours_remaining` – remaining hours until rated lifetime is reached
+- Estimated expiry date is calculated from average daily usage (remaining hours ÷ avg h/day)
+- Warns 30 days before estimated expiry and when lifetime is exhausted
 
 ### Notifications (Telegram)
 - 📬 Send notifications via Telegram on:
@@ -89,13 +101,16 @@ Controls MSpa hot tubs via the MSpa Cloud API
 |---|---|
 | `status.water_temperature` | Current water temperature (°C) |
 | `status.target_temperature` | Target temperature (°C) |
-| `status.heat_state` | Heater state: 0=off, 2=preheat, 3=heating, 4=idle |
+| `status.heat_state` | Heater state: 0=off, 2=preheat, 3=heating, 4=idle (target reached by firmware) |
 | `status.filter_life` | Filter running hours (h) – current usage counter |
 | `status.filter_current` | Filter capacity (h) – total rated lifetime |
 | `status.heat_time_switch` | Heat timer active (boolean) |
 | `status.heat_time` | Heat timer remaining (min) – countdown until auto-off |
 | `status.safety_lock` | Safety lock active |
-| `status.uvc_expiry_date` | Calculated UVC lamp expiry date |
+| `status.uvc_expiry_date` | Estimated UVC lamp expiry date (based on average daily usage) |
+| `status.uvc_hours_used` | Accumulated UVC operating hours (persisted across restarts) |
+| `status.uvc_today_hours` | UVC operating hours today (resets at midnight) |
+| `status.uvc_hours_remaining` | Remaining UVC operating hours until rated lifetime is reached |
 | `status.time_windows_json` | Configured time windows as JSON |
 
 ### `computed.*`
@@ -121,9 +136,24 @@ Controls MSpa hot tubs via the MSpa Cloud API
 | `control.manual_override` | ✅ | Pause all automations (time windows, PV, frost protection). Resets to `false` on adapter restart |
 | `control.manual_override_duration` | ✅ | Auto-resume after N minutes (0 = indefinite). Set before enabling `manual_override` |
 
+### `consumption.*`
+| Datapoint | Description |
+|---|---|
+| `consumption.day_kwh` | Energy consumed today (kWh) – resets at midnight |
+| `consumption.last_total_kwh` | Raw meter value at start of today |
+| `consumption.day_start_date` | Date (YYYY-MM-DD) when the daily baseline was last set (used to detect missed midnight resets) |
+
 ---
 
 ## Changelog
+### 0.2.4 (2026-04-19)
+* (arteck) add cloud delay, heater delay uvc delay
+* (arteck) add min duration uv-lamp 
+* (arteck) winter modus refactoring
+* (arteck) add manual_override modus
+* (arteck) add app value change automatic detection 
+* (arteck) fix consumption
+
 ### 0.2.3 (2026-04-18)
 * (arteck) fix languages del BOM
 
@@ -144,9 +174,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 * (arteck) fix filter
 * (arteck) fix heat_time 
 * (arteck) add winter mode
-
-### 0.1.6 (2026-04-18)
-* (arteck) Dependencies have been updated and icon is new
 
 ## License
 

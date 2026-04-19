@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.1.6 (2026-04-18)
+* (arteck) Dependencies have been updated and icon is new
+
 ## 0.1.5 (2026-04-18)
 * (arteck) icon update
 
