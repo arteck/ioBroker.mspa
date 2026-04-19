@@ -99,5 +99,10 @@
     "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "如果MSpa应用在适配器激活时更改了加热器、过滤器、UVC或目标温度，将自动启用手动覆盖此分钟数。设为0可禁用自动检测。",
     "The adapter ensures the UVC lamp runs at least this many hours per day (PV staged shutdown and daily ensure both respect this value). Set to 0 to disable.": "适配器确保UVC灯每天至少运行此小时数（PV分阶段关机和每日保障均遵守此值）。设为0可禁用。",
     "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum. Filter is also started automatically if needed. Leave empty to disable.": "从此时间起，适配器确保UVC灯每日至少运行最低时间。如需要，过滤器也会自动启动。留空则禁用此功能。",
-    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "在阈值以下等待此分钟数后再开始分阶段关机——防止云层经过时频繁开关切换"
+    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "在阈值以下等待此分钟数后再开始分阶段关机——防止云层经过时频繁开关切换",
+    "Language": "Language",
+    "Notification language": "Notification language",
+    "Language for Telegram and other notification messages": "Language for Telegram and other notification messages",
+    "English": "English",
+    "Deutsch": "Deutsch"
 }

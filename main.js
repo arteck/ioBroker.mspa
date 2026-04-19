@@ -76,6 +76,8 @@ class MspaAdapter extends utils.Adapter {
         this._uvcEnsureFilterStart  = false;  // true if the ensure-run also started the filter pump
         this._uvcEnsureTimer        = null;   // 1-min interval for daily ensure check
         this._uvcEnsureDate         = '';     // date string of current ensure-run (for midnight reset)
+        this._uvcEnsureSkipToday    = false;  // true = user skipped ensure for today (resets at midnight)
+        this._uvcEnsureSkipDate     = '';     // date when skip was set (for midnight auto-reset)
 
         // Time window control
         this._timeTimer             = null;
@@ -139,6 +141,13 @@ class MspaAdapter extends utils.Adapter {
         this._manualOverride = false;
         await this.setStateAsync('control.manual_override',         false, true);
         await this.setStateAsync('control.manual_override_duration', 0,    true);
+        // uvc_ensure_skip_today: restore from state (valid only if date matches today)
+        const skipState = await this.getStateAsync('control.uvc_ensure_skip_today');
+        this._uvcEnsureSkipToday = skipState && skipState.val === true ? true : false;
+        if (this._uvcEnsureSkipToday) {
+            this.log.info('UVC daily ensure: skip flag restored from previous session – ensure paused for today');
+        }
+        await this.setStateAsync('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
         await this.initPvControl();
         this.initTimeControl();
         await this.publishTimeWindowsJson();
@@ -250,7 +259,7 @@ class MspaAdapter extends utils.Adapter {
                     this._timeWindowActive[i] = false;
                     this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
                     await this._deactivateWindow(windows[i], i);
-                    await notificationHelper.send(`🌡️ *MSpa:* Season ended – time window ${i + 1} deactivated.`);
+                    await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', { window: i + 1 }));
                 }
             }
             return;
@@ -288,7 +297,7 @@ class MspaAdapter extends utils.Adapter {
             if (inWin && !wasIn) {
                 this._timeWindowActive[i] = true;
                 this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
-                await notificationHelper.send(`⏰ *MSpa:* Time window ${i + 1} started (${start}–${end}).`);
+                await notificationHelper.send(notificationHelper.format('timeWindowStarted', { window: i + 1, start, end }));
                 try {
                     if (w.action_heating) {
                         // heater requires filter pump – start it first even if action_filter is off
@@ -322,7 +331,7 @@ class MspaAdapter extends utils.Adapter {
             } else if (!inWin && wasIn) {
                 this._timeWindowActive[i] = false;
                 this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
-                await notificationHelper.send(`⏹️ *MSpa:* Time window ${i + 1} ended (${start}–${end}).`);
+                await notificationHelper.send(notificationHelper.format('timeWindowEnded', { window: i + 1, start, end }));
                 await this._deactivateWindow(w, i);
             }
         }
@@ -483,11 +492,11 @@ class MspaAdapter extends utils.Adapter {
 
         if (remainHours <= 0) {
             this.log.warn(`UVC: lamp lifetime exhausted! ${usedHours.toFixed(0)} h used of ${ratedHours} h rated – please replace!`);
-            await notificationHelper.send(`⚠️ *MSpa:* UVC lamp lifetime exhausted (${usedHours.toFixed(0)} h used) – please replace!`);
+            await notificationHelper.send(notificationHelper.format('uvcExpired', { usedHours: usedHours.toFixed(0) }));
             expiryStr = 'replace now';
         } else if (daysLeft <= 30) {
             this.log.warn(`UVC: lamp expires ~${expiryStr} (in ~${daysLeft} days, ${remainHours.toFixed(0)} h remaining) – replacement recommended`);
-            await notificationHelper.send(`⚠️ *MSpa:* UVC lamp expires ~${expiryStr} (in ~${daysLeft} days) – replacement recommended.`);
+            await notificationHelper.send(notificationHelper.format('uvcExpirySoon', { expiry: expiryStr, daysLeft }));
         } else {
             this.log.info(`UVC: ${usedHours.toFixed(1)} h used, ${remainHours.toFixed(0)} h remaining, est. expiry ~${expiryStr} (~${daysLeft} days, avg ${avgHoursPerDay.toFixed(2)} h/day)`);
         }
@@ -689,7 +698,7 @@ class MspaAdapter extends utils.Adapter {
                 // Fresh activation
                 this._pvActive = true;
                 this.log.info(`PV: surplus DETECTED (${surplus} W ≥ ${threshold} W) – activating`);
-                await notificationHelper.send(`☀️ *MSpa:* PV surplus (${surplus} W) – activating.`);
+                await notificationHelper.send(notificationHelper.format('pvActivated', { surplus }));
                 for (const w of pvWindows) {
                     try {
                         if (w.action_heating) {
@@ -755,7 +764,7 @@ clearInterval(this._pvDeactivateCountdownInt);
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
 
                 this.log.info('PV: debounce elapsed – starting staged deactivation');
-                await notificationHelper.send(`🌥️ *MSpa:* PV surplus gone – staged deactivation.`);
+                await notificationHelper.send(notificationHelper.format('pvDeactivated'));
                 this._pvActive = false;
                 await this._pvStagedDeactivate(pvWindows, false);
             }, debounceMs);
@@ -999,6 +1008,28 @@ return;
             return;
         }
 
+        // Date change detection early: reset skip flag at midnight
+        const today = this._todayStr();
+        if (this._uvcEnsureSkipToday) {
+            // Compare against _uvcEnsureDate OR _uvcEnsureSkipDate (set when skip was activated)
+            const skipDate = this._uvcEnsureSkipDate || this._uvcEnsureDate;
+            if (!skipDate || skipDate !== today) {
+                this.log.info('UVC daily ensure: new day – skip flag reset');
+                this._uvcEnsureSkipToday = false;
+                this._uvcEnsureSkipDate  = '';
+                await this.setStateAsync('control.uvc_ensure_skip_today', false, true);
+            }
+        }
+
+        // User requested to skip ensure for today
+        if (this._uvcEnsureSkipToday) {
+            if (this._uvcEnsureActive) {
+                this.log.info('UVC daily ensure: skipped by user request – stopping');
+                await this._stopUvcEnsure();
+            }
+            return;
+        }
+
         // Outside season (season_enabled=false) → no bathing operation → skip UVC ensure.
         // Winter mode alone (season_enabled=false + winter_mode=true) only runs frost
         // protection; no UVC needed.
@@ -1029,7 +1060,6 @@ return;
         const todayH = this._getUvcTodayHours();
 
         // Date change detection – stop any active ensure-run at midnight
-        const today = this._todayStr();
         if (this._uvcEnsureActive && this._uvcEnsureDate && this._uvcEnsureDate !== today) {
             this.log.info('UVC daily ensure: new day detected – stopping previous session');
             await this._stopUvcEnsure();
@@ -1056,7 +1086,7 @@ return;
         if (!this._uvcEnsureActive) {
             const remaining = (minH - todayH).toFixed(2);
             this.log.info(`UVC daily ensure: starting (${todayH.toFixed(2)} h today, need ${minH} h, ${remaining} h remaining)`);
-            await notificationHelper.send(`💡 *MSpa:* UVC daily minimum ensure started – ${remaining} h remaining.`);
+            await notificationHelper.send(notificationHelper.format('uvcEnsureStarted', { remaining }));
             this._uvcEnsureActive = true;
             this._uvcEnsureDate   = today;
             try {
@@ -1342,7 +1372,7 @@ continue;
                     : deviceVal !== commanded;
                 if (mismatch) {
                     this.log.info(`App change detected: ${key} is ${JSON.stringify(deviceVal)} on device but adapter last set it to ${JSON.stringify(commanded)} – activating manual override (${autoOverrideDuration} min)`);
-                    await notificationHelper.send(`📱 *MSpa:* App change detected (${key}) – manual override activated for ${autoOverrideDuration} min.`);
+                    await notificationHelper.send(notificationHelper.format('appChangeDetected', { key, duration: autoOverrideDuration }));
                     // Update _adapterCommanded to current device state so we don't keep re-triggering
                     this._adapterCommanded[key] = deviceVal;
                     await this._setManualOverride(true, autoOverrideDuration > 0 ? autoOverrideDuration : null);
@@ -1574,14 +1604,14 @@ return;
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
             this.log.info(`Winter mode: temp ${temp}°C ≤ ${threshold}°C – switching heater + filter ON`);
-            await notificationHelper.send(`❄️ *MSpa:* Frost protection active – water ${temp}°C ≤ ${threshold}°C, activating heater + filter.`);
+            await notificationHelper.send(notificationHelper.format('frostActive', { temp, threshold }));
             await this.setFeature('filter', true);
             await this.setFeature('heater', true);
             this.enableRapidPolling();
         } else if (this._winterFrostActive && temp >= threshold + hysteresis) {
             this._winterFrostActive = false;
             this.log.info(`Winter mode: temp ${temp}°C ≥ ${threshold + hysteresis}°C – switching heater + filter OFF`);
-            await notificationHelper.send(`🌡️ *MSpa:* Frost protection deactivated – water ${temp}°C ≥ ${threshold + hysteresis}°C.`);
+            await notificationHelper.send(notificationHelper.format('frostDeactivated', { temp, hysteresis: threshold + hysteresis }));
             await this.setFeature('heater', false);
             await this.setFeature('filter', false);
             this.enableRapidPolling();
@@ -1635,22 +1665,22 @@ return;
 
             if (durationMin > 0) {
                 this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
-                await notificationHelper.send(`🔧 *MSpa:* Manuelle Übersteuerung aktiv für ${durationMin} min – alle Automationen pausiert.`);
+                await notificationHelper.send(notificationHelper.format('overrideOnTimed', { durationMin }));
                 this._manualOverrideTimer = setTimeout(async () => {
                     this._manualOverrideTimer = null;
                     this.log.info('Manual override: duration elapsed – automations RESUMED');
-                    await notificationHelper.send('▶️ *MSpa:* Manuelle Übersteuerung beendet – Automationen wieder aktiv.');
+                    await notificationHelper.send(notificationHelper.format('overrideEnded'));
                     this._manualOverride = false;
                     await this.setStateAsync('control.manual_override', false, true);
                     await this.setStateAsync('control.manual_override_duration', 0, true);
                 }, durationMin * 60 * 1000);
             } else {
                 this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
-                await notificationHelper.send('🔧 *MSpa:* Manuelle Übersteuerung aktiv (dauerhaft) – alle Automationen pausiert.');
+                await notificationHelper.send(notificationHelper.format('overrideOnIndefinite'));
             }
         } else {
             this.log.info('Manual override: DISABLED – all automations RESUMED');
-            await notificationHelper.send('▶️ *MSpa:* Manuelle Übersteuerung deaktiviert – Automationen wieder aktiv.');
+            await notificationHelper.send(notificationHelper.format('overrideOff'));
             await this.setStateAsync('control.manual_override_duration', 0, true);
             // immediately re-evaluate automations with latest data
             if (this._lastData && Object.keys(this._lastData).length) {
@@ -1700,6 +1730,24 @@ await this.checkFrostProtection(this._lastData);
             } else if (key === 'manual_override') {
                 const enable = !!state.val;
                 await this._setManualOverride(enable);
+
+            } else if (key === 'uvc_ensure_skip_today') {
+                const skip = !!state.val;
+                this._uvcEnsureSkipToday = skip;
+                this._uvcEnsureSkipDate  = skip ? this._todayStr() : '';
+                await this.setStateAsync('control.uvc_ensure_skip_today', skip, true);
+                if (skip) {
+                    this.log.info('UVC daily ensure: skip requested by user – pausing for today');
+                    await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
+                    // stop immediately if currently running
+                    if (this._uvcEnsureActive) {
+                        await this._stopUvcEnsure();
+                    }
+                } else {
+                    this.log.info('UVC daily ensure: skip cancelled – ensure active again');
+                    // trigger immediate re-check so ensure starts without waiting up to 60s
+                    this.checkUvcDailyMinimum().catch(e => this.log.error(`UVC ensure re-check: ${e.message}`));
+                }
 
             } else if (key === 'manual_override_duration') {
                 // duration change only relevant while override is active → restart timer

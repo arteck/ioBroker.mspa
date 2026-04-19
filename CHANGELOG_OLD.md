@@ -47,6 +47,10 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.1 (2026-04-18)
+* (arteck) fix season_enabled 
+* (arteck) add manual override an manual_override_duration
+
 ## 0.2.0 (2026-04-18)
 * (arteck) BREAKING CHANGES 
 * 

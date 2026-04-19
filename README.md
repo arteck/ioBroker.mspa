@@ -146,6 +146,10 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### 0.2.6 (2026-04-19)
+* (arteck) skip uv lamp daily duration 
+* (arteck) add language selector for telegramm message
+
 ### 0.2.5 (2026-04-19)
 * (arteck) fix uvc_expiry_date
 
@@ -162,10 +166,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.2 (2026-04-18)
 * (arteck) fix languages
-
-### 0.2.1 (2026-04-18)
-* (arteck) fix season_enabled 
-* (arteck) add manual override an manual_override_duration
 
 ## License
 

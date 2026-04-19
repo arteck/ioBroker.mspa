@@ -656,6 +656,33 @@
           "md": 12,
           "lg": 12,
           "xl": 12
+        },
+        "language_header": {
+          "type": "header",
+          "text": "Language",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "notification_language": {
+          "type": "select",
+          "label": "Notification language",
+          "help": "Language for Telegram and other notification messages",
+          "options": [
+            { "value": "en", "label": "English" },
+            { "value": "de", "label": "Deutsch" }
+          ],
+          "default": "en",
+          "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 4,
+          "lg": 4,
+          "xl": 4
         }
       }
     }

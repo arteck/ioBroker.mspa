@@ -99,5 +99,10 @@
     "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Se a app MSpa alterar o aquecimento, filtro, UVC ou temperatura alvo enquanto o adaptador está ativo, a substituição manual é ativada automaticamente por este número de minutos. 0 = desativar deteção.",
     "The adapter ensures the UVC lamp runs at least this many hours per day (PV staged shutdown and daily ensure both respect this value). Set to 0 to disable.": "O adaptador garante que a lâmpada UVC funciona pelo menos este número de horas por dia (o encerramento faseado PV e o garantidor diário respeitam este valor). Defina 0 para desativar.",
     "From this time of day, the adapter ensures the UVC lamp has run for at least the daily minimum. Filter is also started automatically if needed. Leave empty to disable.": "A partir desta hora, o adaptador garante que a lâmpada UVC funcionou pelo menos o mínimo diário. O filtro também é iniciado automaticamente se necessário. Deixar vazio para desativar.",
-    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "Aguardar estes minutos abaixo do limiar antes do encerramento faseado – evita ciclos rápidos de ligação/desligação quando passam nuvens"
+    "Wait this many minutes below threshold before starting the staged shutdown – prevents rapid on/off cycling when clouds pass": "Aguardar estes minutos abaixo do limiar antes do encerramento faseado – evita ciclos rápidos de ligação/desligação quando passam nuvens",
+    "Language": "Language",
+    "Notification language": "Notification language",
+    "Language for Telegram and other notification messages": "Language for Telegram and other notification messages",
+    "English": "English",
+    "Deutsch": "Deutsch"
 }

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.5",
+    "version": "0.2.6",
     "news": {
+      "0.2.6": {
+        "en": "skip uv lamp daily duration \nadd language selector for telegramm message",
+        "de": "tagesdauer überspringen\nsprachauswahl für telegrammnachricht hinzufügen",
+        "ru": "пропуск uv лампы суточная продолжительность\nдобавить селектор языка для телеграмм",
+        "pt": "skip uv lâmpada duração diária\nadicionar o seletor de idioma para a mensagem do telegrama",
+        "nl": "uv-lamp dagelijks overslaan\ntaalkiezer toevoegen voor telegrambericht",
+        "fr": "skip uv lampe durée quotidienne\najouter un sélecteur de langue pour le message télégramme",
+        "it": "skip uv lampada durata giornaliera\naggiungere il selettore di lingua per il messaggio telegramm",
+        "es": "saltar lámpara uv duración diaria\nañadir selector de lenguaje para mensaje de telegrama",
+        "pl": "skip uv lampy dziennie\ndodaj selektor języka dla wiadomości telegraficznej",
+        "uk": "пропустити uv лампи щодня\nadd language selector for телеграмма повідомлення",
+        "zh-cn": "跳过 uv 灯的每日持续时间\n为电报消息添加语言选择器"
+      },
       "0.2.5": {
         "en": "fix uvc_expiry_date",
         "de": "uvc expiry date",
@@ -80,19 +93,6 @@
         "pl": "Zaktualizowano zależności i ikona jest nowa",
         "uk": "Залежність було оновлено і іконка є новим",
         "zh-cn": "属性已更新, 图标为新"
-      },
-      "0.1.5": {
-        "en": "icon update",
-        "de": "symbol-update",
-        "ru": "обновление icon",
-        "pt": "atualização do ícone",
-        "nl": "pictogram bijwerken",
-        "fr": "mise à jour de l'icône",
-        "it": "aggiornamento icona",
-        "es": "actualización del icono",
-        "pl": "aktualizacja ikon",
-        "uk": "оновлення ікони",
-        "zh-cn": "图标更新"
       }
     },
     "titleLang": {

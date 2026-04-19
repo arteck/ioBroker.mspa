@@ -96,5 +96,10 @@
     "Please enter a valid time in the format HH:MM": "Inserire un orario valido nel formato HH:MM",
     "App Change Detection": "Rilevamento modifiche dall'app",
     "Auto manual-override duration after app change (minutes)": "Durata della sostituzione manuale dopo modifica app (minuti)",
-    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Se l'app MSpa modifica il riscaldamento, il filtro, la UVC o la temperatura target mentre l'adattatore è attivo, la sostituzione manuale viene attivata automaticamente per questo numero di minuti. 0 = disabilita il rilevamento."
+    "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.": "Se l'app MSpa modifica il riscaldamento, il filtro, la UVC o la temperatura target mentre l'adattatore è attivo, la sostituzione manuale viene attivata automaticamente per questo numero di minuti. 0 = disabilita il rilevamento.",
+    "Language": "Language",
+    "Notification language": "Notification language",
+    "Language for Telegram and other notification messages": "Language for Telegram and other notification messages",
+    "English": "English",
+    "Deutsch": "Deutsch"
 }
