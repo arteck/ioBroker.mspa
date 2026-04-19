@@ -42,6 +42,11 @@ class MspaAdapter extends utils.Adapter {
             target_temperature: null,
         };
 
+        // Timestamp of the last command sent by the adapter.
+        // App-change detection is suppressed for 30 s after any adapter command
+        // to avoid false positives while the device is still catching up.
+        this._lastCommandTime = 0;
+
         this._heatTracker  = new RateTracker({ min: 0.05, max: 3.0 });
         this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
 
@@ -1346,7 +1351,15 @@ return;
         // Compare what the device reports with what the adapter last commanded.
         // If they differ (and we are not in manual override already, and automations
         // are active) → someone used the MSpa app → set manual_override automatically.
-        if (!this._manualOverride && this._seasonEnabled) {
+        // Grace period: skip detection for 30 s after any adapter command so the
+        // device has time to reflect the new state (avoids false positives e.g.
+        // after uvc_ensure_skip_today or staged shutdown).
+        const cmdGraceMs = 30_000;
+        const inCmdGrace = (Date.now() - this._lastCommandTime) < cmdGraceMs;
+        if (inCmdGrace) {
+            this.log.debug(`App-change detection: suppressed – adapter command was ${Math.round((Date.now() - this._lastCommandTime) / 1000)} s ago (grace ${cmdGraceMs / 1000} s)`);
+        }
+        if (!this._manualOverride && this._seasonEnabled && !inCmdGrace) {
             const cfg          = this.config;
             const autoOverrideDuration = cfg.app_change_override_min ?? 30;
             const checks = [
@@ -1626,6 +1639,8 @@ return;
         if (feature in this._adapterCommanded) {
             this._adapterCommanded[feature] = boolVal;
         }
+        // Mark command time – app-change detection will be suppressed for 30 s
+        this._lastCommandTime = Date.now();
         switch (feature) {
             case 'heater': return this._api.setHeaterState(state);
             case 'filter': return this._api.setFilterState(state);
@@ -1638,6 +1653,7 @@ return;
 
     async setTargetTemp(temp) {
         this._adapterCommanded.target_temperature = temp;
+        this._lastCommandTime = Date.now();
         return this._api.setTemperatureSetting(temp);
     }
 

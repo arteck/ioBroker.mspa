@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "news": {
+      "0.2.7": {
+        "en": "fix manual override",
+        "de": "manuelles override reparieren",
+        "ru": "исправить ручное отключение",
+        "pt": "corrigir sobreposição manual",
+        "nl": "fix handmatige override",
+        "fr": "correction du dépassement manuel",
+        "it": "correzione manuale override",
+        "es": "corrección manual",
+        "pl": "naprawić ręczne sterowanie",
+        "uk": "ручна накладна",
+        "zh-cn": "修补手动覆盖"
+      },
       "0.2.6": {
         "en": "skip uv lamp daily duration \nadd language selector for telegramm message",
         "de": "tagesdauer überspringen\nsprachauswahl für telegrammnachricht hinzufügen",
@@ -80,19 +93,6 @@
         "pl": "ZMIANY ŁAMAJĄCE proszę usunąć i zainstalować ponownie, patrz Readme",
         "uk": "ВАЖЛИВІ ЗМІНИ, будь ласка, видаліть та встановіть знову, див. Readme",
         "zh-cn": "重大变更，请删除并重新安装，请参阅自述文件。"
-      },
-      "0.1.6": {
-        "en": "Dependencies have been updated and icon is new",
-        "de": "Abhängigkeiten wurden aktualisiert und Icon ist neu",
-        "ru": "Зависимости были обновлены, а иконка стала новой",
-        "pt": "As dependências foram atualizadas e o ícone é novo",
-        "nl": "Afhankelijkheden zijn bijgewerkt en pictogram is nieuw",
-        "fr": "Les dépendances ont été mises à jour et l'icône est nouvelle",
-        "it": "Le dipendenze sono state aggiornate e l'icona è nuova",
-        "es": "Las dependencias se han actualizado e icono es nuevo",
-        "pl": "Zaktualizowano zależności i ikona jest nowa",
-        "uk": "Залежність було оновлено і іконка є новим",
-        "zh-cn": "属性已更新, 图标为新"
       }
     },
     "titleLang": {
