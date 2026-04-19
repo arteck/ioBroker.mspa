@@ -465,9 +465,10 @@ class MspaAdapter extends utils.Adapter {
         let daysLeft;
 
         if (avgHoursPerDay <= 0) {
-            // No usage data yet – cannot estimate expiry date
-            this.log.debug(`UVC: ${usedHours.toFixed(2)} h used of ${ratedHours} h rated lifetime (no daily-average data yet)`);
-            await this.setStateChangedAsync('status.uvc_expiry_date', `${ratedHours - Math.floor(usedHours)} h remaining`, true);
+            // No usage recorded yet – show remaining hours, leave expiry date empty
+            this.log.debug(`UVC: no operating hours recorded yet – ${ratedHours} h rated lifetime remaining`);
+            await this.setStateChangedAsync('status.uvc_expiry_date', '', true);
+            await this.setStateChangedAsync('status.uvc_hours_remaining', ratedHours, true);
             return;
         }
 
@@ -1607,7 +1608,7 @@ return;
 
     async setTargetTemp(temp) {
         this._adapterCommanded.target_temperature = temp;
-        return this.setTargetTemp(temp);
+        return this._api.setTemperatureSetting(temp);
     }
 
     // -------------------------------------------------------------------------

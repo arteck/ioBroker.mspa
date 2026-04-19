@@ -146,6 +146,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) fix uvc_expiry_date
+
 ### 0.2.4 (2026-04-19)
 * (arteck) add cloud delay, heater delay uvc delay
 * (arteck) add min duration uv-lamp 
