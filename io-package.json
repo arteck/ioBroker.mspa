@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "news": {
+      "0.2.5": {
+        "en": "fix uvc_expiry_date",
+        "de": "uvc expiry date",
+        "ru": "исправить uvc expiry date",
+        "pt": "corrigir a data  expiração do uvc",
+        "nl": "fix uvc expiry date",
+        "fr": "correction de la date d'expiration",
+        "it": "fix uvc expiry date",
+        "es": "uvc expiry date",
+        "pl": "fix uvc _ expire _ date",
+        "uk": "uvc expiry date",
+        "zh-cn": "修复ucc  过期  日期"
+      },
       "0.2.4": {
         "en": "add cloud delay, heater delay uvc delay\nadd min duration uv-lamp \nwinter modus refactoring\nadd manual_override modus\nadd app value change automatic detection \nfix consumption",
         "de": "cloud-verzögerung hinzufügen, heizung verzögerung uvc verzögerung\nmin dauer uv-lamp\nwintermodus refactoring\nmanual override modus hinzufügen\napp-wert ändern automatische erkennung\nverbrauch",
@@ -80,19 +93,6 @@
         "pl": "aktualizacja ikon",
         "uk": "оновлення ікони",
         "zh-cn": "图标更新"
-      },
-      "0.1.4": {
-        "en": "save time lines in DP as array\ntypo",
-        "de": "zeitleitungen in DP als Array speichern\ntypo",
-        "ru": "сохранить временные линии в DP как массив\nопечатка",
-        "pt": "salvar linhas de tempo no DP como array\nerro de digitação",
-        "nl": "tijdlijnen in DP opslaan als array\ntype",
-        "fr": "enregistrer des lignes de temps dans DP comme tableau\ntypo",
-        "it": "salvare le linee di tempo in DP come array\ntipo",
-        "es": "guardar líneas de tiempo en DP como matriz\ntypo",
-        "pl": "zapisać linie czasowe w formacie DP jako tablica\ntypo",
-        "uk": "зберегти часові лінії в DP як масив\nтипо",
-        "zh-cn": "在 DP 中保存时间线为数组\n类型"
       }
     },
     "titleLang": {

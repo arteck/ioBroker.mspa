@@ -146,7 +146,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.2.5 (2026-04-19)
 * (arteck) fix uvc_expiry_date
 
 ### 0.2.4 (2026-04-19)
@@ -166,17 +166,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ### 0.2.1 (2026-04-18)
 * (arteck) fix season_enabled 
 * (arteck) add manual override an manual_override_duration
-
-### 0.2.0 (2026-04-18)
-* (arteck) BREAKING CHANGES 
-* 
-* plz delete and install again
-* 
-* (arteck) new structure timecontrol
-* (arteck) new dp pv_deactivate_remaining
-* (arteck) fix filter
-* (arteck) fix heat_time 
-* (arteck) add winter mode
 
 ## License
 
