@@ -1825,7 +1825,21 @@ return;
                 }
                 return result;
             }
-            case 'filter': await this._setStatusCheck('send'); await this._api.setFilterState(state); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'filter': {
+                await this._setStatusCheck('send');
+                await this._api.setFilterState(state);
+                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                // Heater requires the filter pump – auto-disable if filter is turned off.
+                // Bubble and UVC are physically dependent on the pump and handled by the firmware.
+                if (!boolVal) {
+                    const heaterState = await this.getStateAsync('control.heater');
+                    if (heaterState && heaterState.val) {
+                        this.log.info('filter OFF – auto-disabling heater');
+                        await this.setFeature('heater', false);
+                    }
+                }
+                return;
+            }
             case 'bubble': await this._setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
             case 'jet':    await this._setStatusCheck('send'); await this._api.setJetState(state);    return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
             case 'ozone':  await this._setStatusCheck('send'); await this._api.setOzoneState(state);  return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
