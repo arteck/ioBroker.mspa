@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.3 (2026-04-18)
+* (arteck) fix languages – remove BOM
+
 ## 0.2.2 (2026-04-18)
 * (arteck) fix languages
 

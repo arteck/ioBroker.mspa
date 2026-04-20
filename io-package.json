@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "news": {
+      "0.2.8": {
+        "en": "see Readme",
+        "de": "Siehe Readme",
+        "ru": "см. файл Readme",
+        "pt": "Consulte o arquivo Leia-me.",
+        "nl": "zie Readme",
+        "fr": "Voir le fichier Lisez-moi",
+        "it": "vedi il file Readme",
+        "es": "ver Léame",
+        "pl": "zobacz Readme",
+        "uk": "див. файл Readme",
+        "zh-cn": "请参阅自述文件"
+      },
       "0.2.7": {
         "en": "fix manual override",
         "de": "manuelles override reparieren",

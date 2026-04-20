@@ -53,7 +53,7 @@ class MspaAdapter extends utils.Adapter {
         // PV surplus control
         this._pvPower                  = null;
         this._pvHouse                  = null;
-        this._pvGrid                   = null;   // optional: net grid power (W); negative = feeding in = surplus
+        this._pvMspa                   = null;   // MSpa current power (W) from smart plug – used to correct house consumption
         this._pvActive                 = false;
         this._pvDeactivateTimer        = null;  // debounce timer for deactivation
         this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
@@ -614,19 +614,6 @@ class MspaAdapter extends utils.Adapter {
         }
         this.log.info(` initialising surplus control (threshold=${cfg.pv_threshold_w ?? 500} W, hysteresis=${cfg.pv_hysteresis_w ?? 100} W, heating=${!!cfg.pv_action_heating}, filter=${!!cfg.pv_action_filter}, targetTemp=${cfg.pv_target_temp ?? '—'}°C)`);
 
-        // --- Grid feed-in sensor (preferred – avoids MSpa self-consumption offset) ---
-        if (cfg.pv_net_grid_id) {
-            this.subscribeForeignStates(cfg.pv_net_grid_id);
-            const s = await this.getForeignStateAsync(cfg.pv_net_grid_id);
-            if (s && s.val !== null) {
-                this._pvGrid = s.val;
-                this.log.info(` initial grid power = ${this._pvGrid} W (negative = feeding in)  (id: ${cfg.pv_net_grid_id})`);
-            } else {
-                this.log.warn(` grid power state not available yet (id: ${cfg.pv_net_grid_id})`);
-            }
-            this.log.info(' PV surplus mode: GRID FEED-IN sensor (surplus = -gridPower) – MSpa self-consumption does not affect calculation');
-        }
-
         if (cfg.pv_power_generated_id) {
             this.subscribeForeignStates(cfg.pv_power_generated_id);
             const s = await this.getForeignStateAsync(cfg.pv_power_generated_id);
@@ -636,7 +623,7 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.warn(` PV generation state not available yet (id: ${cfg.pv_power_generated_id})`);
             }
-        } else if (!cfg.pv_net_grid_id) {
+        } else {
             this.log.warn('no Object-ID configured for PV generation – surplus control will not work');
         }
 
@@ -649,15 +636,27 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.warn(` house consumption state not available yet (id: ${cfg.pv_power_house_id})`);
             }
-        } else if (!cfg.pv_net_grid_id) {
+        } else {
             this.log.warn('no Object-ID configured for house consumption – surplus control will not work');
         }
 
-        if (!cfg.pv_net_grid_id && cfg.pv_power_generated_id && cfg.pv_power_house_id) {
-            this.log.info(' PV surplus mode: GENERATION − HOUSE CONSUMPTION – NOTE: if house consumption includes MSpa, set threshold ≥ MSpa power draw to avoid oscillation');
+        // MSpa current power (W) from smart plug – only available when consumption_enabled
+        if (cfg.consumption_enabled && cfg.external_power_w_id) {
+            this.subscribeForeignStates(cfg.external_power_w_id);
+            const s = await this.getForeignStateAsync(cfg.external_power_w_id);
+            if (s && s.val !== null) {
+                this._pvMspa = Number(s.val) || 0;
+                this.log.info(` initial MSpa power = ${this._pvMspa} W  (id: ${cfg.external_power_w_id})`);
+            } else {
+                this._pvMspa = 0;
+                this.log.warn(` MSpa power state not available yet (id: ${cfg.external_power_w_id})`);
+            }
+            this.log.info(' PV surplus mode: PV − (house − MSpa) – MSpa self-consumption is excluded from house load, no oscillation');
+        } else {
+            this.log.info(' PV surplus mode: PV generation only (no house correction) – threshold = minimum PV generation to activate');
         }
 
-        this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvGrid=${this._pvGrid}, pvActive=${this._pvActive}`);
+        this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvMspa=${this._pvMspa}, pvActive=${this._pvActive}`);
     }
 
     async onForeignStateChange(id, state) {
@@ -688,10 +687,10 @@ class MspaAdapter extends utils.Adapter {
             const prev = this._pvHouse;
             this._pvHouse = state.val;
             this.log.debug(`PV: house consumption updated ${prev} → ${this._pvHouse} W`);
-        } else if (id === cfg.pv_net_grid_id) {
-            const prev = this._pvGrid;
-            this._pvGrid = state.val;
-            this.log.debug(`PV: grid power updated ${prev} → ${this._pvGrid} W (surplus = ${-this._pvGrid} W)`);
+        } else if (cfg.consumption_enabled && id === cfg.external_power_w_id) {
+            const prev = this._pvMspa;
+            this._pvMspa = Number(state.val) || 0;
+            this.log.debug(`PV: MSpa power updated ${prev} → ${this._pvMspa} W`);
         } else {
             return; // not a PV id – consumption already handled above
         }
@@ -720,23 +719,27 @@ class MspaAdapter extends utils.Adapter {
         }
 
         // ── Surplus calculation ──────────────────────────────────────────────
-        // Mode A (preferred): grid feed-in sensor configured
-        //   surplus = -pvGrid  (negative grid = feeding to grid = available surplus)
-        //   MSpa self-consumption does NOT affect this value – the grid sensor already
-        //   accounts for everything the house draws, including the MSpa itself.
-        //   → threshold represents "how much we are feeding into the grid before activating MSpa"
+        // Mode A – consumption_enabled=true AND external_power_w_id configured:
+        //   surplus = pvPower − (pvHouse − pvMspa)
+        //   The MSpa's own load is subtracted from house consumption so that
+        //   turning MSpa ON does not reduce the surplus and cause oscillation.
+        //   Example: PV=3000W, house=3000W (incl. MSpa 2000W) → surplus = 3000−(3000−2000) = 2000W ✓
         //
-        // Mode B (fallback): generation + house consumption sensors
-        //   surplus = pvPower - pvHouse
-        //   WARNING: if pvHouse includes MSpa consumption, surplus drops when MSpa turns ON.
-        //   Set threshold ≥ MSpa power draw (e.g. 2000 W) to avoid oscillation.
+        // Mode B – consumption_enabled=false OR no external_power_w_id:
+        //   surplus = pvPower  (house consumption is not used)
+        //   pv_threshold_w = minimum PV generation required to activate MSpa.
+        //   Simple and safe when no smart plug is available.
         let surplus;
-        if (cfg.pv_net_grid_id && this._pvGrid !== null) {
-            surplus = -this._pvGrid;
-        } else if (this._pvPower !== null && this._pvHouse !== null) {
-            surplus = this._pvPower - this._pvHouse;
+        let surplusMode;
+        if (cfg.consumption_enabled && cfg.external_power_w_id && this._pvPower !== null && this._pvHouse !== null) {
+            const mspaLoad = this._pvMspa !== null ? this._pvMspa : 0;
+            surplus     = this._pvPower - (this._pvHouse - mspaLoad);
+            surplusMode = `PV(${this._pvPower})−(house(${this._pvHouse})−mspa(${mspaLoad}))`;
+        } else if (this._pvPower !== null) {
+            surplus     = this._pvPower;
+            surplusMode = `PV-only(${this._pvPower})`;
         } else {
-            this.log.debug(`PV: evaluation skipped – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvGrid=${this._pvGrid}`);
+            this.log.debug(`PV: evaluation skipped – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvMspa=${this._pvMspa}`);
             return;
         }
 
@@ -744,8 +747,7 @@ class MspaAdapter extends utils.Adapter {
         const hysteresis = Math.min(cfg.pv_hysteresis_w || 100, threshold);
         const offAt      = threshold - hysteresis;
 
-        const mode = (cfg.pv_net_grid_id && this._pvGrid !== null) ? `grid(${this._pvGrid}W→-grid)` : `gen-house(${this._pvPower}-${this._pvHouse})`;
-        this.log.debug(`PV: surplus=${surplus} W [${mode}] | threshold=${threshold} W | offAt=${offAt} W | pvActive=${this._pvActive} | managed=${JSON.stringify(this._pvManagedFeatures)}`);
+        this.log.debug(`PV: surplus=${surplus} W [${surplusMode}] | threshold=${threshold} W | offAt=${offAt} W | pvActive=${this._pvActive} | managed=${JSON.stringify(this._pvManagedFeatures)}`);
 
         const shouldActivate   = surplus >= threshold;
         const shouldDeactivate = surplus < offAt;
@@ -1830,8 +1832,12 @@ return;
         return this._sendTargetTempDirect(temp);
     }
 
-    /** Sends the target temperature directly to the API (no heater-state check).
-     *  Use this in automations that have just called setFeature('heater', true). */
+    /**
+     * Sends the target temperature directly to the API (no heater-state check).
+     * Use this in automations that have just called setFeature('heater', true).
+     *
+     * @param temp
+     */
     async _sendTargetTempDirect(temp) {
         this._adapterCommanded.target_temperature = temp;
         this._lastCommandTime = Date.now();

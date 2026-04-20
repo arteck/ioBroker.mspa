@@ -38,6 +38,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🌥️ Configurable cloud-protection delay before deactivation (minutes)
 - 📉 Hysteresis to prevent rapid on/off switching
 - 🔋 Independent of time window control – can be combined
+- ⚡ **MSpa current power input (W):** Connect a smart plug datapoint to provide the MSpa's live power draw. This value is automatically subtracted from house consumption so that the MSpa's own load does not reduce the calculated PV surplus – preventing oscillation when the device turns on
 - `computed.pv_deactivate_remaining` – shows remaining minutes of the cloud-protection delay in real time
 - **Staged deactivation** – when surplus drops away, the system shuts down in steps:
   1. **Heater OFF** (immediately) – if firmware already reached target temperature (heat_state=4), the API call is skipped
@@ -65,10 +66,12 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - **Optional auto-resume:** set `control.manual_override_duration` (minutes) before enabling – the adapter resumes automatically after the configured time. `0` = indefinite (manual reset required)
 - When override is disabled again, all automations are **immediately re-evaluated** with the latest device data
 - `control.manual_override` is always **reset to `false`** on adapter restart
+- **App change detection:** if the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for a configurable duration (minutes). Set to 0 to disable auto-detection
 - Typical use case: control the device via the MSpa app temporarily without the adapter interfering
 
 ### Consumption Tracking
-- 📈 Daily kWh tracking via external energy meter datapoint
+- 📈 Daily kWh tracking via external energy meter datapoint (e.g. smart plug)
+- When a **MSpa current power (W)** datapoint is configured, the MSpa's own load is automatically subtracted from house consumption for accurate PV surplus calculation and oscillation prevention
 - Resets automatically at midnight
 - Independent of season and time window control
 
@@ -79,6 +82,8 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - `status.uvc_hours_used` – total accumulated UVC operating hours
 - `status.uvc_today_hours` – UVC operating hours for today (resets at midnight)
 - `status.uvc_hours_remaining` – remaining hours until rated lifetime is reached
+- **Minimum daily runtime:** the adapter ensures the UVC lamp runs at least a configurable number of hours per day. Both PV staged shutdown and the daily ensure function respect this value
+- **Daily ensure start time:** from a configurable time of day, the adapter guarantees the daily UVC minimum has been reached. The filter pump is started automatically if needed
 - Estimated expiry date is calculated from average daily usage (remaining hours ÷ avg h/day)
 - Warns 30 days before estimated expiry and when lifetime is exhausted
 
@@ -91,10 +96,11 @@ Controls MSpa hot tubs via the MSpa Cloud API
   - ❄️ Frost protection activated / deactivated
   - 🔧 Manual override enabled / disabled (with duration if set)
 - Supports multiple recipients (comma-separated usernames)
+- 🌐 **Configurable notification language** (English / Deutsch) – selectable in the Notifications tab
 
 ---
 
-## Datapoints
+## Datapoints see Wiki
 
 ### `status.*`
 | Datapoint | Description |
@@ -146,31 +152,31 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
-### **WORK IN PROGRESS**
-* (arteck) new logic for uv lamp
+### 0.2.8 (2026-04-20)
+* (arteck) new logic for uvc lamp – minimum daily runtime, daily ensure start time
 * (arteck) new logic for heater on and set temperature
-* (arteck) fix pv logic 
+* (arteck) fix pv logic
+* (arteck) add MSpa current power consumption in watts from an external source (smart plug) for accurate PV surplus calculation and oscillation prevention
+* (arteck) app change detection – auto manual override when MSpa app changes device state
+* (arteck) notification language selector (English / Deutsch)
 
 ### 0.2.7 (2026-04-19)
 * (arteck) fix manual override
 
 ### 0.2.6 (2026-04-19)
-* (arteck) skip uv lamp daily duration 
-* (arteck) add language selector for telegramm message
+* (arteck) skip uvc lamp daily duration
+* (arteck) add language selector for telegram messages
 
 ### 0.2.5 (2026-04-19)
 * (arteck) fix uvc_expiry_date
 
 ### 0.2.4 (2026-04-19)
-* (arteck) add cloud delay, heater delay uvc delay
-* (arteck) add min duration uv-lamp 
-* (arteck) winter modus refactoring
-* (arteck) add manual_override modus
-* (arteck) add app value change automatic detection 
+* (arteck) add cloud delay, heater delay, uvc delay
+* (arteck) add min duration uvc-lamp
+* (arteck) winter mode refactoring
+* (arteck) add manual_override mode
+* (arteck) add app value change automatic detection
 * (arteck) fix consumption
-
-### 0.2.3 (2026-04-18)
-* (arteck) fix languages del BOM
 
 ## License
 

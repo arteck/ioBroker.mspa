@@ -240,7 +240,7 @@
         "pv_power_house_id": {
           "type": "objectId",
           "label": "Object ID house consumption (W)",
-          "help": "Datapoint containing current house consumption in Watts. NOTE: if this includes MSpa consumption, set threshold ≥ MSpa power draw to avoid oscillation. Use the grid sensor below for a more robust measurement.",
+          "help": "Datapoint containing total house consumption in Watts (may include MSpa). When consumption tracking is enabled, the MSpa load is automatically subtracted to avoid oscillation.",
           "default": "",
           "xs": 12,
           "sm": 6,
@@ -248,22 +248,23 @@
           "lg": 6,
           "xl": 6
         },
-        "pv_net_grid_id": {
+        "external_power_w_id": {
           "type": "objectId",
-          "label": "Object ID grid feed-in / import (W) – recommended",
-          "help": "Datapoint from your energy manager with current grid power in Watts. Negative = feeding into grid (surplus), positive = drawing from grid. When set, this is used instead of generation minus consumption – MSpa self-consumption does not affect the calculation and avoids oscillation.",
+          "label": "Object ID MSpa current power (W)",
+          "help": "Datapoint of the smart plug providing the MSpa's current power draw in Watts. When set, this is subtracted from house consumption so that the MSpa's own load does not reduce the calculated PV surplus (avoids oscillation when MSpa turns on).",
           "default": "",
           "newLine": true,
           "xs": 12,
           "sm": 6,
           "md": 6,
           "lg": 6,
-          "xl": 6
+          "xl": 6,
+          "hidden": "!data.consumption_enabled"
         },
         "pv_threshold_w": {
           "type": "number",
           "label": "PV surplus threshold (W)",
-          "help": "Minimum surplus (PV generation minus house consumption) to activate the whirlpool",
+          "help": "Consumption tracking OFF: minimum PV generation (W) to activate MSpa (house consumption ignored). Consumption tracking ON: minimum surplus = PV − (house − MSpa own load).",
           "default": 500,
           "min": 0,
           "max": 10000,
@@ -333,7 +334,7 @@
         "consumption_enabled": {
           "type": "checkbox",
           "label": "Enable consumption tracking",
-          "help": "Calculate daily kWh consumption via an external energy meter (e.g. smart plug)",
+          "help": "Track daily kWh consumption via an external energy meter (e.g. smart plug). Also enables the MSpa current power correction for accurate PV surplus calculation.",
           "default": false,
           "newLine": true,
           "xs": 12,
