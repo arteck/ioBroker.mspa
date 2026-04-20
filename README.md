@@ -152,6 +152,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) add info.statusCheck 
+
 ### 0.2.10 (2026-04-20)
 * (arteck) fix uvc_ensure_skip_today
 

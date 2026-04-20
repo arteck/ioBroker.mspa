@@ -1326,6 +1326,12 @@ lastWinEnd = endMin;
             native: {},
         });
 
+        await this.setObjectNotExistsAsync('info.statusCheck', {
+            type: 'state',
+            common: { name: 'Last command status', type: 'string', role: 'text', read: true, write: false, def: '' },
+            native: {},
+        });
+
         for (const [id, def] of Object.entries(STATE_DEFS)) {
             const common = {
                 id:    id,
@@ -1758,6 +1764,13 @@ return;
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Command status helper
+    // -------------------------------------------------------------------------
+    async _setStatusCheck(status) {
+        await this.setStateAsync('info.statusCheck', { val: status, ack: true });
+    }
+
     async setFeature(feature, boolVal) {
         const state = boolVal ? 1 : 0;
         if (feature in this._adapterCommanded) {
@@ -1784,7 +1797,9 @@ return;
 
         switch (feature) {
             case 'heater': {
+                await this._setStatusCheck('send');
                 const result = await this._api.setHeaterState(state);
+                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 if (boolVal && this._pendingTargetTemp !== null) {
                     // Heater just switched ON → send pending target temperature after 10 s
                     if (this._pendingTempTimer) {
@@ -1810,11 +1825,11 @@ return;
                 }
                 return result;
             }
-            case 'filter': return this._api.setFilterState(state);
-            case 'bubble': return this._api.setBubbleState(state, this._lastData.bubble_level || 1);
-            case 'jet':    return this._api.setJetState(state);
-            case 'ozone':  return this._api.setOzoneState(state);
-            case 'uvc':    return this._api.setUvcState(state);
+            case 'filter': await this._setStatusCheck('send'); await this._api.setFilterState(state); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'bubble': await this._setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'jet':    await this._setStatusCheck('send'); await this._api.setJetState(state);    return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'ozone':  await this._setStatusCheck('send'); await this._api.setOzoneState(state);  return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'uvc':    await this._setStatusCheck('send'); await this._api.setUvcState(state);    return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
         }
     }
 
@@ -1841,7 +1856,10 @@ return;
     async _sendTargetTempDirect(temp) {
         this._adapterCommanded.target_temperature = temp;
         this._lastCommandTime = Date.now();
-        return this._api.setTemperatureSetting(temp);
+        await this._setStatusCheck('send');
+        const result = await this._api.setTemperatureSetting(temp);
+        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+        return result;
     }
 
     // -------------------------------------------------------------------------
