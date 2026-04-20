@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.9",
+    "version": "0.2.10",
     "news": {
+      "0.2.10": {
+        "en": "fix uvc_ensure_skip_today",
+        "de": "uvc ensure skip today",
+        "ru": "скачать uvc ensure skip today",
+        "pt": "corrigir uvc  assure  skip  hoje",
+        "nl": "fix uvc ensure skip today",
+        "fr": "réparer uvc ensur skip today",
+        "it": "fix uvc ensure skip today",
+        "es": "arreglar uvc ensure skip today",
+        "pl": "fix uvc _ ensure _ skip _ today",
+        "uk": "javascript licenses api веб-сайт go1.13.8",
+        "zh-cn": "修复 uvc ensure skip today"
+      },
       "0.2.9": {
         "en": "typo",
         "de": "typo",
@@ -80,19 +93,6 @@
         "pl": "dodaj opóźnienie w chmurze, opóźnienie w ogrzewaniu uvc\ndodaj min czasu trwania uv- lampa\nrefaktoring modus zimowy\nadd manual _ deverse modus\ndodawanie wartości aplikacji zmienić automatyczne wykrywanie\nzużycie stałe",
         "uk": "додати хмарну затримку, затримку обігрівача uvc\nдодати тривалість uv-lamp\nрефакторинг зимових модусів\nдодати керівництво override модус\nдодати зміни значення програми автоматичного виявлення\nспоживана фіксація",
         "zh-cn": "添加云延迟, 加热器延迟 uvc 延迟\n添加分钟持续时间u-lamp\n冬季临时设计\n添加手动覆盖操作\n添加应用值变化自动检测\n固定消费"
-      },
-      "0.2.3": {
-        "en": "fix languages del BOM",
-        "de": "fix languages del BOM",
-        "ru": "языки дель БОМ",
-        "pt": "corrigir línguas do BOM",
-        "nl": "fix languages del BOM",
-        "fr": "fixer les langues del BOM",
-        "it": "lingue corrette del BOM",
-        "es": "arreglar idiomas del BOM",
-        "pl": "naprawić języki del BOM",
-        "uk": "english Русский Українська",
-        "zh-cn": "bOM 语言"
       }
     },
     "titleLang": {

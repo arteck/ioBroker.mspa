@@ -1948,9 +1948,18 @@ await this.checkFrostProtection(this._lastData);
                 if (skip) {
                     this.log.info('UVC daily ensure: skip requested by user – pausing for today');
                     await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
-                    // stop immediately if currently running
+                    // stop immediately if ensure is currently running
                     if (this._uvcEnsureActive) {
                         await this._stopUvcEnsure();
+                    } else {
+                        // ensure was not active, but UVC may still be ON (e.g. started by time window
+                        // or manually) – if so, turn it off as an explicit manual abort
+                        const uvcState = await this.getStateAsync('control.uvc');
+                        if (uvcState && uvcState.val) {
+                            this.log.info('UVC daily ensure: UVC is ON – switching OFF (manual abort via skip)');
+                            await this.setFeature('uvc', false);
+                            this.enableRapidPolling();
+                        }
                     }
                 } else {
                     this.log.info('UVC daily ensure: skip cancelled – ensure active again');
