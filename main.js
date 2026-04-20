@@ -84,6 +84,11 @@ class MspaAdapter extends utils.Adapter {
         this._uvcEnsureSkipToday    = false;  // true = user skipped ensure for today (resets at midnight)
         this._uvcEnsureSkipDate     = '';     // date when skip was set (for midnight auto-reset)
 
+        // Pending target temperature: stored when heater is not yet running;
+        // sent 10 s after the heater is switched on (API only accepts temp while heating)
+        this._pendingTargetTemp     = null;   // desired temperature waiting for heater ON
+        this._pendingTempTimer      = null;   // setTimeout handle for 10 s delay
+
         // Time window control
         this._timeTimer             = null;
         this._timeWindowActive      = [false, false, false]; // state per window (1-3)
@@ -196,6 +201,9 @@ class MspaAdapter extends utils.Adapter {
 }
         if (this._uvcEnsureTimer)            {
  clearInterval(this._uvcEnsureTimer); 
+}
+        if (this._pendingTempTimer)          {
+ clearTimeout(this._pendingTempTimer);
 }
         for (const t of this._pumpFollowUpTimers) {
             if (t) {
@@ -314,8 +322,12 @@ class MspaAdapter extends utils.Adapter {
                         this.log.debug(`Time control [${i + 1}]: heater ON`);
                         await this.setFeature('heater', true);
                         if (w.target_temp) {
-                            this.log.debug(`Time control [${i + 1}]: target temperature → ${w.target_temp}°C`);
-                            await this.setTargetTemp(w.target_temp);
+                            this.log.debug(`Time control [${i + 1}]: target temperature → ${w.target_temp}°C – sending in 10 s`);
+                            setTimeout(() => {
+                                this._sendTargetTempDirect(w.target_temp).catch(e =>
+                                    this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
+                                );
+                            }, 10_000);
                         }
                     }
                     if (w.action_filter) {
@@ -714,8 +726,12 @@ class MspaAdapter extends utils.Adapter {
                             await this.setFeature('heater', true);
                             this._pvManagedFeatures.heater = true;
                             if (w.target_temp) {
-await this.setTargetTemp(w.target_temp);
-}
+                                setTimeout(() => {
+                                    this._sendTargetTempDirect(w.target_temp).catch(e =>
+                                        this.log.error(`PV: target temperature send FAILED – ${e.message}`)
+                                    );
+                                }, 10_000);
+                            }
                         }
                         if (w.action_filter) {
                             await this.setFeature('filter', true);
@@ -811,8 +827,12 @@ clearInterval(this._pvDeactivateCountdownInt);
                     await this.setFeature('heater', true);
                     this._pvManagedFeatures.heater = true;
                     if (w.target_temp) {
-await this.setTargetTemp(w.target_temp);
-}
+                        setTimeout(() => {
+                            this._sendTargetTempDirect(w.target_temp).catch(e =>
+                                this.log.error(`PV: target temperature send FAILED – ${e.message}`)
+                            );
+                        }, 10_000);
+                    }
                 }
                 if (w.action_uvc && !this._pvManagedFeatures.uvc && this._pvManagedFeatures.filter) {
                     await this.setFeature('uvc', true);
@@ -1082,10 +1102,50 @@ return;
         }
 
         // Not enough hours yet – should we start?
-        if (nowMinutes < ensureMin) {
-            this.log.debug(`UVC daily ensure: too early (${ensureTime} not reached yet) – waiting`);
+
+        // --- Wait until all time windows for today have ended ----------------
+        // If any time window is currently active, defer – UVC may still accumulate
+        // hours inside the window.
+        const anyWindowActive = this._timeWindowActive.some(v => v);
+        if (anyWindowActive) {
+            this.log.debug('UVC daily ensure: time window still active – deferring until last window ends');
             return;
         }
+
+        // Calculate the latest end time of all active time windows scheduled for today
+        const windows   = this.config.timeWindows;
+        const day       = now.getDay();
+        const dayKeys   = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
+        let lastWinEnd  = -1; // in minutes since 00:00; -1 = no window today
+
+        if (Array.isArray(windows)) {
+            for (const w of windows) {
+                if (!w.active || !w[dayKeys[day]]) {
+continue;
+}
+                const [endH, endM] = (w.end || '00:00').split(':').map(Number);
+                const endMin = (endH || 0) * 60 + (endM || 0);
+                if (endMin > lastWinEnd) {
+lastWinEnd = endMin;
+}
+            }
+        }
+
+        // Start if ensureTime is reached OR (there were windows today and the last one has ended)
+        const ensureTimeReached = nowMinutes >= ensureMin;
+        const lastWindowPassed  = lastWinEnd >= 0 && nowMinutes >= lastWinEnd;
+
+        if (!ensureTimeReached && !lastWindowPassed) {
+            if (lastWinEnd >= 0) {
+                const endHH = Math.floor(lastWinEnd / 60).toString().padStart(2, '0');
+                const endMM = (lastWinEnd % 60).toString().padStart(2, '0');
+                this.log.debug(`UVC daily ensure: waiting – ensureTime ${ensureTime} not reached and last window ends at ${endHH}:${endMM}`);
+            } else {
+                this.log.debug(`UVC daily ensure: too early (${ensureTime} not reached yet) – waiting`);
+            }
+            return;
+        }
+        // ---------------------------------------------------------------------
 
         // Time to ensure the minimum → start if not already running
         if (!this._uvcEnsureActive) {
@@ -1641,8 +1701,51 @@ return;
         }
         // Mark command time – app-change detection will be suppressed for 30 s
         this._lastCommandTime = Date.now();
+
+        // UVC can only be switched on when the filter pump is already running.
+        // If the pump is not running yet, wait up to 15 s for it to start.
+        if (feature === 'uvc' && boolVal) {
+            const filterState = await this.getStateAsync('control.filter');
+            const filterOn    = filterState && !!filterState.val;
+            if (!filterOn) {
+                this.log.info('UVC ON deferred – filter not running yet, waiting up to 15 s');
+                await new Promise(resolve => setTimeout(resolve, 15_000));
+                // Re-check after waiting
+                const filterStateNow = await this.getStateAsync('control.filter');
+                if (!filterStateNow || !filterStateNow.val) {
+                    this.log.warn('UVC ON: filter still not running after 15 s – sending UVC command anyway');
+                }
+            }
+        }
+
         switch (feature) {
-            case 'heater': return this._api.setHeaterState(state);
+            case 'heater': {
+                const result = await this._api.setHeaterState(state);
+                if (boolVal && this._pendingTargetTemp !== null) {
+                    // Heater just switched ON → send pending target temperature after 10 s
+                    if (this._pendingTempTimer) {
+                        clearTimeout(this._pendingTempTimer);
+                    }
+                    const pendingTemp = this._pendingTargetTemp;
+                    this._pendingTempTimer = setTimeout(async () => {
+                        this._pendingTempTimer = null;
+                        this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
+                        try {
+                            await this._sendTargetTempDirect(pendingTemp);
+                            this._pendingTargetTemp = null;
+                        } catch (err) {
+                            this.log.error(`target_temperature: delayed send FAILED – ${err.message}`);
+                        }
+                    }, 10_000);
+                } else if (!boolVal) {
+                    // Heater switched OFF → cancel any pending temperature command
+                    if (this._pendingTempTimer) {
+                        clearTimeout(this._pendingTempTimer);
+                        this._pendingTempTimer = null;
+                    }
+                }
+                return result;
+            }
             case 'filter': return this._api.setFilterState(state);
             case 'bubble': return this._api.setBubbleState(state, this._lastData.bubble_level || 1);
             case 'jet':    return this._api.setJetState(state);
@@ -1652,6 +1755,22 @@ return;
     }
 
     async setTargetTemp(temp) {
+        // If heater is not currently on (user command via state), store as pending.
+        // Automations that just called setFeature('heater', true) use _scheduleTargetTempAfterHeaterOn().
+        const heaterState = await this.getStateAsync('control.heater');
+        const heaterOn    = heaterState && !!heaterState.val;
+        if (!heaterOn) {
+            this._pendingTargetTemp = temp;
+            this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
+            return;
+        }
+        this._pendingTargetTemp = null;
+        return this._sendTargetTempDirect(temp);
+    }
+
+    /** Sends the target temperature directly to the API (no heater-state check).
+     *  Use this in automations that have just called setFeature('heater', true). */
+    async _sendTargetTempDirect(temp) {
         this._adapterCommanded.target_temperature = temp;
         this._lastCommandTime = Date.now();
         return this._api.setTemperatureSetting(temp);
