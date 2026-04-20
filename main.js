@@ -53,6 +53,7 @@ class MspaAdapter extends utils.Adapter {
         // PV surplus control
         this._pvPower                  = null;
         this._pvHouse                  = null;
+        this._pvGrid                   = null;   // optional: net grid power (W); negative = feeding in = surplus
         this._pvActive                 = false;
         this._pvDeactivateTimer        = null;  // debounce timer for deactivation
         this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
@@ -151,6 +152,8 @@ class MspaAdapter extends utils.Adapter {
         this._manualOverride = false;
         await this.setStateAsync('control.manual_override',         false, true);
         await this.setStateAsync('control.manual_override_duration', 0,    true);
+        // pv_deactivate_remaining always resets to 0 on adapter restart (no running timer)
+        await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
         // uvc_ensure_skip_today: restore from state (valid only if date matches today)
         const skipState = await this.getStateAsync('control.uvc_ensure_skip_today');
         this._uvcEnsureSkipToday = skipState && skipState.val === true ? true : false;
@@ -611,6 +614,19 @@ class MspaAdapter extends utils.Adapter {
         }
         this.log.info(` initialising surplus control (threshold=${cfg.pv_threshold_w ?? 500} W, hysteresis=${cfg.pv_hysteresis_w ?? 100} W, heating=${!!cfg.pv_action_heating}, filter=${!!cfg.pv_action_filter}, targetTemp=${cfg.pv_target_temp ?? '—'}°C)`);
 
+        // --- Grid feed-in sensor (preferred – avoids MSpa self-consumption offset) ---
+        if (cfg.pv_net_grid_id) {
+            this.subscribeForeignStates(cfg.pv_net_grid_id);
+            const s = await this.getForeignStateAsync(cfg.pv_net_grid_id);
+            if (s && s.val !== null) {
+                this._pvGrid = s.val;
+                this.log.info(` initial grid power = ${this._pvGrid} W (negative = feeding in)  (id: ${cfg.pv_net_grid_id})`);
+            } else {
+                this.log.warn(` grid power state not available yet (id: ${cfg.pv_net_grid_id})`);
+            }
+            this.log.info(' PV surplus mode: GRID FEED-IN sensor (surplus = -gridPower) – MSpa self-consumption does not affect calculation');
+        }
+
         if (cfg.pv_power_generated_id) {
             this.subscribeForeignStates(cfg.pv_power_generated_id);
             const s = await this.getForeignStateAsync(cfg.pv_power_generated_id);
@@ -620,8 +636,8 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.warn(` PV generation state not available yet (id: ${cfg.pv_power_generated_id})`);
             }
-        } else {
-            this.log.warn( 'no Object-ID configured for PV generation – surplus control will not work');
+        } else if (!cfg.pv_net_grid_id) {
+            this.log.warn('no Object-ID configured for PV generation – surplus control will not work');
         }
 
         if (cfg.pv_power_house_id) {
@@ -633,11 +649,15 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.warn(` house consumption state not available yet (id: ${cfg.pv_power_house_id})`);
             }
-        } else {
-            this.log.warn( 'no Object-ID configured for house consumption – surplus control will not work');
+        } else if (!cfg.pv_net_grid_id) {
+            this.log.warn('no Object-ID configured for house consumption – surplus control will not work');
         }
 
-        this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvActive=${this._pvActive}`);
+        if (!cfg.pv_net_grid_id && cfg.pv_power_generated_id && cfg.pv_power_house_id) {
+            this.log.info(' PV surplus mode: GENERATION − HOUSE CONSUMPTION – NOTE: if house consumption includes MSpa, set threshold ≥ MSpa power draw to avoid oscillation');
+        }
+
+        this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvGrid=${this._pvGrid}, pvActive=${this._pvActive}`);
     }
 
     async onForeignStateChange(id, state) {
@@ -668,6 +688,10 @@ class MspaAdapter extends utils.Adapter {
             const prev = this._pvHouse;
             this._pvHouse = state.val;
             this.log.debug(`PV: house consumption updated ${prev} → ${this._pvHouse} W`);
+        } else if (id === cfg.pv_net_grid_id) {
+            const prev = this._pvGrid;
+            this._pvGrid = state.val;
+            this.log.debug(`PV: grid power updated ${prev} → ${this._pvGrid} W (surplus = ${-this._pvGrid} W)`);
         } else {
             return; // not a PV id – consumption already handled above
         }
@@ -695,17 +719,33 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
 
-        if (this._pvPower === null || this._pvHouse === null) {
-            this.log.debug(`PV: evaluation skipped – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}`);
+        // ── Surplus calculation ──────────────────────────────────────────────
+        // Mode A (preferred): grid feed-in sensor configured
+        //   surplus = -pvGrid  (negative grid = feeding to grid = available surplus)
+        //   MSpa self-consumption does NOT affect this value – the grid sensor already
+        //   accounts for everything the house draws, including the MSpa itself.
+        //   → threshold represents "how much we are feeding into the grid before activating MSpa"
+        //
+        // Mode B (fallback): generation + house consumption sensors
+        //   surplus = pvPower - pvHouse
+        //   WARNING: if pvHouse includes MSpa consumption, surplus drops when MSpa turns ON.
+        //   Set threshold ≥ MSpa power draw (e.g. 2000 W) to avoid oscillation.
+        let surplus;
+        if (cfg.pv_net_grid_id && this._pvGrid !== null) {
+            surplus = -this._pvGrid;
+        } else if (this._pvPower !== null && this._pvHouse !== null) {
+            surplus = this._pvPower - this._pvHouse;
+        } else {
+            this.log.debug(`PV: evaluation skipped – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvGrid=${this._pvGrid}`);
             return;
         }
 
-        const surplus    = this._pvPower - this._pvHouse;
         const threshold  = cfg.pv_threshold_w  || 500;
         const hysteresis = Math.min(cfg.pv_hysteresis_w || 100, threshold);
         const offAt      = threshold - hysteresis;
 
-        this.log.debug(`PV: surplus=${surplus} W | threshold=${threshold} W | offAt=${offAt} W | pvActive=${this._pvActive} | managed=${JSON.stringify(this._pvManagedFeatures)}`);
+        const mode = (cfg.pv_net_grid_id && this._pvGrid !== null) ? `grid(${this._pvGrid}W→-grid)` : `gen-house(${this._pvPower}-${this._pvHouse})`;
+        this.log.debug(`PV: surplus=${surplus} W [${mode}] | threshold=${threshold} W | offAt=${offAt} W | pvActive=${this._pvActive} | managed=${JSON.stringify(this._pvManagedFeatures)}`);
 
         const shouldActivate   = surplus >= threshold;
         const shouldDeactivate = surplus < offAt;
@@ -778,19 +818,27 @@ this.enableRapidPolling();
 
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', delayMin, true);
-            if (this._pvDeactivateCountdownInt) {
-clearInterval(this._pvDeactivateCountdownInt);
-}
-            this._pvDeactivateCountdownInt = setInterval(async () => {
-                this._pvDeactivateCountdown = Math.max(0, this._pvDeactivateCountdown - 1);
-                await this.setStateAsync('computed.pv_deactivate_remaining', this._pvDeactivateCountdown, true);
-            }, 60_000);
+
+            // Countdown interval: only start when there is actually a delay to count down
+            if (delayMin > 0) {
+                if (this._pvDeactivateCountdownInt) {
+                    clearInterval(this._pvDeactivateCountdownInt);
+                }
+                const startedAt = Date.now();
+                this._pvDeactivateCountdownInt = setInterval(async () => {
+                    const elapsedMin = Math.floor((Date.now() - startedAt) / 60_000);
+                    const remaining  = Math.max(0, delayMin - elapsedMin);
+                    this._pvDeactivateCountdown = remaining;
+                    await this.setStateAsync('computed.pv_deactivate_remaining', remaining, true);
+                }, 60_000);
+            }
 
             this._pvDeactivateTimer = setTimeout(async () => {
                 this._pvDeactivateTimer = null;
                 if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
-}
+                    clearInterval(this._pvDeactivateCountdownInt);
+                    this._pvDeactivateCountdownInt = null;
+                }
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
 

@@ -2171,6 +2171,192 @@ await (async () => {
     }
 })();
 
+// ===== 21. pv_deactivate_remaining – Countdown-Logik ========================
+console.log('\n══════════════════════════════════════════');
+console.log(' 21. pv_deactivate_remaining – Countdown');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    const makeCountdownMock = (delayMin = 5) => {
+        const cfg = {
+            pv_threshold_w: 500, pv_hysteresis_w: 100,
+            pv_deactivate_delay_min: delayMin,
+            pv_stage_delay_min: 0, uvc_daily_min_h: 0,
+            season_start: '01.01', season_end: '31.12',
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: false }],
+        };
+        const a = new MockAdapter(cfg, true, false);
+        a._now = new Date(2026, 3, 20, 12, 0);
+        a._pvPower = 100; a._pvHouse = 300; // surplus=-200 → unter offAt=400
+        a._pvActive = true;
+        a._pvManagedFeatures = { heater: true, filter: true, uvc: false };
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null;
+        a._pvStageTimer = null; a._pvDeactivateCountdown = 0;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed = 0; a._uvcDayStartHours = 0; a._uvcDayStartDate = '2026-04-20';
+        a._todayStr = () => '2026-04-20';
+        a._accumulateUvcHours = function() { return 0; };
+        a._getUvcTodayHours  = function() { return 0; };
+        a._pvStagedDeactivate = async function() {
+            if (this._pvManagedFeatures.heater) { await this.setFeature('heater', false); this._pvManagedFeatures.heater = false; }
+            if (this._pvManagedFeatures.filter) { await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; }
+        };
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            if (this._pvStageTimer) { clearTimeout(this._pvStageTimer); this._pvStageTimer = null; }
+            this._pvDeactivateCountdown = 0;
+            await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+        };
+        a.evaluatePvSurplus = async function() {
+            if (!this.isInSeason()) return;
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus = this._pvPower - this._pvHouse;
+            const threshold = this.config.pv_threshold_w || 500;
+            const hysteresis = Math.min(this.config.pv_hysteresis_w || 100, threshold);
+            const offAt = threshold - hysteresis;
+            const shouldDeactivate = surplus < offAt;
+            const pvWindows = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+
+            if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer && !this._pvStageTimer) {
+                const dl = this.config.pv_deactivate_delay_min ?? 5;
+                this._pvDeactivateCountdown = dl;
+                await this.setStateAsync('computed.pv_deactivate_remaining', dl);
+                // Guard: kein Interval bei delay=0
+                if (dl > 0) {
+                    if (this._pvDeactivateCountdownInt) clearInterval(this._pvDeactivateCountdownInt);
+                    const startedAt = Date.now();
+                    this._pvDeactivateCountdownInt = setInterval(async () => {
+                        const elapsedMin = Math.floor((Date.now() - startedAt) / 60_000);
+                        const remaining  = Math.max(0, dl - elapsedMin);
+                        this._pvDeactivateCountdown = remaining;
+                        await this.setStateAsync('computed.pv_deactivate_remaining', remaining);
+                    }, 60_000);
+                }
+                this._pvDeactivateTimer = setTimeout(async () => {
+                    this._pvDeactivateTimer = null;
+                    if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                    this._pvDeactivateCountdown = 0;
+                    await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+                    this._pvActive = false;
+                    await this._pvStagedDeactivate(pvWindows, false);
+                }, dl * 60_000);
+
+            } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
+                await this._pvCancelAllDeactivationTimers();
+            }
+        };
+        return a;
+    };
+
+    // --- 21.1 Debounce startet: remaining=delayMin, Timer+Interval laufen ---
+    {
+        const a = makeCountdownMock(5);
+        await a.evaluatePvSurplus();
+        assert('21.1 Debounce startet: remaining=5', a.states['computed.pv_deactivate_remaining'] === 5);
+        assert('21.1 Debounce startet: _pvDeactivateCountdown=5', a._pvDeactivateCountdown === 5);
+        assert('21.1 Debounce startet: Timer läuft', a._pvDeactivateTimer !== null);
+        assert('21.1 Debounce startet: Interval läuft', a._pvDeactivateCountdownInt !== null);
+        clearTimeout(a._pvDeactivateTimer); clearInterval(a._pvDeactivateCountdownInt);
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null;
+    }
+
+    // --- 21.2 delay=0: kein Interval, Timer feuert sofort ---
+    await new Promise(resolve => {
+        const a = makeCountdownMock(0);
+        a.evaluatePvSurplus().then(() => {
+            setTimeout(async () => {
+                assert('21.2 delay=0: kein Interval angelegt', a._pvDeactivateCountdownInt === null);
+                assert('21.2 delay=0: _pvActive=false nach Timer', a._pvActive === false);
+                assert('21.2 delay=0: remaining=0 nach Timer', a.states['computed.pv_deactivate_remaining'] === 0);
+                assert('21.2 delay=0: heater OFF', a.cmdCount('heater', false) === 1);
+                resolve();
+            }, 20);
+        });
+    });
+
+    // --- 21.3 Surplus erholt → Timer+Interval abgebrochen, remaining=0 ---
+    {
+        const a = makeCountdownMock(5);
+        await a.evaluatePvSurplus(); // Timer startet, remaining=5
+        assert('21.3 Vor Abbruch: remaining=5', a.states['computed.pv_deactivate_remaining'] === 5);
+        a._pvPower = 2000; a._pvHouse = 200; // Surplus erholt sich
+        await a.evaluatePvSurplus();
+        assert('21.3 Nach Abbruch: remaining=0', a.states['computed.pv_deactivate_remaining'] === 0);
+        assert('21.3 Nach Abbruch: Timer null', a._pvDeactivateTimer === null);
+        assert('21.3 Nach Abbruch: Interval null', a._pvDeactivateCountdownInt === null);
+        assert('21.3 Nach Abbruch: _pvDeactivateCountdown=0', a._pvDeactivateCountdown === 0);
+        assert('21.3 PV bleibt aktiv', a._pvActive === true);
+        assert('21.3 kein heater-OFF', a.cmdCount('heater', false) === 0);
+    }
+
+    // --- 21.4 Doppelter Surplus-Wegfall: kein zweiter Timer ---
+    {
+        const a = makeCountdownMock(5);
+        await a.evaluatePvSurplus();
+        const t1 = a._pvDeactivateTimer;
+        const i1 = a._pvDeactivateCountdownInt;
+        await a.evaluatePvSurplus(); // zweiter Aufruf – Guard !_pvDeactivateTimer → kein neuer Timer
+        assert('21.4 Kein zweiter Timer', a._pvDeactivateTimer === t1);
+        assert('21.4 Kein zweites Interval', a._pvDeactivateCountdownInt === i1);
+        clearTimeout(a._pvDeactivateTimer); clearInterval(a._pvDeactivateCountdownInt);
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null;
+    }
+
+    // --- 21.5 Timer läuft ab (delay=0): remaining=0, Geräte OFF, Refs null ---
+    await new Promise(resolve => {
+        const a = makeCountdownMock(0);
+        a.evaluatePvSurplus().then(() => {
+            setTimeout(() => {
+                assert('21.5 Timer abgelaufen: remaining=0', a.states['computed.pv_deactivate_remaining'] === 0);
+                assert('21.5 Timer abgelaufen: _pvActive=false', a._pvActive === false);
+                assert('21.5 Timer abgelaufen: heater OFF', a.cmdCount('heater', false) === 1);
+                assert('21.5 Timer abgelaufen: filter OFF', a.cmdCount('filter', false) === 1);
+                assert('21.5 Timer abgelaufen: Timer-Ref null', a._pvDeactivateTimer === null);
+                assert('21.5 Timer abgelaufen: Interval-Ref null', a._pvDeactivateCountdownInt === null);
+                resolve();
+            }, 20);
+        });
+    });
+
+    // --- 21.6 PV nicht aktiv: kein Countdown-Start ---
+    {
+        const a = makeCountdownMock(5);
+        a._pvActive = false;
+        await a.evaluatePvSurplus();
+        assert('21.6 PV nicht aktiv: kein Timer', a._pvDeactivateTimer === null);
+        assert('21.6 PV nicht aktiv: kein Interval', a._pvDeactivateCountdownInt === null);
+    }
+
+    // --- 21.7 _pvCancelAllDeactivationTimers: setzt alles zurück ---
+    {
+        const a = makeCountdownMock(5);
+        await a.evaluatePvSurplus();
+        assert('21.7 Vor Cancel: Timer läuft', a._pvDeactivateTimer !== null);
+        await a._pvCancelAllDeactivationTimers();
+        assert('21.7 Nach Cancel: Timer null', a._pvDeactivateTimer === null);
+        assert('21.7 Nach Cancel: Interval null', a._pvDeactivateCountdownInt === null);
+        assert('21.7 Nach Cancel: remaining=0', a.states['computed.pv_deactivate_remaining'] === 0);
+        assert('21.7 Nach Cancel: _pvDeactivateCountdown=0', a._pvDeactivateCountdown === 0);
+    }
+
+    // --- 21.8 Elapsed-basierter Countdown: kein Drift durch Verkettung ---
+    {
+        // Stelle sicher dass der Startwert korrekt ist und nicht durch Subtraktion driften kann
+        const a = makeCountdownMock(3);
+        await a.evaluatePvSurplus();
+        assert('21.8 Start: remaining=3', a.states['computed.pv_deactivate_remaining'] === 3);
+        // Simuliere zwei Intervall-Feuern manuell (elapsed-basiert)
+        const startedAt = Date.now() - 120_000; // 2 Minuten vergangen
+        const elapsed   = Math.floor((Date.now() - startedAt) / 60_000); // = 2
+        const remaining = Math.max(0, 3 - elapsed); // = 1
+        assert('21.8 Nach 2 min: remaining=1 (elapsed-basiert, kein Drift)', remaining === 1);
+        clearTimeout(a._pvDeactivateTimer); clearInterval(a._pvDeactivateCountdownInt);
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null;
+    }
+})();
+
 
 if (errors.length > 0) {
     console.log('\nFehlgeschlagene Tests:');

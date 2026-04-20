@@ -240,8 +240,20 @@
         "pv_power_house_id": {
           "type": "objectId",
           "label": "Object ID house consumption (W)",
-          "help": "Datapoint containing current house consumption in Watts",
+          "help": "Datapoint containing current house consumption in Watts. NOTE: if this includes MSpa consumption, set threshold ≥ MSpa power draw to avoid oscillation. Use the grid sensor below for a more robust measurement.",
           "default": "",
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
+        },
+        "pv_net_grid_id": {
+          "type": "objectId",
+          "label": "Object ID grid feed-in / import (W) – recommended",
+          "help": "Datapoint from your energy manager with current grid power in Watts. Negative = feeding into grid (surplus), positive = drawing from grid. When set, this is used instead of generation minus consumption – MSpa self-consumption does not affect the calculation and avoids oscillation.",
+          "default": "",
+          "newLine": true,
           "xs": 12,
           "sm": 6,
           "md": 6,
@@ -343,7 +355,7 @@
           "xl": 6,
           "hidden": "!data.consumption_enabled"
         },
-        "consumption_hint": {
+        "consumption_hint": {mspa.0.computed.pv_deactivate_remaining
           "type": "staticText",
           "text": "Note: An external kWh meter is required (e.g. smart plug with energy monitoring). The daily counter resets automatically at midnight.",
           "newLine": true,
