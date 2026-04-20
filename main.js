@@ -38,6 +38,7 @@ class MspaAdapter extends utils.Adapter {
         this._adapterCommanded = {
             heater:             null,
             filter:             null,
+            bubble:             null,
             uvc:                null,
             target_temperature: null,
         };
@@ -370,6 +371,10 @@ class MspaAdapter extends utils.Adapter {
         }
 
         const followUpMin = Number(this.config.pump_follow_up) || 0;
+        const cfg         = this.config;
+        const uvcMinH     = cfg.uvc_daily_min_h ?? 2;
+        const todayH      = this._getUvcTodayHours();
+        const uvcMinMet   = todayH >= uvcMinH;
 
         try {
             // Always turn off heater immediately
@@ -378,10 +383,19 @@ class MspaAdapter extends utils.Adapter {
                 await this.setFeature('heater', false);
             }
 
-            // UVC off immediately (never needs follow-up)
+            // UVC off – but only if daily minimum is already reached.
+            // If not met, the daily ensure scheduler will keep UVC (and filter) running
+            // until the minimum is fulfilled. No need to stop and restart.
             if (w.action_filter && w.action_uvc) {
-                this.log.debug(`Time control [${i + 1}]: UVC OFF`);
-                await this.setFeature('uvc', false);
+                if (uvcMinMet) {
+                    this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h ≥ ${uvcMinH} h)`);
+                    await this.setFeature('uvc', false);
+                } else {
+                    this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
+                    // Filter must also stay ON for UVC – skip filter shutdown below
+                    this.enableRapidPolling();
+                    return;
+                }
             }
 
             // Filter pump: immediate or delayed?
@@ -587,16 +601,16 @@ class MspaAdapter extends utils.Adapter {
             const [h, m] = hhmm.split(':').map(Number);
             return h * 60 + m;
         };
-        const cur   = now.getHours() * 60 + now.getMinutes();
-        const s     = toMin(start);
-        const e     = toMin(end);
-        if (s === e)  {
+        const cur = now.getHours() * 60 + now.getMinutes();
+        const s   = toMin(start);
+        const e   = toMin(end);
+        if (s === e) {
  return false; 
-}   // empty window
-        if (s < e)    {
+}  // empty window
+        if (s < e)   {
  return cur >= s && cur < e; 
 }
-        return cur >= s || cur < e;        // overnight
+        return cur >= s || cur < e;     // overnight
     }
 
     // -------------------------------------------------------------------------
@@ -800,7 +814,7 @@ class MspaAdapter extends utils.Adapter {
                     }
                 }
                 if (this._pvActive) {
-this.enableRapidPolling();
+ this.enableRapidPolling(); 
 }
             } else {
                 // Surplus recovered while staging was in progress → re-activate what was turned off
@@ -860,13 +874,13 @@ this.enableRapidPolling();
     // -------------------------------------------------------------------------
     async _pvCancelAllDeactivationTimers() {
         if (this._pvDeactivateTimer)        {
- clearTimeout(this._pvDeactivateTimer);   this._pvDeactivateTimer = null; 
+ clearTimeout(this._pvDeactivateTimer);         this._pvDeactivateTimer = null; 
 }
         if (this._pvDeactivateCountdownInt) {
  clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; 
 }
         if (this._pvStageTimer)             {
- clearTimeout(this._pvStageTimer);         this._pvStageTimer = null; 
+ clearTimeout(this._pvStageTimer);               this._pvStageTimer = null; 
 }
         this._pvDeactivateCountdown = 0;
         await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
@@ -1081,7 +1095,7 @@ this.enableRapidPolling();
         const cfg  = this.config;
         const minH = cfg.uvc_daily_min_h ?? 2;
         if (!minH || minH <= 0) {
-return;
+ return; 
 }
 
         // Manual override pauses all automations including this
@@ -1181,12 +1195,12 @@ return;
         if (Array.isArray(windows)) {
             for (const w of windows) {
                 if (!w.active || !w[dayKeys[day]]) {
-continue;
+ continue; 
 }
                 const [endH, endM] = (w.end || '00:00').split(':').map(Number);
                 const endMin = (endH || 0) * 60 + (endM || 0);
                 if (endMin > lastWinEnd) {
-lastWinEnd = endMin;
+ lastWinEnd = endMin; 
 }
             }
         }
@@ -1382,9 +1396,15 @@ lastWinEnd = endMin;
         await this.setStateAsync('device.activateIp',      api.activateIp      || '', true);
         await this.setStateAsync('device.bindingTime',     api.bindingTime     || '', true);
         await this.setStateAsync('device.activateTime',    api.activateTime    || '', true);
-        if (api.bindingRole      !== null) { await this.setStateAsync('device.bindingRole',      api.bindingRole,                  true); }
-        if (api.isCloudActivated !== null) { await this.setStateAsync('device.isCloudActivated', api.isCloudActivated === 1,       true); }
-        if (api.productPicUrl)             { await this.setStateAsync('device.pictureUrl',        api.productPicUrl,                true); }
+        if (api.bindingRole      !== null) {
+ await this.setStateAsync('device.bindingRole',      api.bindingRole,            true); 
+}
+        if (api.isCloudActivated !== null) {
+ await this.setStateAsync('device.isCloudActivated', api.isCloudActivated === 1, true); 
+}
+        if (api.productPicUrl)             {
+ await this.setStateAsync('device.pictureUrl',        api.productPicUrl,          true); 
+}
     }
 
     // -------------------------------------------------------------------------
@@ -1472,16 +1492,36 @@ lastWinEnd = endMin;
         await set('status.heat_time_switch',    !!data.heat_time_switch);
         await set('status.heat_time',           data.heat_time);
         await set('status.auto_inflate',        !!data.auto_inflate);
-        if (data.ConnectType         !== undefined) { await set('status.connect_type',       String(data.ConnectType)); }
-        if (data.wifivertion         !== undefined) { await set('status.wifi_version',        String(data.wifivertion)); }
-        if (data.otastatus           !== undefined) { await set('status.ota_status',          data.otastatus); }
-        if (data.mcuversion          !== undefined) { await set('status.mcu_version',         String(data.mcuversion)); }
-        if (data.trdversion          !== undefined) { await set('status.trd_version',         String(data.trdversion)); }
-        if (data.serial_number       !== undefined) { await set('status.serial_number',       String(data.serial_number)); }
-        if (data.heat_rest_time      !== undefined) { await set('status.heat_rest_time',      data.heat_rest_time); }
-        if (data.reset_cloud_time    !== undefined) { await set('status.reset_cloud_time',    data.reset_cloud_time); }
-        if (data.device_heat_perhour !== undefined) { await set('status.device_heat_perhour', data.device_heat_perhour); }
-        if (data.warning             !== undefined) { await set('status.warning',             data.warning || ''); }
+        if (data.ConnectType         !== undefined) {
+ await set('status.connect_type',       String(data.ConnectType)); 
+}
+        if (data.wifivertion         !== undefined) {
+ await set('status.wifi_version',        String(data.wifivertion)); 
+}
+        if (data.otastatus           !== undefined) {
+ await set('status.ota_status',          data.otastatus); 
+}
+        if (data.mcuversion          !== undefined) {
+ await set('status.mcu_version',         String(data.mcuversion)); 
+}
+        if (data.trdversion          !== undefined) {
+ await set('status.trd_version',         String(data.trdversion)); 
+}
+        if (data.serial_number       !== undefined) {
+ await set('status.serial_number',       String(data.serial_number)); 
+}
+        if (data.heat_rest_time      !== undefined) {
+ await set('status.heat_rest_time',      data.heat_rest_time); 
+}
+        if (data.reset_cloud_time    !== undefined) {
+ await set('status.reset_cloud_time',    data.reset_cloud_time); 
+}
+        if (data.device_heat_perhour !== undefined) {
+ await set('status.device_heat_perhour', data.device_heat_perhour); 
+}
+        if (data.warning             !== undefined) {
+ await set('status.warning',             data.warning || ''); 
+}
 
         const setCtrl = async (id, val) => {
             if (val !== undefined && val !== null) {
@@ -1513,6 +1553,7 @@ lastWinEnd = endMin;
             const checks = [
                 { key: 'heater', deviceVal: data.heater === 'on' },
                 { key: 'filter', deviceVal: data.filter === 'on' },
+                { key: 'bubble', deviceVal: data.bubble === 'on' },
                 { key: 'uvc',    deviceVal: data.uvc    === 'on' },
             ];
             // target_temperature: only flag if heater is on and temp differs by > 0.5°C
@@ -1526,7 +1567,7 @@ lastWinEnd = endMin;
             for (const { key, deviceVal } of checks) {
                 const commanded = this._adapterCommanded[key];
                 if (commanded === null) {
-continue;
+ continue; 
 }  // adapter hasn't commanded this yet
                 const mismatch = (key === 'target_temperature')
                     ? deviceVal !== commanded
@@ -1763,7 +1804,7 @@ continue;
         const hysteresis = 3;
         const temp = data.water_temperature;
         if (temp === undefined || temp === null) {
-return;
+ return; 
 }
 
         if (!this._winterFrostActive && temp <= threshold) {
@@ -1859,6 +1900,11 @@ return;
                         this.log.info('filter OFF – auto-disabling heater');
                         await this.setFeature('heater', false);
                     }
+                    // Firmware turns off UVC and bubble automatically when filter stops.
+                    // Update _adapterCommanded so app-change detection does not see a
+                    // mismatch on the next poll and trigger a false manual override.
+                    this._adapterCommanded.uvc    = false;
+                    this._adapterCommanded.bubble = false;
                 }
                 return;
             }
@@ -1984,9 +2030,8 @@ return;
                 this._winterModeActive = !!state.val;
                 this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
                 await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
-                // run frost check immediately with last known data
                 if (this._lastData) {
-await this.checkFrostProtection(this._lastData);
+ await this.checkFrostProtection(this._lastData); 
 }
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;

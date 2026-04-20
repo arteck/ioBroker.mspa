@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.11",
+    "version": "0.2.12",
     "news": {
+      "0.2.12": {
+        "en": "see Readme",
+        "de": "Siehe Readme",
+        "ru": "см. файл Readme",
+        "pt": "Consulte o arquivo Leia-me.",
+        "nl": "zie Readme",
+        "fr": "Voir le fichier Lisez-moi",
+        "it": "vedi il file Readme",
+        "es": "ver Léame",
+        "pl": "zobacz Readme",
+        "uk": "див. файл Readme",
+        "zh-cn": "请参阅自述文件"
+      },
       "0.2.11": {
         "en": "add info.statusCheck \nfix filter off",
         "de": "info hinzufügen.statusCheck\nfilter entfernen",
