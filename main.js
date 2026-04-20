@@ -97,6 +97,8 @@ class MspaAdapter extends utils.Adapter {
         this._pumpStartedForHeating = false; // pump was started solely because of heating (action_filter=false)
         this._pumpFollowUpTimers    = [];    // follow-up timers per window index
 
+        this._firstPollDone         = false; // true after first successful poll (used for startup device-state check)
+
         this.on('ready',        this.onReady.bind(this));
         this.on('stateChange',  this.onStateChange.bind(this));
         this.on('unload',       this.onUnload.bind(this));
@@ -433,6 +435,95 @@ class MspaAdapter extends utils.Adapter {
             this._timeWindowActive[i] = true; // rollback – retry next minute
             this.log.error(`Time control [${i + 1}]: deactivation FAILED – ${err.message}`);
             this.log.debug(`Time control [${i + 1}]: ${err.stack}`);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Startup device-state check
+    // -------------------------------------------------------------------------
+    /**
+     * Called once after the very first successful poll.
+     * Checks whether the adapter was (re-)started while the device is still
+     * running features that were controlled by a time window – but the time
+     * window is no longer active right now.
+     *
+     * Scenario:  Adapter was stopped during an active window (11:00–18:00).
+     *            It restarts at 20:00 → no window is active, but filter/UVC/
+     *            heater may still be ON on the device.
+     *
+     * Rule: Only shut down features that at least ONE configured (active) time
+     * window would have managed.  Features not touched by any window are left
+     * alone (manual operation by the user).
+     */
+    async _checkStartupDeviceState(data) {
+        // Skip if manual override or PV is active – those automations take over
+        if (this._manualOverride || this._pvActive) {
+            this.log.debug('Startup check: skipped (manual override or PV active)');
+            return;
+        }
+
+        const windows = this.config.timeWindows;
+        if (!Array.isArray(windows) || !windows.some(w => w.active)) {
+            this.log.debug('Startup check: no active time windows – skipping');
+            return;
+        }
+
+        // Determine which features any active window would manage
+        let anyWindowManagesHeater = false;
+        let anyWindowManagesFilter = false;
+        let anyWindowManagesUvc    = false;
+
+        for (const w of windows) {
+            if (!w.active) continue;
+            if (w.action_heating) anyWindowManagesHeater = true;
+            if (w.action_filter)  anyWindowManagesFilter = true;
+            if (w.action_filter && w.action_uvc) anyWindowManagesUvc = true;
+        }
+
+        // Check if any of those features is currently ON on the device
+        const heaterOn = !!data.heater;
+        const filterOn = !!data.filter;
+        const uvcOn    = !!data.uvc;
+
+        if (!heaterOn && !filterOn && !uvcOn) {
+            this.log.debug('Startup check: device is idle – nothing to do');
+            return;
+        }
+
+        // Is any time window active right now?
+        const anyWindowActiveNow = this._timeWindowActive.some(v => v);
+        if (anyWindowActiveNow) {
+            this.log.debug('Startup check: a time window is currently active – leaving device state as-is');
+            return;
+        }
+
+        this.log.info('Startup check: device appears to be running but no time window is active – checking for orphaned features');
+
+        try {
+            if (heaterOn && anyWindowManagesHeater) {
+                this.log.info('Startup check: heater ON but no active window → switching OFF');
+                await this.setFeature('heater', false);
+            }
+            // UVC before filter (filter may need to stay for UVC daily ensure)
+            if (uvcOn && anyWindowManagesUvc) {
+                const todayH  = this._getUvcTodayHours();
+                const uvcMinH = this.config.uvc_daily_min_h ?? 2;
+                if (todayH >= uvcMinH) {
+                    this.log.info(`Startup check: UVC ON but no active window (daily min met: ${todayH.toFixed(2)} h) → switching OFF`);
+                    await this.setFeature('uvc', false);
+                } else {
+                    this.log.info(`Startup check: UVC ON, daily min not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h) – keeping ON for daily ensure`);
+                    // Filter must stay ON for UVC – skip filter shutdown
+                    return;
+                }
+            }
+            if (filterOn && anyWindowManagesFilter) {
+                this.log.info('Startup check: filter ON but no active window → switching OFF');
+                await this.setFeature('filter', false);
+            }
+            this.enableRapidPolling();
+        } catch (err) {
+            this.log.error(`Startup check: error while shutting down orphaned features – ${err.message}`);
         }
     }
 
@@ -1450,6 +1541,13 @@ class MspaAdapter extends utils.Adapter {
             await this.setStateAsync('info.lastUpdate', Date.now(), true);
             this._consecutiveErrors = 0;
 
+            // Startup check: after first successful poll, verify device state
+            // against active time windows and shut down orphaned features.
+            if (!this._firstPollDone) {
+                this._firstPollDone = true;
+                await this._checkStartupDeviceState(data);
+            }
+
         } catch (err) {
             this._consecutiveErrors++;
             this.log.error(`MSpa poll error (${this._consecutiveErrors}): ${err.message}`);
@@ -1889,23 +1987,38 @@ class MspaAdapter extends utils.Adapter {
                 return result;
             }
             case 'filter': {
+                if (!boolVal) {
+                    // The API rejects a filter-OFF command while UVC is still running.
+                    // → Explicitly switch off UVC (and bubble) first, then filter.
+                    const uvcState    = await this.getStateAsync('control.uvc');
+                    const bubbleState = await this.getStateAsync('control.bubble');
+                    const heaterState = await this.getStateAsync('control.heater');
+
+                    if (uvcState && uvcState.val) {
+                        this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
+                        await this._setStatusCheck('send');
+                        await this._api.setUvcState(0);
+                        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                        this._adapterCommanded.uvc = false;
+                        await this.sleep(500);
+                    }
+                    if (bubbleState && bubbleState.val) {
+                        this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
+                        await this._setStatusCheck('send');
+                        await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
+                        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                        this._adapterCommanded.bubble = false;
+                        await this.sleep(500);
+                    }
+                    if (heaterState && heaterState.val) {
+                        this.log.info('filter OFF – auto-disabling heater first');
+                        await this.setFeature('heater', false);
+                        await this.sleep(500);
+                    }
+                }
                 await this._setStatusCheck('send');
                 await this._api.setFilterState(state);
                 await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                // Heater requires the filter pump – auto-disable if filter is turned off.
-                // Bubble and UVC are physically dependent on the pump and handled by the firmware.
-                if (!boolVal) {
-                    const heaterState = await this.getStateAsync('control.heater');
-                    if (heaterState && heaterState.val) {
-                        this.log.info('filter OFF – auto-disabling heater');
-                        await this.setFeature('heater', false);
-                    }
-                    // Firmware turns off UVC and bubble automatically when filter stops.
-                    // Update _adapterCommanded so app-change detection does not see a
-                    // mismatch on the next poll and trigger a false manual override.
-                    this._adapterCommanded.uvc    = false;
-                    this._adapterCommanded.bubble = false;
-                }
                 return;
             }
             case 'bubble': await this._setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
