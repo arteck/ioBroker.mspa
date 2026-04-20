@@ -263,6 +263,11 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
 
+        // --- Manual override guard -----------------------------------------
+        if (this._manualOverride) {
+            this.log.debug('Time control: manual override active – skipping time window control');
+            return;
+        }
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
             this.log.debug('Time control: outside season – skipping time window control (polling continues)');
@@ -672,6 +677,11 @@ class MspaAdapter extends utils.Adapter {
     async evaluatePvSurplus() {
         const cfg = this.config;
 
+        // --- Manual override guard -----------------------------------------
+        if (this._manualOverride) {
+            this.log.debug('PV: manual override active – skipping surplus evaluation');
+            return;
+        }
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
             this.log.debug('PV: outside season – skipping surplus evaluation');
@@ -1654,6 +1664,10 @@ continue;
     // Winter mode – frost protection
     // -------------------------------------------------------------------------
     async checkFrostProtection(data) {
+        if (this._manualOverride) {
+            this.log.debug('Winter mode: manual override active – skipping frost protection');
+            return;
+        }
         const cfg         = this.config;
         const winterMode  = this._winterModeActive;
         if (!winterMode) {
@@ -1808,6 +1822,12 @@ return;
                     this._manualOverride = false;
                     await this.setStateAsync('control.manual_override', false, true);
                     await this.setStateAsync('control.manual_override_duration', 0, true);
+                    // Re-evaluate all automations now that override is lifted
+                    if (this._lastData && Object.keys(this._lastData).length) {
+                        await this.checkFrostProtection(this._lastData);
+                    }
+                    await this.checkTimeWindows();
+                    await this.evaluatePvSurplus();
                 }, durationMin * 60 * 1000);
             } else {
                 this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
