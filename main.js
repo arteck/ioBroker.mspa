@@ -186,27 +186,27 @@ class MspaAdapter extends utils.Adapter {
         this.doPoll();
     }
 
-    onUnload(callback) {
-        if (this._pollTimer)                 {
+    async onUnload(callback) {
+        if (this._pollTimer)                {
  clearTimeout(this._pollTimer); 
 }
-        if (this._timeTimer)                 {
+        if (this._timeTimer)                {
  clearInterval(this._timeTimer); 
 }
-        if (this._pvDeactivateTimer)         {
+        if (this._pvDeactivateTimer)        {
  clearTimeout(this._pvDeactivateTimer); 
 }
-        if (this._pvDeactivateCountdownInt)  {
+        if (this._pvDeactivateCountdownInt) {
  clearInterval(this._pvDeactivateCountdownInt); 
 }
-        if (this._pvStageTimer)              {
+        if (this._pvStageTimer)             {
  clearTimeout(this._pvStageTimer); 
 }
-        if (this._uvcEnsureTimer)            {
+        if (this._uvcEnsureTimer)           {
  clearInterval(this._uvcEnsureTimer); 
 }
-        if (this._pendingTempTimer)          {
- clearTimeout(this._pendingTempTimer);
+        if (this._pendingTempTimer)         {
+ clearTimeout(this._pendingTempTimer); 
 }
         for (const t of this._pumpFollowUpTimers) {
             if (t) {
@@ -218,7 +218,7 @@ class MspaAdapter extends utils.Adapter {
         // Persist accumulated UVC hours (including any currently-running session)
         try {
             const finalHours = this._accumulateUvcHours();
-            this.setStateAsync('status.uvc_hours_used', { val: Math.round(finalHours * 100) / 100, ack: true });
+            await this.setStateAsync('status.uvc_hours_used', { val: Math.round(finalHours * 100) / 100, ack: true });
         } catch (_) { /* ignore on unload */ }
         callback();
     }
@@ -1628,16 +1628,16 @@ continue;
             if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
                 changes.push('temp_unit_reset');
             }
-            if (this._lastSnapshot.heater === 'on ' && data.heater  === 'off') {
+            if (this._lastSnapshot.heater === 'on' && data.heater === 'off') {
                 changes.push('heater_off');
             }
-            if (this._lastSnapshot.filter === 'on ' && data.filter  === 'off') {
+            if (this._lastSnapshot.filter === 'on' && data.filter === 'off') {
                 changes.push('filter_off');
             }
-            if (this._lastSnapshot.ozone  === 'on ' && data.ozone   === 'off') {
+            if (this._lastSnapshot.ozone  === 'on' && data.ozone  === 'off') {
                 changes.push('ozone_off');
             }
-            if (this._lastSnapshot.uvc    === 'on ' && data.uvc     === 'off') {
+            if (this._lastSnapshot.uvc    === 'on' && data.uvc    === 'off') {
                 changes.push('uvc_off');
             }
             if (changes.length >= 2) {

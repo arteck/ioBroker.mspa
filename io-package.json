@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.8",
+    "version": "0.2.9",
     "news": {
+      "0.2.9": {
+        "en": "typo",
+        "de": "typo",
+        "ru": "опечатка",
+        "pt": "erro de digitação",
+        "nl": "type",
+        "fr": "typo",
+        "it": "tipo",
+        "es": "typo",
+        "pl": "typo",
+        "uk": "типо",
+        "zh-cn": "类型"
+      },
       "0.2.8": {
         "en": "see Readme",
         "de": "Siehe Readme",
@@ -80,32 +93,6 @@
         "pl": "naprawić języki del BOM",
         "uk": "english Русский Українська",
         "zh-cn": "bOM 语言"
-      },
-      "0.2.1": {
-        "en": "fix season_enabled \nadd manual override an manual_override_duration",
-        "de": "saison enabled\nmanuelle override duration hinzufügen",
-        "ru": "обсуждение season enabled\nдобавить ручное переопределение manual override duration",
-        "pt": "corrigir a estação  habilitada\nadicionar sobreposição manual de um manual override duration",
-        "nl": "seizoen vastgemaakt\nhandmatig overschrijven van een manual override duration toevoegen",
-        "fr": "facile la saison de correction\najouter une surcharge manuelle une override duration",
-        "it": "correzione stagione enabled\naggiungere la sovrascrittura manuale un manuale override duration",
-        "es": "fix season enabled\nañadir manual override override duration",
-        "pl": "fix season _ acted\nadd manual deverse a manual _ deverse _ timing",
-        "uk": "фіксувати сезон enabled\nadd manual override керівництво override duration",
-        "zh-cn": "固定季节 启用\n添加手动覆盖一个手动  覆盖  持续时间"
-      },
-      "0.2.0": {
-        "en": "BREAKING CHANGES  plz delete and install again see Readme",
-        "de": "WICHTIGE ÄNDERUNGEN! Bitte löschen und neu installieren. Siehe Readme.",
-        "ru": "ВНЕСЕНЫ КРИТИЧЕСКИ ВАЖНЫЕ ИЗМЕНЕНИЯ. Пожалуйста, удалите и установите заново. См. файл Readme.",
-        "pt": "ALTERAÇÕES QUE QUEBRAM A COMPATIBILIDADE. Por favor, desinstale e instale novamente. Consulte o arquivo Leia-me.",
-        "nl": "BELANGRIJKE WIJZIGINGEN, verwijder en installeer opnieuw. Zie de Readme.",
-        "fr": "Changements importants : veuillez supprimer et réinstaller le programme. Consultez le fichier Lisez-moi.",
-        "it": "MODIFICHE IMPORTANTI: disinstallare e reinstallare. Consultare il file Readme.",
-        "es": "CAMBIOS IMPORTANTES: por favor, elimine e instale de nuevo. Consulte el archivo Léame.",
-        "pl": "ZMIANY ŁAMAJĄCE proszę usunąć i zainstalować ponownie, patrz Readme",
-        "uk": "ВАЖЛИВІ ЗМІНИ, будь ласка, видаліть та встановіть знову, див. Readme",
-        "zh-cn": "重大变更，请删除并重新安装，请参阅自述文件。"
       }
     },
     "titleLang": {

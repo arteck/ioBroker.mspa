@@ -248,19 +248,6 @@
           "lg": 6,
           "xl": 6
         },
-        "external_power_w_id": {
-          "type": "objectId",
-          "label": "Object ID MSpa current power (W)",
-          "help": "Datapoint of the smart plug providing the MSpa's current power draw in Watts. When set, this is subtracted from house consumption so that the MSpa's own load does not reduce the calculated PV surplus (avoids oscillation when MSpa turns on).",
-          "default": "",
-          "newLine": true,
-          "xs": 12,
-          "sm": 6,
-          "md": 6,
-          "lg": 6,
-          "xl": 6,
-          "hidden": "!data.consumption_enabled"
-        },
         "pv_threshold_w": {
           "type": "number",
           "label": "PV surplus threshold (W)",
@@ -349,6 +336,18 @@
           "help": "Datapoint of the external energy meter – must provide a continuously rising kWh total value",
           "default": "",
           "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6,
+          "hidden": "!data.consumption_enabled"
+        },
+        "external_power_w_id": {
+          "type": "objectId",
+          "label": "Object ID MSpa current power (W)",
+          "help": "Datapoint of the smart plug providing the MSpa's current power draw in Watts. When set, this is subtracted from house consumption so that the MSpa's own load does not reduce the calculated PV surplus (avoids oscillation when MSpa turns on).",
+          "default": "",
           "xs": 12,
           "sm": 6,
           "md": 6,
