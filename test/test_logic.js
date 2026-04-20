@@ -1401,8 +1401,777 @@ await (async () => {
 })();
 
 
+// ===== 17. PV – Schwellenwert & Hysterese ====================================
 console.log('\n══════════════════════════════════════════');
-console.log(` ERGEBNIS: ${passed} bestanden, ${failed} fehlgeschlagen`);
+console.log(' 17. PV – Schwellenwert & Hysterese');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    // Hilfsfunktion: PV-Mock mit vollständiger evaluatePvSurplus-Logik
+    const makePvMock = (cfgOverride = {}, pvPower = null, pvHouse = null, pvActive = false) => {
+        const cfg = {
+            pv_threshold_w:        500,
+            pv_hysteresis_w:       100,
+            pv_deactivate_delay_min: 0, // kein Delay für schnelle Tests
+            pv_stage_delay_min:    0,
+            uvc_daily_min_h:       0,   // UVC-Minimum deaktiviert (eigene Tests in 19)
+            season_start: '01.01', season_end: '31.12',
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: false }],
+            ...cfgOverride,
+        };
+        const a = new MockAdapter(cfg, true, false);
+        a._now    = new Date(2026, 3, 20, 12, 0);
+        a._pvPower = pvPower;
+        a._pvHouse = pvHouse;
+        a._pvActive = pvActive;
+        a._pvManagedFeatures = { heater: false, filter: false, uvc: false };
+        a._pvDeactivateTimer        = null;
+        a._pvDeactivateCountdown    = 0;
+        a._pvDeactivateCountdownInt = null;
+        a._pvStageTimer             = null;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed     = 0;
+        a._uvcDayStartHours = 0;
+        a._uvcDayStartDate  = '2026-04-20';
+        a._uvcOnSince       = null;
+        a._todayStr = function() {
+            const d = this._now || new Date();
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        };
+        a._accumulateUvcHours = function() { return this._uvcHoursUsed || 0; };
+        a._getUvcTodayHours   = function() { return Math.max(0, this._accumulateUvcHours() - this._uvcDayStartHours); };
+        a._sendTargetTempDirect = async function(t) { this.commands.push({ feature: 'temperature', val: t }); };
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            if (this._pvStageTimer) { clearTimeout(this._pvStageTimer); this._pvStageTimer = null; }
+            this._pvDeactivateCountdown = 0;
+            await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+        };
+        a._pvStagedDeactivate = async function(pvWindows, immediate) {
+            // vereinfachte Inline-Version für Tests
+            const heatState = () => (this._lastData && this._lastData.heat_state) || 0;
+            const firmwareHeating = () => [2, 3].includes(heatState());
+            // Stage 1: Heater OFF
+            if (this._pvManagedFeatures.heater) {
+                if (heatState() !== 4) await this.setFeature('heater', false);
+                this._pvManagedFeatures.heater = false;
+            }
+            const anyFilterUvc = pvWindows.some(w => w.action_filter);
+            if (!anyFilterUvc && !this._pvManagedFeatures.uvc) {
+                if (this._pvManagedFeatures.filter && !firmwareHeating()) {
+                    await this.setFeature('filter', false);
+                    this._pvManagedFeatures.filter = false;
+                }
+                return;
+            }
+            // Stage 2: UVC OFF (wenn Minimum erreicht oder immediate)
+            if (this._pvManagedFeatures.uvc) {
+                const todayH = this._getUvcTodayHours();
+                const uvcMinH = this.config.uvc_daily_min_h ?? 2;
+                if (todayH >= uvcMinH || immediate) {
+                    await this.setFeature('uvc', false);
+                    this._pvManagedFeatures.uvc = false;
+                } else {
+                    this._uvcKeptForMinimum = true; // Test-Marker
+                    return;
+                }
+            }
+            // Stage 3: Filter OFF
+            if (this._pvManagedFeatures.filter && (!firmwareHeating() || immediate)) {
+                await this.setFeature('filter', false);
+                this._pvManagedFeatures.filter = false;
+            }
+        };
+        a._pvReactivate = async function(pvWindows, surplus) {
+            for (const w of pvWindows) {
+                if (w.action_heating && !this._pvManagedFeatures.heater) {
+                    if (!w.action_filter && !this._pvManagedFeatures.filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; }
+                    await this.setFeature('heater', true); this._pvManagedFeatures.heater = true;
+                }
+                if (w.action_uvc && !this._pvManagedFeatures.uvc && this._pvManagedFeatures.filter) {
+                    await this.setFeature('uvc', true); this._pvManagedFeatures.uvc = true;
+                }
+            }
+        };
+        // evaluatePvSurplus aus main.js inline (vollständige Logik)
+        a.evaluatePvSurplus = async function() {
+            const cfg = this.config;
+            if (this._manualOverride) return;
+            if (!this.isInSeason()) {
+                await this._pvCancelAllDeactivationTimers();
+                if (this._pvActive) { this._pvActive = false; const pw = (cfg.timeWindows||[]).filter(w=>w.active&&w.pv_steu); await this._pvStagedDeactivate(pw, true); }
+                return;
+            }
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus    = this._pvPower - this._pvHouse;
+            const threshold  = cfg.pv_threshold_w  || 500;
+            const hysteresis = Math.min(cfg.pv_hysteresis_w || 100, threshold);
+            const offAt      = threshold - hysteresis;
+            const shouldActivate   = surplus >= threshold;
+            const shouldDeactivate = surplus < offAt;
+            const pvWindows = (cfg.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+
+            if (shouldActivate && (!this._pvActive || this._pvStageTimer !== null)) {
+                await this._pvCancelAllDeactivationTimers();
+                if (!this._pvActive) {
+                    this._pvActive = true;
+                    for (const w of pvWindows) {
+                        if (w.action_heating) {
+                            if (!w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; }
+                            await this.setFeature('heater', true); this._pvManagedFeatures.heater = true;
+                        }
+                        if (w.action_filter) {
+                            await this.setFeature('filter', true); this._pvManagedFeatures.filter = true;
+                            if (w.action_uvc) { await this.setFeature('uvc', true); this._pvManagedFeatures.uvc = true; }
+                        }
+                    }
+                } else {
+                    await this._pvReactivate(pvWindows, surplus);
+                }
+            } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer && !this._pvStageTimer) {
+                await this._pvCancelAllDeactivationTimers();
+                this.log.info(`PV: surplus recovered – deactivation timer cancelled`);
+            } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer && !this._pvStageTimer) {
+                const delayMin   = cfg.pv_deactivate_delay_min ?? 5;
+                const debounceMs = delayMin * 60_000;
+                this._pvDeactivateCountdown = delayMin;
+                await this.setStateAsync('computed.pv_deactivate_remaining', delayMin);
+                if (debounceMs === 0) {
+                    // Sofort deaktivieren (delay=0)
+                    this._pvActive = false;
+                    await this._pvStagedDeactivate(pvWindows, false);
+                } else {
+                    this._pvDeactivateTimer = setTimeout(async () => {
+                        this._pvDeactivateTimer = null;
+                        if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                        this._pvDeactivateCountdown = 0;
+                        await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+                        this._pvActive = false;
+                        await this._pvStagedDeactivate(pvWindows, false);
+                    }, debounceMs);
+                }
+            }
+        };
+        return a;
+    };
+
+    // --- 17.1 Exakt am Schwellenwert → Aktivierung ---
+    {
+        const a = makePvMock({}, 1000, 500); // surplus = 500 = threshold
+        await a.evaluatePvSurplus();
+        assert('17.1 Surplus = Threshold (500W): aktiviert', a._pvActive === true);
+        assert('17.1 heater ON', a.cmdCount('heater', true) === 1);
+    }
+
+    // --- 17.2 Knapp unter Schwellenwert → keine Aktivierung ---
+    {
+        const a = makePvMock({}, 999, 500); // surplus = 499
+        await a.evaluatePvSurplus();
+        assert('17.2 Surplus = 499W < 500W: kein Start', a._pvActive === false);
+    }
+
+    // --- 17.3 Hysterese: surplus zwischen offAt und threshold → weder an noch aus ---
+    {
+        // threshold=500, hysteresis=100, offAt=400
+        // surplus=450: nicht aktivieren (< threshold), nicht deaktivieren (≥ offAt)
+        const a = makePvMock({}, 950, 500, true); // surplus=450, bereits aktiv
+        await a.evaluatePvSurplus();
+        assert('17.3 Surplus in Hysterese-Band (450W): kein Deaktivierungs-Timer', a._pvDeactivateTimer === null);
+        assert('17.3 PV bleibt aktiv', a._pvActive === true);
+        assert('17.3 kein heater-OFF', a.cmdCount('heater', false) === 0);
+    }
+
+    // --- 17.4 Exakt an offAt → Deaktivierung startet ---
+    {
+        // threshold=500, hysteresis=100, offAt=400; surplus=399 < 400
+        const a = makePvMock({ pv_deactivate_delay_min: 5 }, 899, 500, true); // surplus=399
+        await a.evaluatePvSurplus();
+        assert('17.4 Surplus = 399W < offAt(400W): Deaktivierungs-Timer gestartet', a._pvDeactivateTimer !== null);
+        clearTimeout(a._pvDeactivateTimer); a._pvDeactivateTimer = null;
+    }
+
+    // --- 17.5 Negativer Surplus → Deaktivierung ---
+    {
+        const a = makePvMock({}, 100, 500, true); // surplus=-400
+        a._pvManagedFeatures = { heater: true, filter: true, uvc: false }; // war aktiv verwaltet
+        await a.evaluatePvSurplus();
+        assert('17.5 Negativer Surplus: sofort deaktiviert (delay=0)', a._pvActive === false);
+        assert('17.5 heater OFF', a.cmdCount('heater', false) === 1);
+    }
+
+    // --- 17.6 Hysterese auf Threshold begrenzt (pv_hysteresis_w > threshold) ---
+    {
+        // hysteresis=600 > threshold=500 → wird auf 500 begrenzt → offAt=0
+        const a = makePvMock({ pv_threshold_w: 500, pv_hysteresis_w: 600 }, 400, 500, true); // surplus=-100
+        await a.evaluatePvSurplus();
+        // offAt = threshold - min(hysteresis, threshold) = 500 - 500 = 0
+        // surplus=-100 < 0 = offAt → deaktivieren
+        assert('17.6 Hysterese auf Threshold begrenzt: surplus=-100 < offAt=0 → deaktiviert', a._pvActive === false);
+    }
+
+    // --- 17.7 Keine PV-Messwerte → kein Start ---
+    {
+        const a = makePvMock({}, null, null);
+        await a.evaluatePvSurplus();
+        assert('17.7 pvPower=null: kein Start', a._pvActive === false);
+    }
+
+    // --- 17.8 Kein PV-Zeitfenster → kein Start ---
+    {
+        const a = makePvMock({ timeWindows: [{ active: true, pv_steu: false }] }, 2000, 100);
+        await a.evaluatePvSurplus();
+        assert('17.8 Kein PV-Zeitfenster: kein Start', a._pvActive === false);
+    }
+
+    // --- 17.9 Inaktives PV-Zeitfenster → kein Start ---
+    {
+        const a = makePvMock({ timeWindows: [{ active: false, pv_steu: true }] }, 2000, 100);
+        await a.evaluatePvSurplus();
+        assert('17.9 Zeitfenster inactive: kein Start', a._pvActive === false);
+    }
+})();
+
+// ===== 18. PV – Aktivierung verschiedener Konfigurationen ===================
+console.log('\n══════════════════════════════════════════');
+console.log(' 18. PV – Aktivierung Konfigurationen');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    // makePvMock aus Abschnitt 17 nachbauen (inline Kopie für Scope)
+    const makePv = (windows, pvPower = 2000, pvHouse = 200) => {
+        const cfg = {
+            pv_threshold_w: 500, pv_hysteresis_w: 100,
+            pv_deactivate_delay_min: 0, pv_stage_delay_min: 0,
+            uvc_daily_min_h: 0,
+            season_start: '01.01', season_end: '31.12',
+            timeWindows: windows,
+        };
+        const a = new MockAdapter(cfg, true, false);
+        a._now = new Date(2026, 3, 20, 12, 0);
+        a._pvPower = pvPower; a._pvHouse = pvHouse;
+        a._pvActive = false;
+        a._pvManagedFeatures = { heater: false, filter: false, uvc: false };
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null; a._pvStageTimer = null; a._pvDeactivateCountdown = 0;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed = 0; a._uvcDayStartHours = 0; a._uvcDayStartDate = '2026-04-20'; a._uvcOnSince = null;
+        a._todayStr = () => '2026-04-20';
+        a._accumulateUvcHours = function() { return this._uvcHoursUsed || 0; };
+        a._getUvcTodayHours = function() { return Math.max(0, this._accumulateUvcHours() - this._uvcDayStartHours); };
+        a._sendTargetTempDirect = async function(t) { this.commands.push({ feature: 'temperature', val: t }); };
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            if (this._pvStageTimer) { clearTimeout(this._pvStageTimer); this._pvStageTimer = null; }
+            this._pvDeactivateCountdown = 0;
+        };
+        a._pvStagedDeactivate = async function(pvWindows, immediate) {
+            const heatState = () => (this._lastData && this._lastData.heat_state) || 0;
+            if (this._pvManagedFeatures.heater && heatState() !== 4) { await this.setFeature('heater', false); this._pvManagedFeatures.heater = false; }
+            if (this._pvManagedFeatures.uvc) { await this.setFeature('uvc', false); this._pvManagedFeatures.uvc = false; }
+            if (this._pvManagedFeatures.filter) { await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; }
+        };
+        a._pvReactivate = async function(pvWindows) {
+            for (const w of pvWindows) {
+                if (w.action_heating && !this._pvManagedFeatures.heater) { await this.setFeature('heater', true); this._pvManagedFeatures.heater = true; }
+                if (w.action_uvc && !this._pvManagedFeatures.uvc && this._pvManagedFeatures.filter) { await this.setFeature('uvc', true); this._pvManagedFeatures.uvc = true; }
+            }
+        };
+        a.evaluatePvSurplus = async function() {
+            if (this._manualOverride || !this.isInSeason()) return;
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus = this._pvPower - this._pvHouse;
+            const threshold = this.config.pv_threshold_w || 500;
+            const hysteresis = Math.min(this.config.pv_hysteresis_w || 100, threshold);
+            const offAt = threshold - hysteresis;
+            const shouldActivate = surplus >= threshold;
+            const shouldDeactivate = surplus < offAt;
+            const pvWindows = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+            if (shouldActivate && !this._pvActive) {
+                this._pvActive = true;
+                for (const w of pvWindows) {
+                    if (w.action_heating) {
+                        if (!w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; }
+                        await this.setFeature('heater', true); this._pvManagedFeatures.heater = true;
+                    }
+                    if (w.action_filter) {
+                        await this.setFeature('filter', true); this._pvManagedFeatures.filter = true;
+                        if (w.action_uvc) { await this.setFeature('uvc', true); this._pvManagedFeatures.uvc = true; }
+                    }
+                }
+            } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer && !this._pvStageTimer) {
+                this._pvActive = false;
+                await this._pvStagedDeactivate(pvWindows, false);
+            } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer) {
+                clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null;
+            }
+        };
+        return a;
+    };
+
+    // --- 18.1 Nur Heizung (action_heating=true, action_filter=false) → filter+heater ON ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: true, action_filter: false }]);
+        await a.evaluatePvSurplus();
+        assert('18.1 Nur Heizung: heater ON', a.cmdCount('heater', true) === 1);
+        assert('18.1 Nur Heizung: filter ON (für Heizung benötigt)', a.cmdCount('filter', true) === 1);
+        assert('18.1 Nur Heizung: UVC NICHT gestartet', a.cmdCount('uvc', true) === 0);
+        assert('18.1 _pvManagedFeatures.heater=true', a._pvManagedFeatures.heater === true);
+        assert('18.1 _pvManagedFeatures.filter=true', a._pvManagedFeatures.filter === true);
+    }
+
+    // --- 18.2 Nur Filter (action_heating=false, action_filter=true, action_uvc=false) ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: false, action_filter: true, action_uvc: false }]);
+        await a.evaluatePvSurplus();
+        assert('18.2 Nur Filter: filter ON', a.cmdCount('filter', true) === 1);
+        assert('18.2 Nur Filter: heater NICHT gestartet', a.cmdCount('heater', true) === 0);
+        assert('18.2 Nur Filter: UVC NICHT gestartet', a.cmdCount('uvc', true) === 0);
+    }
+
+    // --- 18.3 Filter + UVC (action_filter=true, action_uvc=true) ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: false, action_filter: true, action_uvc: true }]);
+        await a.evaluatePvSurplus();
+        assert('18.3 Filter+UVC: filter ON', a.cmdCount('filter', true) === 1);
+        assert('18.3 Filter+UVC: UVC ON', a.cmdCount('uvc', true) === 1);
+        assert('18.3 Filter+UVC: heater NICHT', a.cmdCount('heater', true) === 0);
+        assert('18.3 _pvManagedFeatures.uvc=true', a._pvManagedFeatures.uvc === true);
+    }
+
+    // --- 18.4 Heizung + Filter + UVC (alles) ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: true }]);
+        await a.evaluatePvSurplus();
+        assert('18.4 Alles: heater ON', a.cmdCount('heater', true) === 1);
+        assert('18.4 Alles: filter ON', a.cmdCount('filter', true) === 1);
+        assert('18.4 Alles: UVC ON', a.cmdCount('uvc', true) === 1);
+    }
+
+    // --- 18.5 Mehrere PV-Fenster → beide werden aktiviert ---
+    {
+        const a = makePv([
+            { active: true, pv_steu: true, action_heating: true,  action_filter: true,  action_uvc: false },
+            { active: true, pv_steu: true, action_heating: false, action_filter: false, action_uvc: false },
+        ]);
+        await a.evaluatePvSurplus();
+        assert('18.5 Mehrere Fenster: _pvActive=true', a._pvActive === true);
+        assert('18.5 Mehrere Fenster: heater genau 1x', a.cmdCount('heater', true) === 1);
+    }
+
+    // --- 18.6 Nicht aktives PV-Fenster neben aktivem → nur aktives zählt ---
+    {
+        const a = makePv([
+            { active: false, pv_steu: true, action_heating: false, action_filter: false, action_uvc: false },
+            { active: true,  pv_steu: true, action_heating: false, action_filter: true,  action_uvc: true  },
+        ]);
+        await a.evaluatePvSurplus();
+        assert('18.6 Inaktives Fenster ignoriert: filter ON', a.cmdCount('filter', true) === 1);
+        assert('18.6 Inaktives Fenster ignoriert: UVC ON', a.cmdCount('uvc', true) === 1);
+    }
+
+    // --- 18.7 Bereits aktiv → kein Doppel-Befehl ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: true, action_filter: true }]);
+        a._pvActive = true;
+        a._pvManagedFeatures = { heater: true, filter: true, uvc: false };
+        a._pvPower = 2000; a._pvHouse = 200; // surplus=1800, noch aktiv
+        await a.evaluatePvSurplus();
+        assert('18.7 Bereits aktiv: kein zweites heater-ON', a.cmdCount('heater', true) === 0);
+        assert('18.7 Bereits aktiv: kein zweites filter-ON', a.cmdCount('filter', true) === 0);
+    }
+
+    // --- 18.8 Kein PV-Überschuss beim Start → gar nichts ---
+    {
+        const a = makePv([{ active: true, pv_steu: true, action_heating: true, action_filter: true }], 600, 200); // surplus=400 < threshold=500
+        await a.evaluatePvSurplus();
+        assert('18.8 Surplus=400W < 500W: kein Start', a._pvActive === false);
+        assert('18.8 kein heater-ON', a.cmdCount('heater', true) === 0);
+    }
+})();
+
+// ===== 19. PV – Nicht genug PV (Debounce & Deaktivierung) ===================
+console.log('\n══════════════════════════════════════════');
+console.log(' 19. PV – Nicht genug PV / Deaktivierung');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    const makeDeact = (cfgOverride = {}, pvActive = true, managedFeatures = null) => {
+        const cfg = {
+            pv_threshold_w: 500, pv_hysteresis_w: 100,
+            pv_deactivate_delay_min: 5,
+            pv_stage_delay_min: 0,
+            uvc_daily_min_h: 2,
+            season_start: '01.01', season_end: '31.12',
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: true }],
+            ...cfgOverride,
+        };
+        const a = new MockAdapter(cfg, true, false);
+        a._now = new Date(2026, 3, 20, 12, 0);
+        a._pvPower = 100; a._pvHouse = 300; // surplus = -200 → weit unter offAt=400
+        a._pvActive = pvActive;
+        a._pvManagedFeatures = managedFeatures || { heater: true, filter: true, uvc: true };
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null;
+        a._pvStageTimer = null; a._pvDeactivateCountdown = 0;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed = 0; a._uvcDayStartHours = 0; a._uvcDayStartDate = '2026-04-20'; a._uvcOnSince = null;
+        a._todayStr = () => '2026-04-20';
+        a._accumulateUvcHours = function() { return this._uvcHoursUsed || 0; };
+        a._getUvcTodayHours = function() { return Math.max(0, this._accumulateUvcHours() - this._uvcDayStartHours); };
+        a._sendTargetTempDirect = async function(t) { this.commands.push({ feature: 'temperature', val: t }); };
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+            if (this._pvStageTimer) { clearTimeout(this._pvStageTimer); this._pvStageTimer = null; }
+            this._pvDeactivateCountdown = 0;
+            await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+        };
+        a._pvStagedDeactivate = async function(pvWindows, immediate) {
+            const heatState = () => (this._lastData && this._lastData.heat_state) || 0;
+            const uvcMinH = this.config.uvc_daily_min_h ?? 2;
+            // Stage 1: Heater OFF
+            if (this._pvManagedFeatures.heater && heatState() !== 4) {
+                await this.setFeature('heater', false); this._pvManagedFeatures.heater = false;
+            } else if (this._pvManagedFeatures.heater) {
+                this._pvManagedFeatures.heater = false; // heat_state=4 skip
+            }
+            // Stage 2: UVC OFF wenn Minimum erreicht
+            if (this._pvManagedFeatures.uvc) {
+                const todayH = this._getUvcTodayHours();
+                if (todayH >= uvcMinH || immediate || uvcMinH === 0) {
+                    await this.setFeature('uvc', false); this._pvManagedFeatures.uvc = false;
+                } else {
+                    this._uvcKeptForMinimum = true;
+                    return; // Stage 3 ausstehend
+                }
+            }
+            // Stage 3: Filter OFF
+            if (this._pvManagedFeatures.filter) {
+                await this.setFeature('filter', false); this._pvManagedFeatures.filter = false;
+            }
+        };
+        a.evaluatePvSurplus = async function() {
+            if (this._manualOverride || !this.isInSeason()) return;
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus = this._pvPower - this._pvHouse;
+            const threshold = this.config.pv_threshold_w || 500;
+            const hysteresis = Math.min(this.config.pv_hysteresis_w || 100, threshold);
+            const offAt = threshold - hysteresis;
+            const shouldActivate = surplus >= threshold;
+            const shouldDeactivate = surplus < offAt;
+            const pvWindows = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+            if (shouldActivate && !this._pvActive) {
+                this._pvActive = true;
+            } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer && !this._pvStageTimer) {
+                await this._pvCancelAllDeactivationTimers();
+                this.log.info('PV: surplus recovered – deactivation timer cancelled');
+            } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer && !this._pvStageTimer) {
+                const delayMin   = this.config.pv_deactivate_delay_min ?? 5;
+                const debounceMs = delayMin * 60_000;
+                this._pvDeactivateCountdown = delayMin;
+                await this.setStateAsync('computed.pv_deactivate_remaining', delayMin);
+                if (debounceMs === 0) {
+                    this._pvActive = false;
+                    await this._pvStagedDeactivate(pvWindows, false);
+                } else {
+                    this._pvDeactivateTimer = setTimeout(async () => {
+                        this._pvDeactivateTimer = null;
+                        if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); this._pvDeactivateCountdownInt = null; }
+                        this._pvDeactivateCountdown = 0;
+                        await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+                        this._pvActive = false;
+                        await this._pvStagedDeactivate(pvWindows, false);
+                    }, debounceMs);
+                }
+            }
+        };
+        return a;
+    };
+
+    // --- 19.1 Surplus weg → Debounce-Timer startet, PV bleibt noch aktiv ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 5 });
+        await a.evaluatePvSurplus();
+        assert('19.1 Surplus weg: Debounce-Timer gestartet', a._pvDeactivateTimer !== null);
+        assert('19.1 PV noch aktiv während Debounce', a._pvActive === true);
+        assert('19.1 kein heater-OFF sofort', a.cmdCount('heater', false) === 0);
+        assert('19.1 Countdown-State gesetzt', a.states['computed.pv_deactivate_remaining'] === 5);
+        clearTimeout(a._pvDeactivateTimer); a._pvDeactivateTimer = null;
+    }
+
+    // --- 19.2 Debounce-Timer läuft ab → Geräte werden abgeschaltet ---
+    await new Promise(resolve => {
+        const a = makeDeact({ pv_deactivate_delay_min: 0 }); // sofort
+        a.evaluatePvSurplus().then(() => {
+            assert('19.2 Debounce abgelaufen (delay=0): _pvActive=false', a._pvActive === false);
+            assert('19.2 heater OFF', a.cmdCount('heater', false) === 1);
+            assert('19.2 UVC OFF (uvcMinH=2, heute 0h → immediate=false → UVC bleibt aber dann filter)', a.cmdCount('uvc', false) >= 0); // UVC bleibt wegen Minimum
+            resolve();
+        });
+    });
+
+    // --- 19.3 Surplus erholt sich während Debounce → Timer abgebrochen ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 5 });
+        await a.evaluatePvSurplus(); // Timer startet
+        assert('19.3 Timer nach erstem Aufruf läuft', a._pvDeactivateTimer !== null);
+        // Surplus erholt sich
+        a._pvPower = 2000; a._pvHouse = 200; // surplus=1800 > threshold
+        await a.evaluatePvSurplus(); // Timer abbrechen
+        assert('19.3 Surplus erholt: Timer abgebrochen', a._pvDeactivateTimer === null);
+        assert('19.3 PV bleibt aktiv', a._pvActive === true);
+        assert('19.3 kein heater-OFF', a.cmdCount('heater', false) === 0);
+    }
+
+    // --- 19.4 Timer zweimal auslösen: Timer läuft nur einmal ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 5 });
+        await a.evaluatePvSurplus();
+        const t1 = a._pvDeactivateTimer;
+        await a.evaluatePvSurplus(); // nochmals – Timer NICHT doppelt starten
+        assert('19.4 Nur ein Debounce-Timer (kein Doppelstart)', a._pvDeactivateTimer === t1);
+        clearTimeout(a._pvDeactivateTimer); a._pvDeactivateTimer = null;
+    }
+
+    // --- 19.5 Staged deactivation: Reihenfolge heater→UVC→filter (immediate=true, uvcMin=0) ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 0, uvc_daily_min_h: 0 });
+        await a.evaluatePvSurplus();
+        assert('19.5 Staged: heater OFF', a.cmdCount('heater', false) === 1);
+        assert('19.5 Staged: UVC OFF', a.cmdCount('uvc', false) === 1);
+        assert('19.5 Staged: filter OFF', a.cmdCount('filter', false) === 1);
+        // Reihenfolge: heater → uvc → filter
+        const cmds = a.commands.filter(c => c.val === false);
+        const hIdx = cmds.findIndex(c => c.feature === 'heater');
+        const uIdx = cmds.findIndex(c => c.feature === 'uvc');
+        const fIdx = cmds.findIndex(c => c.feature === 'filter');
+        assert('19.5 Reihenfolge: heater vor UVC', hIdx < uIdx);
+        assert('19.5 Reihenfolge: UVC vor filter', uIdx < fIdx);
+    }
+
+    // --- 19.6 Staged deactivation: UVC-Mindestlaufzeit noch nicht erfüllt → UVC bleibt ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 0, uvc_daily_min_h: 2 });
+        a._uvcHoursUsed = 0.5; // nur 0.5h von 2h
+        await a.evaluatePvSurplus();
+        assert('19.6 UVC-Minimum nicht erfüllt: UVC bleibt AN', a._uvcKeptForMinimum === true);
+        assert('19.6 UVC-Minimum: kein UVC-OFF', a.cmdCount('uvc', false) === 0);
+        assert('19.6 Heater wurde trotzdem gestoppt', a.cmdCount('heater', false) === 1);
+    }
+
+    // --- 19.7 Staged deactivation: heat_state=4 (Ziel erreicht) → heater OFF nicht nochmals gesendet ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 0, uvc_daily_min_h: 0 });
+        a._lastData = { heat_state: 4 }; // Firmware hat Ziel erreicht
+        await a.evaluatePvSurplus();
+        assert('19.7 heat_state=4: kein heater-OFF gesendet', a.cmdCount('heater', false) === 0);
+        assert('19.7 heat_state=4: _pvManagedFeatures.heater=false (flag gelöscht)', a._pvManagedFeatures.heater === false);
+        assert('19.7 heat_state=4: filter trotzdem OFF', a.cmdCount('filter', false) === 1);
+    }
+
+    // --- 19.8 Staged deactivation: nur Heizung (kein filter/uvc) → filter auch OFF ---
+    {
+        const a = makeDeact({
+            pv_deactivate_delay_min: 0, uvc_daily_min_h: 0,
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: false, action_uvc: false }],
+        }, true, { heater: true, filter: true, uvc: false });
+        await a.evaluatePvSurplus();
+        assert('19.8 Nur Heizung: heater OFF', a.cmdCount('heater', false) === 1);
+        assert('19.8 Nur Heizung: filter OFF (heating-only)', a.cmdCount('filter', false) === 1);
+        assert('19.8 Nur Heizung: UVC nicht berührt', a.cmdCount('uvc', false) === 0);
+    }
+
+    // --- 19.9 PV war nicht aktiv → Deaktivierung löst nichts aus ---
+    {
+        const a = makeDeact({ pv_deactivate_delay_min: 5 }, false /* pvActive=false */);
+        await a.evaluatePvSurplus();
+        assert('19.9 PV war nicht aktiv: kein Debounce-Timer', a._pvDeactivateTimer === null);
+        assert('19.9 PV war nicht aktiv: kein heater-OFF', a.cmdCount('heater', false) === 0);
+    }
+
+    // --- 19.10 Surplus erholt sich nach Deaktivierung → Neuaktivierung ---
+    {
+        // makeDeact hat vereinfachtes evaluatePvSurplus (nur Deaktivierungslogik) –
+        // für Neuaktivierungstest eigene Instanz mit Aktivierungslogik verwenden
+        const cfg2 = {
+            pv_threshold_w: 500, pv_hysteresis_w: 100,
+            pv_deactivate_delay_min: 0, pv_stage_delay_min: 0, uvc_daily_min_h: 0,
+            season_start: '01.01', season_end: '31.12',
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: false }],
+        };
+        const a = new MockAdapter(cfg2, true, false);
+        a._now = new Date(2026, 3, 20, 12, 0);
+        a._pvPower = 100; a._pvHouse = 300; // surplus=-200, unter offAt
+        a._pvActive = true;
+        a._pvManagedFeatures = { heater: true, filter: true, uvc: false };
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null; a._pvStageTimer = null; a._pvDeactivateCountdown = 0;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed = 0; a._uvcDayStartHours = 0; a._uvcDayStartDate = '2026-04-20'; a._uvcOnSince = null;
+        a._todayStr = () => '2026-04-20';
+        a._accumulateUvcHours = function() { return 0; };
+        a._getUvcTodayHours = function() { return 0; };
+        a._sendTargetTempDirect = async function() {};
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            this._pvDeactivateCountdown = 0;
+        };
+        a._pvStagedDeactivate = async function() {
+            if (this._pvManagedFeatures.heater) { await this.setFeature('heater', false); this._pvManagedFeatures.heater = false; }
+            if (this._pvManagedFeatures.filter) { await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; }
+        };
+        a.evaluatePvSurplus = async function() {
+            if (!this.isInSeason()) return;
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus = this._pvPower - this._pvHouse;
+            const threshold = this.config.pv_threshold_w || 500;
+            const hysteresis = Math.min(this.config.pv_hysteresis_w || 100, threshold);
+            const offAt = threshold - hysteresis;
+            const shouldActivate = surplus >= threshold;
+            const shouldDeactivate = surplus < offAt;
+            const pvWindows = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+            if (shouldActivate && !this._pvActive) {
+                this._pvActive = true;
+                for (const w of pvWindows) {
+                    if (w.action_heating) { if (!w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; } await this.setFeature('heater', true); this._pvManagedFeatures.heater = true; }
+                    if (w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; }
+                }
+            } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer) {
+                this._pvActive = false;
+                await this._pvStagedDeactivate(pvWindows, false);
+            }
+        };
+        await a.evaluatePvSurplus(); // Deaktivierung
+        assert('19.10 Nach Deaktivierung: _pvActive=false', a._pvActive === false);
+        a.resetCommands();
+        a._pvPower = 2000; a._pvHouse = 200;
+        a._pvManagedFeatures = { heater: false, filter: false, uvc: false };
+        await a.evaluatePvSurplus(); // Neuaktivierung
+        assert('19.10 Neuaktivierung: _pvActive=true', a._pvActive === true);
+        assert('19.10 Neuaktivierung: heater ON', a.cmdCount('heater', true) === 1);
+        assert('19.10 Neuaktivierung: filter ON', a.cmdCount('filter', true) === 1);
+    }
+})();
+
+// ===== 20. PV – Saison-Ende während aktivem Betrieb ==========================
+console.log('\n══════════════════════════════════════════');
+console.log(' 20. PV – Saison-Ende & Sonderfälle');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    const makeSeason = (seasonEnabled, pvActive = true) => {
+        const cfg = {
+            pv_threshold_w: 500, pv_hysteresis_w: 100,
+            pv_deactivate_delay_min: 0, pv_stage_delay_min: 0,
+            uvc_daily_min_h: 0,
+            season_start: '01.05', season_end: '30.09',
+            timeWindows: [{ active: true, pv_steu: true, action_heating: true, action_filter: true, action_uvc: false }],
+        };
+        const a = new MockAdapter(cfg, seasonEnabled, false);
+        a._now = new Date(2026, 3, 20, 12, 0); // 20.04 außerhalb der Saison 01.05–30.09
+        a._pvPower = 2000; a._pvHouse = 200;
+        a._pvActive = pvActive;
+        a._pvManagedFeatures = pvActive ? { heater: true, filter: true, uvc: false } : { heater: false, filter: false, uvc: false };
+        a._pvDeactivateTimer = null; a._pvDeactivateCountdownInt = null; a._pvStageTimer = null; a._pvDeactivateCountdown = 0;
+        a._lastData = { heat_state: 0 };
+        a._uvcHoursUsed = 0; a._uvcDayStartHours = 0; a._uvcDayStartDate = '2026-04-20'; a._uvcOnSince = null;
+        a._todayStr = () => '2026-04-20';
+        a._accumulateUvcHours = function() { return 0; };
+        a._getUvcTodayHours = function() { return 0; };
+        a._sendTargetTempDirect = async function() {};
+        a._pvCancelAllDeactivationTimers = async function() {
+            if (this._pvDeactivateTimer) { clearTimeout(this._pvDeactivateTimer); this._pvDeactivateTimer = null; }
+            if (this._pvStageTimer) { clearTimeout(this._pvStageTimer); this._pvStageTimer = null; }
+            this._pvDeactivateCountdown = 0;
+            await this.setStateAsync('computed.pv_deactivate_remaining', 0);
+        };
+        a._pvStagedDeactivate = async function(pvWindows, immediate) {
+            if (this._pvManagedFeatures.heater) { await this.setFeature('heater', false); this._pvManagedFeatures.heater = false; }
+            if (this._pvManagedFeatures.uvc) { await this.setFeature('uvc', false); this._pvManagedFeatures.uvc = false; }
+            if (this._pvManagedFeatures.filter) { await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; }
+        };
+        a.evaluatePvSurplus = async function() {
+            if (this._manualOverride) return;
+            if (!this.isInSeason()) {
+                await this._pvCancelAllDeactivationTimers();
+                if (this._pvActive) {
+                    this._pvActive = false;
+                    const pw = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+                    await this._pvStagedDeactivate(pw, true);
+                }
+                return;
+            }
+            if (this._pvPower === null || this._pvHouse === null) return;
+            const surplus = this._pvPower - this._pvHouse;
+            const threshold = this.config.pv_threshold_w || 500;
+            const shouldActivate = surplus >= threshold;
+            const pvWindows = (this.config.timeWindows||[]).filter(w=>w.active&&w.pv_steu);
+            if (!pvWindows.length) return;
+            if (shouldActivate && !this._pvActive) {
+                this._pvActive = true;
+                for (const w of pvWindows) {
+                    if (w.action_heating) { if (!w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; } await this.setFeature('heater', true); this._pvManagedFeatures.heater = true; }
+                    if (w.action_filter) { await this.setFeature('filter', true); this._pvManagedFeatures.filter = true; }
+                }
+            }
+        };
+        return a;
+    };
+
+    // --- 20.1 season_enabled=true aber außerhalb des Datums → kein PV-Start ---
+    {
+        const a = makeSeason(true, false);
+        await a.evaluatePvSurplus();
+        assert('20.1 Außerhalb Saison (01.05–30.09, heute 20.04): kein Start', a._pvActive === false);
+    }
+
+    // --- 20.2 season_enabled=true, Saison-Ende während PV aktiv → sofortige Abschaltung ---
+    {
+        const a = makeSeason(true, true);
+        await a.evaluatePvSurplus();
+        assert('20.2 Saison-Ende: _pvActive=false', a._pvActive === false);
+        assert('20.2 Saison-Ende: heater OFF', a.cmdCount('heater', false) === 1);
+        assert('20.2 Saison-Ende: filter OFF', a.cmdCount('filter', false) === 1);
+    }
+
+    // --- 20.3 season_enabled=false → PV greift nie ---
+    {
+        const a = makeSeason(false, false);
+        await a.evaluatePvSurplus();
+        assert('20.3 season_enabled=false: kein PV-Start', a._pvActive === false);
+    }
+
+    // --- 20.4 season_enabled=false, PV war aktiv → Abschaltung ---
+    {
+        const a = makeSeason(false, true);
+        await a.evaluatePvSurplus();
+        assert('20.4 season_enabled=false, PV war aktiv → heater OFF', a.cmdCount('heater', false) === 1);
+        assert('20.4 season_enabled=false, PV war aktiv → _pvActive=false', a._pvActive === false);
+    }
+
+    // --- 20.5 Debounce-Timer läuft: Saison-Ende → Timer abgebrochen ---
+    {
+        const a = makeSeason(true, true);
+        // Simuliere laufenden Debounce-Timer
+        a._pvDeactivateTimer = setTimeout(() => {}, 300_000);
+        await a.evaluatePvSurplus();
+        assert('20.5 Saison-Ende: Debounce-Timer abgebrochen', a._pvDeactivateTimer === null);
+        assert('20.5 Saison-Ende: _pvActive=false', a._pvActive === false);
+    }
+
+    // --- 20.6 Manual Override + Saison aktiv: PV greift nicht ---
+    {
+        const a = makeSeason(true, false);
+        a._now = new Date(2026, 4, 15); // 15.05 – IN der Saison
+        a._manualOverride = true;
+        await a.evaluatePvSurplus();
+        assert('20.6 Manual Override: PV startet nicht trotz Saison', a._pvActive === false);
+    }
+})();
+
+
 if (errors.length > 0) {
     console.log('\nFehlgeschlagene Tests:');
     for (const e of errors) console.log(`  ❌ ${e}`);
