@@ -47,6 +47,14 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.8 (2026-04-20)
+* (arteck) new logic for UVC lamp – minimum daily runtime, daily ensure start time
+* (arteck) new logic for heater on and set temperature
+* (arteck) fix PV logic
+* (arteck) add MSpa current power consumption (smart plug) for accurate PV surplus / oscillation prevention
+* (arteck) app change detection – auto manual override when MSpa app changes device state
+* (arteck) notification language selector (English / Deutsch)
+
 ## 0.2.7 (2026-04-19)
 * (arteck) fix manual override
 

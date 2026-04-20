@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.12",
+    "version": "0.2.13",
     "news": {
+      "0.2.13": {
+        "en": "typo",
+        "de": "typo",
+        "ru": "опечатка",
+        "pt": "erro de digitação",
+        "nl": "type",
+        "fr": "typo",
+        "it": "tipo",
+        "es": "typo",
+        "pl": "typo",
+        "uk": "типо",
+        "zh-cn": "类型"
+      },
       "0.2.12": {
         "en": "see Readme",
         "de": "Siehe Readme",
@@ -80,32 +93,6 @@
         "pl": "naprawić ręczne sterowanie",
         "uk": "ручна накладна",
         "zh-cn": "修补手动覆盖"
-      },
-      "0.2.6": {
-        "en": "skip uv lamp daily duration \nadd language selector for telegramm message",
-        "de": "tagesdauer überspringen\nsprachauswahl für telegrammnachricht hinzufügen",
-        "ru": "пропуск uv лампы суточная продолжительность\nдобавить селектор языка для телеграмм",
-        "pt": "skip uv lâmpada duração diária\nadicionar o seletor de idioma para a mensagem do telegrama",
-        "nl": "uv-lamp dagelijks overslaan\ntaalkiezer toevoegen voor telegrambericht",
-        "fr": "skip uv lampe durée quotidienne\najouter un sélecteur de langue pour le message télégramme",
-        "it": "skip uv lampada durata giornaliera\naggiungere il selettore di lingua per il messaggio telegramm",
-        "es": "saltar lámpara uv duración diaria\nañadir selector de lenguaje para mensaje de telegrama",
-        "pl": "skip uv lampy dziennie\ndodaj selektor języka dla wiadomości telegraficznej",
-        "uk": "пропустити uv лампи щодня\nadd language selector for телеграмма повідомлення",
-        "zh-cn": "跳过 uv 灯的每日持续时间\n为电报消息添加语言选择器"
-      },
-      "0.2.5": {
-        "en": "fix uvc_expiry_date",
-        "de": "uvc expiry date",
-        "ru": "исправить uvc expiry date",
-        "pt": "corrigir a data  expiração do uvc",
-        "nl": "fix uvc expiry date",
-        "fr": "correction de la date d'expiration",
-        "it": "fix uvc expiry date",
-        "es": "uvc expiry date",
-        "pl": "fix uvc _ expire _ date",
-        "uk": "uvc expiry date",
-        "zh-cn": "修复ucc  过期  日期"
       }
     },
     "titleLang": {

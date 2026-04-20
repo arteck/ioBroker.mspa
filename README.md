@@ -92,6 +92,9 @@ Controls MSpa hot tubs via the MSpa Cloud API.
 
 
 ## Changelog
+### 0.2.13 (2026-04-20)
+* (arteck) typo
+
 ### 0.2.12 (2026-04-20)
 * (arteck) add all missing raw API status datapoints
 * (arteck) fix filter_current / filter_life descriptions (remaining hours vs. accumulated hours)
@@ -110,14 +113,6 @@ Controls MSpa hot tubs via the MSpa Cloud API.
 
 ### 0.2.9 (2026-04-20)
 * (arteck) typo
-
-### 0.2.8 (2026-04-20)
-* (arteck) new logic for UVC lamp – minimum daily runtime, daily ensure start time
-* (arteck) new logic for heater on and set temperature
-* (arteck) fix PV logic
-* (arteck) add MSpa current power consumption (smart plug) for accurate PV surplus / oscillation prevention
-* (arteck) app change detection – auto manual override when MSpa app changes device state
-* (arteck) notification language selector (English / Deutsch)
 
 ## License
 

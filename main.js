@@ -157,13 +157,27 @@ class MspaAdapter extends utils.Adapter {
         await this.setStateAsync('control.manual_override_duration', 0,    true);
         // pv_deactivate_remaining always resets to 0 on adapter restart (no running timer)
         await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
-        // uvc_ensure_skip_today: restore from state (valid only if date matches today)
-        const skipState = await this.getStateAsync('control.uvc_ensure_skip_today');
-        this._uvcEnsureSkipToday = skipState && skipState.val === true ? true : false;
-        if (this._uvcEnsureSkipToday) {
-            this.log.info('UVC daily ensure: skip flag restored from previous session – ensure paused for today');
+        // uvc_ensure_skip_today: restore from state – only valid if the skip date matches today
+        {
+            const skipState    = await this.getStateAsync('control.uvc_ensure_skip_today');
+            const skipDateSt   = await this.getStateAsync('control.uvc_ensure_skip_date');
+            const persistedSkip = skipState && skipState.val === true;
+            const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
+            const today         = this._todayStr();
+
+            if (persistedSkip && persistedDate === today) {
+                this._uvcEnsureSkipToday = true;
+                this._uvcEnsureSkipDate  = today;
+                this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
+            } else {
+                if (persistedSkip) {
+                    this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
+                }
+                this._uvcEnsureSkipToday = false;
+                this._uvcEnsureSkipDate  = '';
+            }
+            await this.setStateAsync('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
         }
-        await this.setStateAsync('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
         await this.initPvControl();
         this.initTimeControl();
         await this.publishTimeWindowsJson();
@@ -448,12 +462,14 @@ class MspaAdapter extends utils.Adapter {
      * window is no longer active right now.
      *
      * Scenario:  Adapter was stopped during an active window (11:00–18:00).
-     *            It restarts at 20:00 → no window is active, but filter/UVC/
-     *            heater may still be ON on the device.
+     * It restarts at 20:00 → no window is active, but filter/UVC/
+     * heater may still be ON on the device.
      *
      * Rule: Only shut down features that at least ONE configured (active) time
      * window would have managed.  Features not touched by any window are left
      * alone (manual operation by the user).
+     *
+     * @param data
      */
     async _checkStartupDeviceState(data) {
         // Skip if manual override or PV is active – those automations take over
@@ -474,10 +490,18 @@ class MspaAdapter extends utils.Adapter {
         let anyWindowManagesUvc    = false;
 
         for (const w of windows) {
-            if (!w.active) continue;
-            if (w.action_heating) anyWindowManagesHeater = true;
-            if (w.action_filter)  anyWindowManagesFilter = true;
-            if (w.action_filter && w.action_uvc) anyWindowManagesUvc = true;
+            if (!w.active) {
+continue;
+}
+            if (w.action_heating) {
+anyWindowManagesHeater = true;
+}
+            if (w.action_filter)  {
+anyWindowManagesFilter = true;
+}
+            if (w.action_filter && w.action_uvc) {
+anyWindowManagesUvc = true;
+}
         }
 
         // Check if any of those features is currently ON on the device
@@ -1208,6 +1232,7 @@ class MspaAdapter extends utils.Adapter {
                 this._uvcEnsureSkipToday = false;
                 this._uvcEnsureSkipDate  = '';
                 await this.setStateAsync('control.uvc_ensure_skip_today', false, true);
+                await this.setStateAsync('control.uvc_ensure_skip_date',  '',    true);
             }
         }
 
@@ -1434,6 +1459,12 @@ class MspaAdapter extends utils.Adapter {
         await this.setObjectNotExistsAsync('info.statusCheck', {
             type: 'state',
             common: { name: 'Last command status', type: 'string', role: 'text', read: true, write: false, def: '' },
+            native: {},
+        });
+
+        await this.setObjectNotExistsAsync('control.uvc_ensure_skip_date', {
+            type: 'state',
+            common: { name: 'Date when uvc_ensure_skip_today was set (YYYY-MM-DD)', type: 'string', role: 'text', read: true, write: false, def: '' },
             native: {},
         });
 
@@ -2160,6 +2191,7 @@ class MspaAdapter extends utils.Adapter {
                 this._uvcEnsureSkipToday = skip;
                 this._uvcEnsureSkipDate  = skip ? this._todayStr() : '';
                 await this.setStateAsync('control.uvc_ensure_skip_today', skip, true);
+                await this.setStateAsync('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate, true);
                 if (skip) {
                     this.log.info('UVC daily ensure: skip requested by user – pausing for today');
                     await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
