@@ -1458,11 +1458,19 @@ lastWinEnd = endMin;
         await set('status.filter_life',        data.filter_life);
         await set('status.temperature_unit',   data.temperature_unit);
         await set('status.safety_lock',        data.safety_lock);
-        await set('status.heat_time_switch',   !!data.heat_time_switch);
-        await set('status.heat_time',          data.heat_time);
-        await set('status.auto_inflate',       !!data.auto_inflate);
-        if (data.ConnectType !== undefined) { await set('status.connect_type', String(data.ConnectType)); }
-        if (data.wifivertion !== undefined) { await set('status.wifi_version', String(data.wifivertion)); }
+        await set('status.heat_time_switch',    !!data.heat_time_switch);
+        await set('status.heat_time',           data.heat_time);
+        await set('status.auto_inflate',        !!data.auto_inflate);
+        if (data.ConnectType         !== undefined) { await set('status.connect_type',       String(data.ConnectType)); }
+        if (data.wifivertion         !== undefined) { await set('status.wifi_version',        String(data.wifivertion)); }
+        if (data.otastatus           !== undefined) { await set('status.ota_status',          data.otastatus); }
+        if (data.mcuversion          !== undefined) { await set('status.mcu_version',         String(data.mcuversion)); }
+        if (data.trdversion          !== undefined) { await set('status.trd_version',         String(data.trdversion)); }
+        if (data.serial_number       !== undefined) { await set('status.serial_number',       String(data.serial_number)); }
+        if (data.heat_rest_time      !== undefined) { await set('status.heat_rest_time',      data.heat_rest_time); }
+        if (data.reset_cloud_time    !== undefined) { await set('status.reset_cloud_time',    data.reset_cloud_time); }
+        if (data.device_heat_perhour !== undefined) { await set('status.device_heat_perhour', data.device_heat_perhour); }
+        if (data.warning             !== undefined) { await set('status.warning',             data.warning || ''); }
 
         const setCtrl = async (id, val) => {
             if (val !== undefined && val !== null) {
