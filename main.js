@@ -1374,6 +1374,17 @@ lastWinEnd = endMin;
         await this.setStateAsync('device.mcuVersion',      api.mcuVersion      || '', true);
         await this.setStateAsync('device.serialNumber',    api.serialNumber    || '', true);
         await this.setStateAsync('device.alias',           api.deviceAlias     || '', true);
+        await this.setStateAsync('device.macAddress',      api.macAddress      || '', true);
+        await this.setStateAsync('device.productId',       api.productId       || '', true);
+        await this.setStateAsync('device.productTubPk',    api.productTubPk    || '', true);
+        await this.setStateAsync('device.deviceUuid',      api.deviceUuid      || '', true);
+        await this.setStateAsync('device.serviceRegion',   api.serviceRegion   || '', true);
+        await this.setStateAsync('device.activateIp',      api.activateIp      || '', true);
+        await this.setStateAsync('device.bindingTime',     api.bindingTime     || '', true);
+        await this.setStateAsync('device.activateTime',    api.activateTime    || '', true);
+        if (api.bindingRole      !== null) { await this.setStateAsync('device.bindingRole',      api.bindingRole,                  true); }
+        if (api.isCloudActivated !== null) { await this.setStateAsync('device.isCloudActivated', api.isCloudActivated === 1,       true); }
+        if (api.productPicUrl)             { await this.setStateAsync('device.pictureUrl',        api.productPicUrl,                true); }
     }
 
     // -------------------------------------------------------------------------

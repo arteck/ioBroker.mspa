@@ -93,7 +93,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
   - Time window started / ended
   - Season started / ended
   - UVC lamp expiry warning
-  - ❄️ Frost protection activated / deactivated
+  - ❄️ Frost protection activated / deactivates
   - 🔧 Manual override enabled / disabled (with duration if set)
 - Supports multiple recipients (comma-separated usernames)
 - 🌐 **Configurable notification language** (English / Deutsch) – selectable in the Notifications tab
@@ -106,52 +106,83 @@ Controls MSpa hot tubs via the MSpa Cloud API
 | Datapoint | Description |
 |---|---|
 | `status.water_temperature` | Current water temperature (°C) |
-| `status.target_temperature` | Target temperature (°C) |
-| `status.heat_state` | Heater state: 0=off, 2=preheat, 3=heating, 4=idle (target reached by firmware) |
-| `status.filter_life` | Filter running hours (h) – current usage counter |
-| `status.filter_current` | Filter capacity (h) – total rated lifetime |
+| `status.target_temperature` | Target temperature set on the device (°C) |
+| `status.heat_state` | Heater state: `0`=off, `1`=preoff, `2`=preheat, `3`=heating, `4`=idle (target reached) |
+| `status.filter_current` | Filter **remaining hours** until cleaning is needed (`0` = filter must be cleaned) |
+| `status.filter_life` | Filter **total accumulated running hours** since last reset |
 | `status.heat_time_switch` | Heat timer active (boolean) |
-| `status.heat_time` | Heat timer remaining (min) – countdown until auto-off |
+| `status.heat_time` | Heat timer remaining (min) |
+| `status.heat_rest_time` | Heat rest time (min) |
 | `status.safety_lock` | Safety lock active |
-| `status.uvc_expiry_date` | Estimated UVC lamp expiry date (based on average daily usage) |
+| `status.temperature_unit` | Temperature unit: `0`=°C, `1`=°F |
+| `status.auto_inflate` | Auto inflate active |
+| `status.connect_type` | Connection type reported by device (`online`/`offline`) |
+| `status.wifi_version` | WiFi module version (from status poll) |
+| `status.mcu_version` | MCU version (from status poll) |
+| `status.trd_version` | Third-party / firmware version |
+| `status.serial_number` | Serial number (from status poll) |
+| `status.ota_status` | OTA firmware update status |
+| `status.reset_cloud_time` | Reset cloud time counter |
+| `status.device_heat_perhour` | Heating rate reported by firmware (°C/h) – compare with `computed.heat_rate_per_hour` |
+| `status.warning` | Warning message from firmware |
+| `status.fault` | Fault message from firmware (`OK` when no fault) |
+| `status.is_online` | Device reachable via cloud |
+| `status.uvc_expiry_date` | Estimated UVC lamp expiry date (DD.MM.YYYY) |
 | `status.uvc_hours_used` | Accumulated UVC operating hours (persisted across restarts) |
 | `status.uvc_today_hours` | UVC operating hours today (resets at midnight) |
 | `status.uvc_hours_remaining` | Remaining UVC operating hours until rated lifetime is reached |
-| `status.time_windows_json` | Configured time windows as JSON |
 
 ### `computed.*`
 | Datapoint | Description |
 |---|---|
-| `computed.heat_rate_per_hour` | Observed heating rate (°C/h) |
-| `computed.cool_rate_per_hour` | Observed cooling rate (°C/h) |
+| `computed.heat_rate_per_hour` | Observed heating rate (°C/h) – EMA smoothed |
+| `computed.cool_rate_per_hour` | Observed cooling rate (°C/h) – EMA smoothed |
 | `computed.pv_deactivate_remaining` | Remaining minutes of PV cloud-protection delay |
+
+### `info.*`
+| Datapoint | Description |
+|---|---|
+| `info.connection` | Connected to MSpa cloud |
+| `info.lastUpdate` | Timestamp of last successful data fetch |
+| `info.statusCheck` | Last API command status: `''`=idle, `'send'`=command sent, `'queued'`=temperature queued (heater was off), `'success'`=device confirmed, `'error'`=no confirmation after 5 retries |
 
 ### `control.*`
 | Datapoint | Writable | Description |
 |---|---|---|
-| `control.heater` | ✅ | Turn heater on/off |
-| `control.filter` | ✅ | Turn filter on/off |
+| `control.heater` | ✅ | Turn heater on/off. When turned off while filter is running: filter keeps running |
+| `control.filter` | ✅ | Turn filter on/off. Turning OFF automatically turns OFF heater if it was running. Bubble and UVC are handled by the firmware |
 | `control.bubble` | ✅ | Turn bubble on/off |
+| `control.bubble_level` | ✅ | Bubble intensity (0–3) |
 | `control.jet` | ✅ | Turn jet on/off |
 | `control.ozone` | ✅ | Turn ozone on/off |
 | `control.uvc` | ✅ | Turn UVC on/off |
-| `control.target_temperature` | ✅ | Set target temperature (20–40 °C) |
+| `control.target_temperature` | ✅ | Set target temperature (20–40 °C). If heater is OFF, value is queued and sent 10 s after heater is switched ON (`info.statusCheck` = `'queued'`). Firmware handles `target ≤ water` gracefully via `heat_state=4` |
 | `control.bubble_level` | ✅ | Bubble level (0–3) |
-| `control.winter_mode` | ✅ | Enable/disable frost protection (persisted) |
-| `control.season_enabled` | ✅ | Enable/disable season control (persisted) |
-| `control.manual_override` | ✅ | Pause all automations (time windows, PV, frost protection). Resets to `false` on adapter restart |
-| `control.manual_override_duration` | ✅ | Auto-resume after N minutes (0 = indefinite). Set before enabling `manual_override` |
+| `control.winter_mode` | ✅ | Enable/disable frost protection (persisted across restarts) |
+| `control.season_enabled` | ✅ | Enable/disable season control (persisted across restarts) |
+| `control.manual_override` | ✅ | Pause all automations. Resets to `false` on adapter restart |
+| `control.manual_override_duration` | ✅ | Auto-resume after N minutes (0 = indefinite) |
+| `control.uvc_ensure_skip_today` | ✅ | Skip UVC daily ensure for today. If UVC is currently ON it will be switched OFF immediately. Resets automatically at midnight |
 
 ### `consumption.*`
 | Datapoint | Description |
 |---|---|
 | `consumption.day_kwh` | Energy consumed today (kWh) – resets at midnight |
 | `consumption.last_total_kwh` | Raw meter value at start of today |
-| `consumption.day_start_date` | Date (YYYY-MM-DD) when the daily baseline was last set (used to detect missed midnight resets) |
+| `consumption.day_start_date` | Date when the daily baseline was last set |
 
 ---
 
 ## Changelog
+### 0.2.12 (2026-04-20)
+* (arteck) add all missing raw API datapoints: `ota_status`, `mcu_version`, `trd_version`, `serial_number`, `heat_rest_time`, `reset_cloud_time`, `device_heat_perhour`, `warning`, `auto_inflate`, `connect_type`, `wifi_version`
+* (arteck) fix `filter_current` / `filter_life` descriptions (remaining hours vs. accumulated hours)
+* (arteck) fix `filter=false` auto-disable: heater is stopped by adapter, bubble/UVC handled by firmware
+* (arteck) fix deadlock when `filter=false` triggered heater auto-disable via API lock
+* (arteck) add `info.statusCheck` datapoint: `send` / `success` / `error` / `queued` for every API command
+* (arteck) `uvc_ensure_skip_today=true` now also turns UVC OFF if it is currently ON (even if ensure was not the one that started it)
+* (arteck) fix formatting throughout main.js and mspaApi.js
+
 ### 0.2.11 (2026-04-20)
 * (arteck) add info.statusCheck 
 * (arteck) fix filter off
