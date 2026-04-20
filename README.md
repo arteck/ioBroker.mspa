@@ -149,6 +149,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ### **WORK IN PROGRESS**
 * (arteck) new logic for uv lamp
 * (arteck) new logic for heater on and set temperature
+* (arteck) fix pv logic 
 
 ### 0.2.7 (2026-04-19)
 * (arteck) fix manual override

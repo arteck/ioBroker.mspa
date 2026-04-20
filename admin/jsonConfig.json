@@ -355,7 +355,7 @@
           "xl": 6,
           "hidden": "!data.consumption_enabled"
         },
-        "consumption_hint": {mspa.0.computed.pv_deactivate_remaining
+        "consumption_hint": {
           "type": "staticText",
           "text": "Note: An external kWh meter is required (e.g. smart plug with energy monitoring). The daily counter resets automatically at midnight.",
           "newLine": true,
