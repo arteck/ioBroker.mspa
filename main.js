@@ -1460,6 +1460,9 @@ lastWinEnd = endMin;
         await set('status.safety_lock',        data.safety_lock);
         await set('status.heat_time_switch',   !!data.heat_time_switch);
         await set('status.heat_time',          data.heat_time);
+        await set('status.auto_inflate',       !!data.auto_inflate);
+        if (data.ConnectType !== undefined) { await set('status.connect_type', String(data.ConnectType)); }
+        if (data.wifivertion !== undefined) { await set('status.wifi_version', String(data.wifivertion)); }
 
         const setCtrl = async (id, val) => {
             if (val !== undefined && val !== null) {
