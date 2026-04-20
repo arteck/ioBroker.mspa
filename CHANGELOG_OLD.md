@@ -47,6 +47,10 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.6 (2026-04-19)
+* (arteck) skip uvc lamp daily duration
+* (arteck) add language selector for telegram messages
+
 ## 0.2.5 (2026-04-19)
 * (arteck) fix uvc_expiry_date
 

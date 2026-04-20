@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.10",
+    "version": "0.2.11",
     "news": {
+      "0.2.11": {
+        "en": "add info.statusCheck \nfix filter off",
+        "de": "info hinzufügen.statusCheck\nfilter entfernen",
+        "ru": "добавить info.statusCheck\nфиксировать фильтр",
+        "pt": "adicionar info.statusCheck\ncorrigir o filtro desligado",
+        "nl": "info.statusCheck toevoegen\nfix filter uit",
+        "fr": "ajouter info.statusCheck\ncorrection du filtre",
+        "it": "aggiungere info.statusCheck\nfissare il filtro",
+        "es": "añadir info.statusCheck\nfija el filtro",
+        "pl": "dodaj info.statusCheck\nnaprawić filtr",
+        "uk": "додати інформацію.statusCheck\nфіксувати фільтр вимкнення",
+        "zh-cn": "添加信息. status 检查\n关闭过滤器"
+      },
       "0.2.10": {
         "en": "fix uvc_ensure_skip_today",
         "de": "uvc ensure skip today",
@@ -80,19 +93,6 @@
         "pl": "fix uvc _ expire _ date",
         "uk": "uvc expiry date",
         "zh-cn": "修复ucc  过期  日期"
-      },
-      "0.2.4": {
-        "en": "add cloud delay, heater delay uvc delay\nadd min duration uv-lamp \nwinter modus refactoring\nadd manual_override modus\nadd app value change automatic detection \nfix consumption",
-        "de": "cloud-verzögerung hinzufügen, heizung verzögerung uvc verzögerung\nmin dauer uv-lamp\nwintermodus refactoring\nmanual override modus hinzufügen\napp-wert ändern automatische erkennung\nverbrauch",
-        "ru": "добавить облачную задержку, задержку нагревателя uvc\nдобавьте uv-лампу продолжительностью мин\nзимний способ рефакторинга\nдобавить manual override modus\nдобавить значение приложения автоматическое обнаружение\nфиксировать потребление",
-        "pt": "adicionar atraso na nuvem, atraso no aquecimento\nadicionar luz uv de duração mínima\nrefatorização do modus de inverno\nadicionar o modus manual  override\nadicionar valor do aplicativo alterar detecção automática\nfixar o consumo",
-        "nl": "cloud delay toevoegen, verwarming vertraging uvc vertraging\nmin duur uv-lamp toevoegen\nwintermodus refactoring\nhand bedieningsmodus toevoegen\napp waarde wijzigen automatische detectie toevoegen\nvast te stellen verbruik",
-        "fr": "ajouter un délai nuageux, un délai chauffage uvc\najouter la durée min uv-lampe\nrefacturation du modus hiver\najouter model override manuel\najouter le changement de valeur de l'application détection automatique\nconsommation fixe",
-        "it": "aggiungere ritardo cloud, ritardo del riscaldatore uvc ritardo\naggiungere la durata minima uv-lamp\ninverno modus refactoring\naggiungere manuale override modus\naggiungere il valore dell'app cambia il rilevamento automatico\nconsumo corretto",
-        "es": "añadir retraso en la nube, retraso del calentador\nañadir min duración uv-lamp\ninvierno modus refactoring\nañadir manual override modus\nañadir valor de aplicación cambio de detección automática\nconsumo de solución",
-        "pl": "dodaj opóźnienie w chmurze, opóźnienie w ogrzewaniu uvc\ndodaj min czasu trwania uv- lampa\nrefaktoring modus zimowy\nadd manual _ deverse modus\ndodawanie wartości aplikacji zmienić automatyczne wykrywanie\nzużycie stałe",
-        "uk": "додати хмарну затримку, затримку обігрівача uvc\nдодати тривалість uv-lamp\nрефакторинг зимових модусів\nдодати керівництво override модус\nдодати зміни значення програми автоматичного виявлення\nспоживана фіксація",
-        "zh-cn": "添加云延迟, 加热器延迟 uvc 延迟\n添加分钟持续时间u-lamp\n冬季临时设计\n添加手动覆盖操作\n添加应用值变化自动检测\n固定消费"
       }
     },
     "titleLang": {

@@ -2358,6 +2358,420 @@ await (async () => {
 })();
 
 
+// ===== 22. API – Befehlsbestätigung & statusCheck & Deadlock-Fix =============
+console.log('\n══════════════════════════════════════════');
+console.log(' 22. API – Befehlsbestätigung & statusCheck');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+    // ---------------------------------------------------------------------------
+    // Mini-Mock für MSpaApiClient: _sendCommandLocked inline nachgebaut
+    // ---------------------------------------------------------------------------
+    const makeApiMock = (opts = {}) => {
+        const api = {
+            _lastCommandConfirmed: false,
+            _lastStatus:           null,
+            _statusChecks:         [],  // protokolliert alle statusCheck-Aufrufe
+            _heaterAutoDisableCalled: false,
+            _commandLog:           [],  // [{desiredDict, confirmed}]
+
+            // Konfigurierbares Verhalten:
+            // confirmedAfter: Index (0-based) bei dem der Poll bestätigt → -1 = nie
+            _confirmAfterPoll: opts.confirmAfterPoll ?? 0,
+            // Für filter=0: bestätigt Heater-Folgebefehl?
+            _confirmHeaterAfterPoll: opts.confirmHeaterAfterPoll ?? 0,
+            // Simuliert _setStatusCheck aus main.js
+            _statusCheckLog: [],
+
+            _log: (level, msg) => { /* silent */ },
+
+            async getHotTubStatus() {
+                // gibt immer den "aktuellen" Zustand zurück – wird durch _currentStatus gesteuert
+                return Object.assign({}, this._currentStatus || {});
+            },
+
+            _currentStatus: opts.initialStatus || {},
+
+            async _sendCommandLocked(desiredDict) {
+                this._commandLog.push({ desiredDict: { ...desiredDict } });
+
+                // Setzt _lastCommandConfirmed basierend auf Poll-Simulation
+                this._lastCommandConfirmed = false;
+                const pollConfirmAt = desiredDict.heater_state !== undefined && this._heaterAutoDisableCalled
+                    ? this._confirmHeaterAfterPoll
+                    : this._confirmAfterPoll;
+
+                for (let i = 0; i < 5; i++) {
+                    // Simulierter Poll: nach pollConfirmAt Versuchen wird bestätigt
+                    if (i >= pollConfirmAt && pollConfirmAt >= 0) {
+                        // Status aktualisieren als ob Gerät geantwortet hätte
+                        Object.assign(this._currentStatus, desiredDict);
+                        const confirmed = Object.entries(desiredDict).every(([k, v]) => this._currentStatus[k] === v);
+                        if (confirmed) {
+                            this._lastStatus           = { ...this._currentStatus };
+                            this._lastCommandConfirmed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!this._lastCommandConfirmed) {
+                    this._log('warn', `not confirmed: ${JSON.stringify(desiredDict)}`);
+                }
+
+                // Deadlock-Fix: filter=0 → _sendCommandLocked direkt aufrufen
+                if (desiredDict.filter_state === 0) {
+                    const filterConfirmed = this._lastCommandConfirmed;
+                    this._heaterAutoDisableCalled = true;
+                    await this._sendCommandLocked({ heater_state: 0 });
+                    this._lastCommandConfirmed = filterConfirmed; // Filter-Ergebnis wiederherstellen
+                }
+
+                return { message: 'SUCCESS' };
+            },
+
+            // Simuliert setFeature-Wrapper aus main.js
+            async setFeatureSimulated(feature, boolVal) {
+                const state = boolVal ? 1 : 0;
+                this._statusCheckLog.push('send');
+                const cmdMap = {
+                    heater: { heater_state: state },
+                    filter: { filter_state: state },
+                    uvc:    { uvc_state:    state },
+                    ozone:  { ozone_state:  state },
+                };
+                await this._sendCommandLocked(cmdMap[feature]);
+                this._statusCheckLog.push(this._lastCommandConfirmed ? 'success' : 'error');
+            },
+        };
+        return api;
+    };
+
+    // --- 22.1 Befehl wird sofort bestätigt → success ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: 0, initialStatus: {} });
+        await api.setFeatureSimulated('heater', true);
+        assert('22.1 Sofort bestätigt: _lastCommandConfirmed=true', api._lastCommandConfirmed === true);
+        assert('22.1 Sofort bestätigt: statusCheck-Sequenz [send, success]',
+            api._statusCheckLog.join(',') === 'send,success');
+    }
+
+    // --- 22.2 Bestätigung erst beim 3. Poll (i=2) ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: 2, initialStatus: {} });
+        await api.setFeatureSimulated('uvc', true);
+        assert('22.2 Bestätigt bei Poll 3: _lastCommandConfirmed=true', api._lastCommandConfirmed === true);
+        assert('22.2 statusCheck = success', api._statusCheckLog[api._statusCheckLog.length - 1] === 'success');
+    }
+
+    // --- 22.3 Keine Bestätigung (confirmAfterPoll=-1) → error ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: -1, initialStatus: {} });
+        await api.setFeatureSimulated('filter', true);
+        assert('22.3 Nie bestätigt: _lastCommandConfirmed=false', api._lastCommandConfirmed === false);
+        assert('22.3 Nie bestätigt: statusCheck-Sequenz [send, error]',
+            api._statusCheckLog.join(',') === 'send,error');
+    }
+
+    // --- 22.4 filter=false: kein Deadlock, Heater-Folgebefehl wird gesendet ---
+    {
+        const api = makeApiMock({
+            confirmAfterPoll:       0,
+            confirmHeaterAfterPoll: 0,
+            initialStatus: { filter_state: 1, heater_state: 1 },
+        });
+        await api.setFeatureSimulated('filter', false);
+
+        assert('22.4 Kein Deadlock: filter-Befehl in commandLog', api._commandLog.some(c => c.desiredDict.filter_state === 0));
+        assert('22.4 Heater-Folgebefehl gesendet',                api._commandLog.some(c => c.desiredDict.heater_state === 0));
+        assert('22.4 Heater-Folgebefehl nach filter-Befehl',
+            api._commandLog.findIndex(c => c.desiredDict.heater_state === 0) >
+            api._commandLog.findIndex(c => c.desiredDict.filter_state  === 0));
+    }
+
+    // --- 22.5 filter=false: statusCheck zeigt Filter-Ergebnis, NICHT Heater-Ergebnis ---
+    {
+        const api = makeApiMock({
+            confirmAfterPoll:       0,   // filter: bestätigt
+            confirmHeaterAfterPoll: -1,  // heater: NICHT bestätigt
+            initialStatus: { filter_state: 1, heater_state: 1 },
+        });
+        await api.setFeatureSimulated('filter', false);
+
+        // _lastCommandConfirmed muss das Filter-Ergebnis (true) widerspiegeln,
+        // nicht das Heater-Folgebefehl-Ergebnis (false)
+        assert('22.5 statusCheck zeigt Filter-Ergebnis (success), nicht Heater-Ergebnis (error)',
+            api._lastCommandConfirmed === true);
+        assert('22.5 statusCheck-Log endet mit success',
+            api._statusCheckLog[api._statusCheckLog.length - 1] === 'success');
+    }
+
+    // --- 22.6 filter=false: filter NICHT bestätigt, Heater bestätigt → statusCheck=error ---
+    {
+        const api = makeApiMock({
+            confirmAfterPoll:       -1,  // filter: NICHT bestätigt
+            confirmHeaterAfterPoll:  0,  // heater: bestätigt
+            initialStatus: { filter_state: 1, heater_state: 1 },
+        });
+        await api.setFeatureSimulated('filter', false);
+
+        assert('22.6 Filter nicht bestätigt: _lastCommandConfirmed=false (trotz Heater OK)',
+            api._lastCommandConfirmed === false);
+        assert('22.6 statusCheck-Log endet mit error',
+            api._statusCheckLog[api._statusCheckLog.length - 1] === 'error');
+    }
+
+    // --- 22.7 filter=false: genau 2 Befehle im commandLog (filter + heater) ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: 0, confirmHeaterAfterPoll: 0,
+            initialStatus: { filter_state: 1, heater_state: 1 } });
+        await api.setFeatureSimulated('filter', false);
+        assert('22.7 Genau 2 Befehle gesendet (filter + heater)', api._commandLog.length === 2);
+    }
+
+    // --- 22.8 heater=false (kein filter): kein Heater-Folgebefehl ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: 0, initialStatus: { heater_state: 1 } });
+        await api.setFeatureSimulated('heater', false);
+        assert('22.8 heater=false: kein Heater-Folgebefehl', api._commandLog.length === 1);
+        assert('22.8 heater=false: nur heater_state=0 gesendet', api._commandLog[0].desiredDict.heater_state === 0);
+    }
+
+    // --- 22.9 statusCheck-Reihenfolge: immer send → success/error ---
+    {
+        for (const [label, confirm] of [['success', 0], ['error', -1]]) {
+            const api = makeApiMock({ confirmAfterPoll: confirm, initialStatus: {} });
+            await api.setFeatureSimulated('ozone', true);
+            assert(`22.9 Reihenfolge für ${label}: erstes Element = 'send'`,
+                api._statusCheckLog[0] === 'send');
+            assert(`22.9 Reihenfolge für ${label}: zweites Element = '${label}'`,
+                api._statusCheckLog[1] === label);
+            assert(`22.9 Genau 2 statusCheck-Einträge für ${label}`,
+                api._statusCheckLog.length === 2);
+        }
+    }
+
+    // --- 22.10 Mehrere aufeinanderfolgende Befehle: statusCheck je Befehl korrekt ---
+    {
+        const api = makeApiMock({ confirmAfterPoll: 0, initialStatus: {} });
+        await api.setFeatureSimulated('filter', true);
+        assert('22.10 Erster Befehl: success', api._statusCheckLog[1] === 'success');
+        await api.setFeatureSimulated('heater', true);
+        assert('22.10 Zweiter Befehl: success', api._statusCheckLog[3] === 'success');
+        assert('22.10 Insgesamt 4 statusCheck-Einträge', api._statusCheckLog.length === 4);
+    }
+
+    // --- 22.11 bubble_level: statusCheck wird gesetzt (läuft NICHT durch setFeature) ---
+    {
+        // bubble_level geht direkt über _api.setBubbleLevel → onStateChange-Pfad
+        // Simuliert den onStateChange-Handler für bubble_level
+        const makeBubbleMock = (confirmAfterPoll) => {
+            const api = makeApiMock({ confirmAfterPoll, initialStatus: { bubble_level: 1 } });
+            // setBubbleLevel als eigene Methode (wie in mspaApi.js)
+            api.setBubbleLevel = async function(level) {
+                return this._sendCommandLocked({ bubble_level: level });
+            };
+            return api;
+        };
+
+        // bubble_level bestätigt → success
+        {
+            const api = makeBubbleMock(0);
+            api._statusCheckLog.push('send');
+            await api.setBubbleLevel(3);
+            api._statusCheckLog.push(api._lastCommandConfirmed ? 'success' : 'error');
+            assert('22.11 bubble_level bestätigt: statusCheck = success',
+                api._statusCheckLog.join(',') === 'send,success');
+            assert('22.11 bubble_level: bubble_level=3 im commandLog',
+                api._commandLog.some(c => c.desiredDict.bubble_level === 3));
+        }
+
+        // bubble_level nicht bestätigt → error
+        {
+            const api = makeBubbleMock(-1);
+            api._statusCheckLog.push('send');
+            await api.setBubbleLevel(2);
+            api._statusCheckLog.push(api._lastCommandConfirmed ? 'success' : 'error');
+            assert('22.11 bubble_level nicht bestätigt: statusCheck = error',
+                api._statusCheckLog.join(',') === 'send,error');
+        }
+
+        // bubble_level löst keinen Heater-Folgebefehl aus
+        {
+            const api = makeBubbleMock(0);
+            await api.setBubbleLevel(2);
+            assert('22.11 bubble_level: kein Heater-Folgebefehl', api._commandLog.length === 1);
+            assert('22.11 bubble_level: kein filter-Folgebefehl',
+                !api._commandLog.some(c => c.desiredDict.filter_state !== undefined));
+        }
+    }
+
+    // --- 22.12 control.bubble (ON/OFF): statusCheck + bubble_state UND bubble_level ---
+    {
+        // setBubbleState sendet { bubble_state, bubble_level } – beide müssen bestätigt werden
+        const makeBubbleOnOffMock = (confirmAfterPoll, currentBubbleLevel = 2) => {
+            const api = makeApiMock({
+                confirmAfterPoll,
+                initialStatus: { bubble_state: 0, bubble_level: currentBubbleLevel },
+            });
+            api.setBubbleState = async function(state, level) {
+                return this._sendCommandLocked({ bubble_state: state, bubble_level: level });
+            };
+            // Simuliert setFeature('bubble', boolVal) aus main.js
+            api.setFeatureBubble = async function(boolVal, lastBubbleLevel = 2) {
+                this._statusCheckLog.push('send');
+                await this.setBubbleState(boolVal ? 1 : 0, lastBubbleLevel);
+                this._statusCheckLog.push(this._lastCommandConfirmed ? 'success' : 'error');
+            };
+            return api;
+        };
+
+        // bubble ON bestätigt → success
+        {
+            const api = makeBubbleOnOffMock(0, 2);
+            await api.setFeatureBubble(true, 2);
+            assert('22.12 bubble ON bestätigt: statusCheck = success',
+                api._statusCheckLog.join(',') === 'send,success');
+            assert('22.12 bubble ON: bubble_state=1 gesendet',
+                api._commandLog.some(c => c.desiredDict.bubble_state === 1));
+            assert('22.12 bubble ON: bubble_level mitgesendet',
+                api._commandLog.some(c => c.desiredDict.bubble_level === 2));
+        }
+
+        // bubble OFF bestätigt → success
+        {
+            const api = makeBubbleOnOffMock(0, 3);
+            await api.setFeatureBubble(false, 3);
+            assert('22.12 bubble OFF bestätigt: statusCheck = success',
+                api._statusCheckLog.join(',') === 'send,success');
+            assert('22.12 bubble OFF: bubble_state=0 gesendet',
+                api._commandLog.some(c => c.desiredDict.bubble_state === 0));
+        }
+
+        // bubble ON nicht bestätigt → error
+        {
+            const api = makeBubbleOnOffMock(-1, 1);
+            await api.setFeatureBubble(true, 1);
+            assert('22.12 bubble ON nicht bestätigt: statusCheck = error',
+                api._statusCheckLog.join(',') === 'send,error');
+        }
+
+        // bubble sendet BEIDE Felder (bubble_state + bubble_level) in einem Befehl
+        {
+            const api = makeBubbleOnOffMock(0, 2);
+            await api.setFeatureBubble(true, 2);
+            assert('22.12 bubble: genau 1 Befehl (bubble_state + bubble_level zusammen)',
+                api._commandLog.length === 1);
+            assert('22.12 bubble: Befehl enthält bubble_state',
+                'bubble_state' in api._commandLog[0].desiredDict);
+            assert('22.12 bubble: Befehl enthält bubble_level',
+                'bubble_level' in api._commandLog[0].desiredDict);
+        }
+
+        // bubble löst keinen Heater- oder Filter-Folgebefehl aus
+        {
+            const api = makeBubbleOnOffMock(0, 2);
+            await api.setFeatureBubble(false, 2);
+            assert('22.12 bubble OFF: kein Heater-Folgebefehl',
+                !api._commandLog.some(c => c.desiredDict.heater_state !== undefined));
+            assert('22.12 bubble OFF: kein Filter-Folgebefehl',
+                !api._commandLog.some(c => c.desiredDict.filter_state !== undefined));
+        }
+    }
+
+    // --- 22.13 control.target_temperature: statusCheck je nach Szenario ---
+    {
+        // Simuliert setTargetTemp + _sendTargetTempDirect aus main.js
+        const makeTempMock = (heaterOn, confirmAfterPoll = 0) => {
+            const api = makeApiMock({ confirmAfterPoll, initialStatus: { temperature_setting: 76 } });
+            api.setTemperatureSetting = async function(tempCelsius) {
+                return this._sendCommandLocked({ temperature_setting: Math.round(tempCelsius * 2) });
+            };
+            // _sendTargetTempDirect aus main.js
+            api._sendTargetTempDirect = async function(temp) {
+                this._statusCheckLog.push('send');
+                await this.setTemperatureSetting(temp);
+                this._statusCheckLog.push(this._lastCommandConfirmed ? 'success' : 'error');
+            };
+            // setTargetTemp aus main.js
+            api._heaterOn = heaterOn;
+            api.setTargetTemp = async function(temp) {
+                if (!this._heaterOn) {
+                    this._pendingTargetTemp = temp;
+                    this._statusCheckLog.push('queued');
+                    return;
+                }
+                this._pendingTargetTemp = null;
+                await this._sendTargetTempDirect(temp);
+            };
+            api._pendingTargetTemp = null;
+            return api;
+        };
+
+        // 22.13.1 Heizer AN → sofort senden → success
+        {
+            const api = makeTempMock(true, 0);
+            await api.setTargetTemp(38);
+            assert('22.13.1 Heizer AN: statusCheck = send,success',
+                api._statusCheckLog.join(',') === 'send,success');
+            assert('22.13.1 Heizer AN: temperature_setting gesendet',
+                api._commandLog.some(c => c.desiredDict.temperature_setting === 76)); // 38°C × 2
+            assert('22.13.1 Heizer AN: _pendingTargetTemp=null',
+                api._pendingTargetTemp === null);
+        }
+
+        // 22.13.2 Heizer AN → senden → nicht bestätigt → error
+        {
+            const api = makeTempMock(true, -1);
+            await api.setTargetTemp(36);
+            assert('22.13.2 Heizer AN, nicht bestätigt: statusCheck = send,error',
+                api._statusCheckLog.join(',') === 'send,error');
+        }
+
+        // 22.13.3 Heizer AUS → Temp wird geparkt → statusCheck = queued
+        {
+            const api = makeTempMock(false);
+            await api.setTargetTemp(38);
+            assert('22.13.3 Heizer AUS: statusCheck = queued',
+                api._statusCheckLog.join(',') === 'queued');
+            assert('22.13.3 Heizer AUS: _pendingTargetTemp gesetzt',
+                api._pendingTargetTemp === 38);
+            assert('22.13.3 Heizer AUS: kein API-Befehl gesendet',
+                api._commandLog.length === 0);
+        }
+
+        // 22.13.4 Pending-Temp: nach Heizer ON wird verzögert gesendet → success
+        {
+            const api = makeTempMock(false, 0);
+            await api.setTargetTemp(39); // geparkt
+            assert('22.13.4 Pending gesetzt: statusCheck=queued', api._statusCheckLog[0] === 'queued');
+
+            // Heizer wird eingeschaltet → _pendingTargetTemp wird gesendet (simuliert 10s-Timer)
+            api._heaterOn = true;
+            await api._sendTargetTempDirect(api._pendingTargetTemp);
+            api._pendingTargetTemp = null;
+            assert('22.13.4 Nach Heizer ON: statusCheck endet mit success',
+                api._statusCheckLog[api._statusCheckLog.length - 1] === 'success');
+            assert('22.13.4 Nach Heizer ON: temperature_setting gesendet',
+                api._commandLog.some(c => c.desiredDict.temperature_setting === 78)); // 39°C × 2
+            assert('22.13.4 _pendingTargetTemp geleert', api._pendingTargetTemp === null);
+        }
+
+        // 22.13.5 Zweifaches Setzen wenn Heizer AUS: nur letzter Wert bleibt pending
+        {
+            const api = makeTempMock(false);
+            await api.setTargetTemp(36);
+            await api.setTargetTemp(40); // überschreibt
+            assert('22.13.5 Letzter Wert pending: _pendingTargetTemp=40',
+                api._pendingTargetTemp === 40);
+            assert('22.13.5 statusCheck zweimal queued',
+                api._statusCheckLog.join(',') === 'queued,queued');
+            assert('22.13.5 Kein API-Befehl gesendet', api._commandLog.length === 0);
+        }
+    }
+})();
+
+
 if (errors.length > 0) {
     console.log('\nFehlgeschlagene Tests:');
     for (const e of errors) console.log(`  ❌ ${e}`);

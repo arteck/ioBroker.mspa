@@ -1841,6 +1841,7 @@ return;
         if (!heaterOn) {
             this._pendingTargetTemp = temp;
             this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
+            await this._setStatusCheck('queued');
             return;
         }
         this._pendingTargetTemp = null;
@@ -1939,7 +1940,9 @@ return;
                 this.enableRapidPolling();
             } else if (key === 'bubble_level') {
                 this.log.info(`MSpa command: bubble level → ${state.val}`);
+                await this._setStatusCheck('send');
                 await this._api.setBubbleLevel(state.val);
+                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 this.enableRapidPolling();
             } else if (key === 'winter_mode') {
                 this._winterModeActive = !!state.val;

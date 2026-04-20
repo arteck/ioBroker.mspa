@@ -152,8 +152,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ---
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.2.11 (2026-04-20)
 * (arteck) add info.statusCheck 
+* (arteck) fix filter off
 
 ### 0.2.10 (2026-04-20)
 * (arteck) fix uvc_ensure_skip_today
@@ -171,10 +172,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.7 (2026-04-19)
 * (arteck) fix manual override
-
-### 0.2.6 (2026-04-19)
-* (arteck) skip uvc lamp daily duration
-* (arteck) add language selector for telegram messages
 
 ## License
 
