@@ -75,3 +75,4 @@ Steuert MSpa Whirlpools über die MSpa Cloud API.
 - Mehrere Empfänger (kommagetrennt)
 - 🌐 Sprache wählbar: Englisch / Deutsch
 
+---

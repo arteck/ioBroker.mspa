@@ -1,6 +1,6 @@
 {
   "name": "iobroker.mspa",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "ioBroker adapter for MSpa Hot Tub cloud control",
   "main": "main.js",
   "repository": {

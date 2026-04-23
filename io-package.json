@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.13",
+    "version": "0.2.14",
     "news": {
+      "0.2.14": {
+        "en": "fix consumption",
+        "de": "verbrauch",
+        "ru": "фиксировать потребление",
+        "pt": "fixar o consumo",
+        "nl": "vast te stellen verbruik",
+        "fr": "consommation fixe",
+        "it": "consumo corretto",
+        "es": "consumo de solución",
+        "pl": "zużycie stałe",
+        "uk": "споживана фіксація",
+        "zh-cn": "固定消费"
+      },
       "0.2.13": {
         "en": "typo",
         "de": "typo",
@@ -80,19 +93,6 @@
         "pl": "zobacz Readme",
         "uk": "див. файл Readme",
         "zh-cn": "请参阅自述文件"
-      },
-      "0.2.7": {
-        "en": "fix manual override",
-        "de": "manuelles override reparieren",
-        "ru": "исправить ручное отключение",
-        "pt": "corrigir sobreposição manual",
-        "nl": "fix handmatige override",
-        "fr": "correction du dépassement manuel",
-        "it": "correzione manuale override",
-        "es": "corrección manual",
-        "pl": "naprawić ręczne sterowanie",
-        "uk": "ручна накладна",
-        "zh-cn": "修补手动覆盖"
       }
     },
     "titleLang": {

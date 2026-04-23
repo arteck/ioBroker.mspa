@@ -14,111 +14,114 @@
 ![CodeQL](https://github.com/arteck/ioBroker.mspa/actions/workflows/codeql.yml/badge.svg?branch=main)
 
 ## mspa adapter for ioBroker
-Controls MSpa hot tubs via the MSpa Cloud API.
-
----
+Controls MSpa hot tubs via the MSpa Cloud API
 
 ## Features
 
 ### Device Control
 - 🌡️ Read/set water temperature & target temperature (20–40 °C, 0.5 °C steps)
 - 🔥 Turn heating, filter, bubble, jet, ozone and UVC on/off
-- 📊 Automatic heating & cooling rate calculation (°C/h, EMA-smoothed) + firmware reported rate (`status.device_heat_perhour`)
+- 📊 Automatic heating & cooling rate calculation (°C/h, moving average)
 - ⚡ Power failure detection with optional state restoration
 - 🌍 3 server regions: Europe (ROW), USA, China
-- 🔒 Rate limiter (max. 2.5 requests/second, serialised command queue)
+- 🔒 Rate limiter (max. 2.5 requests/second)
 - 🚀 Rapid polling after commands (1-second interval for 15 s)
-- ✅ **Command confirmation:** every API command is polled up to 5× (every 3 s) to verify the device applied it – result visible in `info.statusCheck`
-- 🔁 **filter=OFF** automatically stops the heater (adapter); bubble/UVC/ozone are stopped by the firmware
 
 ### Time Window Control
 - ⏰ Up to 3 configurable time windows (weekday selection, start/end time)
 - 🔥 Per-window control of heating (with target temperature), filter pump and UVC
-- 🔗 UVC deferred until filter pump is confirmed running (up to 15 s wait)
+- 🔗 UVC only active when filter pump is running
 - 💧 Configurable pump follow-up time after window ends (pump keeps running N minutes)
-- 🌙 Overnight windows supported (e.g. 22:00–06:00)
 
 ### PV Surplus Control
 - ☀️ Automatic activation when PV surplus exceeds configurable threshold (W)
-- 🌥️ Configurable cloud-protection delay before deactivation (`computed.pv_deactivate_remaining` shows countdown in real time)
+- 🌥️ Configurable cloud-protection delay before deactivation (minutes)
 - 📉 Hysteresis to prevent rapid on/off switching
-- ⚡ **MSpa power correction:** connect a smart plug datapoint – the MSpa's own load is subtracted from house consumption to prevent oscillation when the device switches on
-- **Staged deactivation** – when surplus drops away, shutdown happens in steps:
-  1. **Heater OFF** (immediately) – skipped if firmware already idle (`heat_state=4`)
-  2. **UVC OFF** (after configurable delay) – waits until daily UVC minimum runtime is reached
-  3. **Filter OFF** (after another delay) – skipped if firmware is still actively heating (`heat_state` 2/3)
-- Surplus recovery **during** staged shutdown → all timers cancelled, devices re-activated
-- Firmware reaching target temperature while PV active → staged UVC/filter shutdown triggered automatically
+- 🔋 Independent of time window control – can be combined
+- `computed.pv_deactivate_remaining` – shows remaining minutes of the cloud-protection delay in real time
+- **Staged deactivation** – when surplus drops away, the system shuts down in steps:
+  1. **Heater OFF** (immediately) – if firmware already reached target temperature (heat_state=4), the API call is skipped
+  2. **UVC OFF** (after configurable delay) – but only when the daily UVC minimum runtime is reached; otherwise UVC keeps running until the minimum is met
+  3. **Filter OFF** (after another delay) – but only if the firmware is not actively heating (heat_state 2/3); prevents stopping the pump while the heater is still circulating
+- If PV surplus recovers **during** staged deactivation → all timers are cancelled and previously turned-off devices are re-activated
+- When firmware reaches target temperature while PV is active → staged deactivation of UVC/filter is triggered automatically (heater already idle)
 
 ### Season Control
 - 📅 Define a season window (DD.MM – DD.MM) in the adapter settings
-- Season can be **toggled at runtime** via `control.season_enabled` – survives adapter restarts
-- Outside the season: polling continues, all automation is paused (frost protection still works)
+- Season can be **toggled at runtime** via `control.season_enabled` (e.g. from VIS) – survives adapter restarts
+- Outside the season: polling continues, all automation is paused
 
 ### Winter Mode (Frost Protection)
-- ❄️ Activates heater + filter automatically when water temperature ≤ configured frost threshold
+- ❄️ Protects the hot tub from freezing when left outdoors in winter
+- Activates heater + filter automatically when water temperature falls to or below the configured **frost threshold (°C)**
 - Deactivates again when temperature rises **3 °C above** the threshold (hysteresis)
-- Enabled/disabled via `control.winter_mode` – survives adapter restarts
-- Works independently of season (protects even when season is disabled)
-- Telegram notification on activation/deactivation
+- Enabled/disabled via `control.winter_mode` (e.g. from VIS) – survives adapter restarts
+- Frost threshold configured in the adapter settings (Admin → Time Control tab)
+- Sends a Telegram notification when frost protection activates or deactivates
 
 ### Manual Override
 - 🔧 Pauses **all automations** (time windows, PV surplus, frost protection) with a single switch
-- **Optional auto-resume:** set `control.manual_override_duration` (minutes) – resumes automatically. `0` = indefinite
-- Automations are **immediately re-evaluated** when override is disabled
-- Always **reset to `false`** on adapter restart
-- **App change detection:** if the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is set automatically for a configurable duration. Set to 0 to disable
+- Set `control.manual_override = true` to pause – the adapter will no longer send any commands to the device
+- **Optional auto-resume:** set `control.manual_override_duration` (minutes) before enabling – the adapter resumes automatically after the configured time. `0` = indefinite (manual reset required)
+- When override is disabled again, all automations are **immediately re-evaluated** with the latest device data
+- `control.manual_override` is always **reset to `false`** on adapter restart
+- Typical use case: control the device via the MSpa app temporarily without the adapter interfering
 
 ### Consumption Tracking
-- 📈 Daily kWh tracking via external energy meter datapoint (e.g. smart plug)
-- MSpa own load subtracted from house consumption for accurate PV surplus (no oscillation)
+- 📈 Daily kWh tracking via external energy meter datapoint
 - Resets automatically at midnight
+- Independent of season and time window control
 
 ### UVC Lamp Lifetime
-- 🔦 Configure installation date and rated lifetime (h)
-- **Real operating hours** counted – only while UVC is actually ON, persisted across restarts
-- **Minimum daily runtime:** adapter ensures UVC runs at least N hours/day
-- **Daily ensure:** from a configurable time of day, filter + UVC are started automatically if minimum not yet reached
-- Estimated expiry date calculated from average daily usage
-- Warning 30 days before expiry and on exhaustion
+- 🔦 Configure installation date and rated lifetime (operating hours)
+- **Real operating hours** are counted – only while UVC is actually switched ON
+- Accumulated hours are persisted across adapter restarts
+- `status.uvc_hours_used` – total accumulated UVC operating hours
+- `status.uvc_today_hours` – UVC operating hours for today (resets at midnight)
+- `status.uvc_hours_remaining` – remaining hours until rated lifetime is reached
+- Estimated expiry date is calculated from average daily usage (remaining hours ÷ avg h/day)
+- Warns 30 days before estimated expiry and when lifetime is exhausted
 
 ### Notifications (Telegram)
-- 📬 PV activated/deactivated, time window started/ended, frost activated/deactivated, UVC expiry, manual override on/off
-- Multiple recipients (comma-separated)
-- 🌐 Language selectable: English / Deutsch
+- 📬 Send notifications via Telegram on:
+  - PV surplus activated / deactivated
+  - Time window started / ended
+  - Season started / ended
+  - UVC lamp expiry warning
+  - ❄️ Frost protection activated / deactivated
+  - 🔧 Manual override enabled / disabled (with duration if set)
+- Supports multiple recipients (comma-separated usernames)
 
 ---
 
 
-
 ## Changelog
-### 0.2.13 (2026-04-20)
-* (arteck) typo
+### 0.2.14 (2026-04-23)
+* (arteck) fix consumption
 
-### 0.2.12 (2026-04-20)
-* (arteck) add all missing raw API status datapoints
-* (arteck) fix filter_current / filter_life descriptions (remaining hours vs. accumulated hours)
-* (arteck) fix filter auto-disable: heater stopped by adapter, bubble/UVC handled by firmware
-* (arteck) fix deadlock when filter false triggered heater auto-disable inside API command lock
-* (arteck) add statusCheck send / success / error / queued for every API command
-* (arteck) uvc_ensure_skip_today now also turns UVC OFF immediately if it is currently ON
+### 0.2.7 (2026-04-19)
+* (arteck) fix manual override
 
-### 0.2.11 (2026-04-20)
-* (arteck) add `info.statusCheck`
-* (arteck) fix filter off
-* (arteck) api update
+### 0.2.6 (2026-04-19)
+* (arteck) skip uv lamp daily duration 
+* (arteck) add language selector for telegramm message
 
-### 0.2.10 (2026-04-20)
-* (arteck) fix uvc_ensure_skip_today
+### 0.2.5 (2026-04-19)
+* (arteck) fix uvc_expiry_date
 
-### 0.2.9 (2026-04-20)
-* (arteck) typo
+### 0.2.4 (2026-04-19)
+* (arteck) add cloud delay, heater delay uvc delay
+* (arteck) add min duration uv-lamp 
+* (arteck) winter modus refactoring
+* (arteck) add manual_override modus
+* (arteck) add app value change automatic detection 
+* (arteck) fix consumption
 
 ## License
 
 MIT License
 
-Copyright (c) 2026 Arthur Rupp <arteck@outlook.com>
+Copyright (c) 2026 Arthur Rupp <arteck@outlook.com>,
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
