@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.5 (2026-04-19)
+* (arteck) fix uvc_expiry_date
+
 ## 0.2.4 (2026-04-19)
 * (arteck) add cloud delay, heater delay uvc delay
 * (arteck) add min duration uv-lamp 

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.15",
+    "version": "0.2.16",
     "news": {
+      "0.2.16": {
+        "en": "add manuall filter counter and reset button",
+        "de": "manuell filterzähler und reset-taste hinzufügen",
+        "ru": "добавить ручной счетчик фильтра и кнопку сброса",
+        "pt": "adicionar contador de filtro manual e botão de reset",
+        "nl": "handmatige filterteller toevoegen en reset knop",
+        "fr": "ajouter le compteur de filtre manuel et le bouton de réinitialisation",
+        "it": "aggiungere il contatore del filtro manuale e il pulsante di reset",
+        "es": "añadir el contador de filtro manual y el botón de reset",
+        "pl": "dodaj licznik filtra manualla i zresetuj",
+        "uk": "додати ручний фільтр лічильник і кнопка скидання",
+        "zh-cn": "添加手动过滤器计数器并重置按钮"
+      },
       "0.2.15": {
         "en": "create only model states",
         "de": "nur modellzustände erstellen",
@@ -80,19 +93,6 @@
         "pl": "fix uvc _ ensure _ skip _ today",
         "uk": "javascript licenses api веб-сайт go1.13.8",
         "zh-cn": "修复 uvc ensure skip today"
-      },
-      "0.2.9": {
-        "en": "typo",
-        "de": "typo",
-        "ru": "опечатка",
-        "pt": "erro de digitação",
-        "nl": "type",
-        "fr": "typo",
-        "it": "tipo",
-        "es": "typo",
-        "pl": "typo",
-        "uk": "типо",
-        "zh-cn": "类型"
       }
     },
     "titleLang": {

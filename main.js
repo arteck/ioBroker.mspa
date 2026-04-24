@@ -73,6 +73,10 @@ class MspaAdapter extends utils.Adapter {
         this._winterFrostActive = false;  // true while frost protection heating is running
         this._seasonEnabled     = false;  // controlled exclusively via control.season_enabled state
 
+        // Filter pump runtime tracking
+        this._filterOnSince   = null;  // Date.now() when filter turned ON, null when OFF
+        this._filterHoursUsed = 0;     // accumulated runtime hours since last reset (persisted)
+
         // UVC lamp runtime tracking
         this._uvcOnSince            = null;   // Date.now() when UVC turned ON, null when OFF
         this._uvcHoursUsed          = 0;      // accumulated operating hours (persisted)
@@ -192,6 +196,16 @@ class MspaAdapter extends utils.Adapter {
         await consumptionHelper.init(this);
         notificationHelper.init(this);
 
+        // Filter runtime: restore persisted value; if filter was ON when adapter stopped,
+        // we start tracking from now (conservative – can't know how long it ran).
+        const filterRunningState = await this.getStateAsync('control.filter_running');
+        this._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number') ? filterRunningState.val : 0;
+        const filterCtrlState = await this.getStateAsync('control.filter');
+        if (filterCtrlState && filterCtrlState.val) {
+            this._filterOnSince = Date.now();
+            this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
+        }
+
         // UVC hours: restore persisted value; if UVC was ON when adapter stopped, we
         // cannot know how long it ran → we just start tracking from now.
         const uvcHoursState = await this.getStateAsync('status.uvc_hours_used');
@@ -240,6 +254,11 @@ class MspaAdapter extends utils.Adapter {
         }
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
+        // Persist accumulated filter runtime hours (including any currently-running session)
+        try {
+            const finalFilterH = this._accumulateFilterHours();
+            await this.setStateAsync('control.filter_running', { val: Math.round(finalFilterH * 100) / 100, ack: true });
+        } catch (_) { /* ignore on unload */ }
         // Persist accumulated UVC hours (including any currently-running session)
         try {
             const finalHours = this._accumulateUvcHours();
@@ -557,6 +576,21 @@ anyWindowManagesUvc = true;
         } catch (err) {
             this.log.error(`Startup check: error while shutting down orphaned features – ${err.message}`);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Filter pump runtime – helper
+    // -------------------------------------------------------------------------
+    /**
+     * Returns total accumulated filter runtime hours including the currently running
+     * session (if filter is ON right now). Does NOT mutate this._filterHoursUsed.
+     */
+    _accumulateFilterHours() {
+        let total = this._filterHoursUsed || 0;
+        if (this._filterOnSince !== null) {
+            total += (Date.now() - this._filterOnSince) / (1000 * 3600);
+        }
+        return total;
     }
 
     // -------------------------------------------------------------------------
@@ -1852,6 +1886,24 @@ return;
         await this.setStateChangedAsync('status.uvc_hours_used', Math.round(this._accumulateUvcHours() * 100) / 100, true);
         await this.setStateChangedAsync('status.uvc_today_hours', Math.round(this._getUvcTodayHours() * 100) / 100, true);
         // ──────────────────────────────────────────────────────────────────
+
+        // ── Filter pump runtime tracking ───────────────────────────────────
+        const filterIsOn = data.filter === 'on';
+        if (filterIsOn && this._filterOnSince === null) {
+            // filter just turned ON
+            this._filterOnSince = Date.now();
+            this.log.debug('Filter ON – started tracking runtime hours');
+        } else if (!filterIsOn && this._filterOnSince !== null) {
+            // filter just turned OFF → accumulate elapsed hours
+            this._filterHoursUsed = this._accumulateFilterHours();
+            this._filterOnSince   = null;
+            this.log.debug(`Filter OFF – total runtime: ${this._filterHoursUsed.toFixed(2)} h`);
+            await this.setStateAsync('control.filter_running', { val: Math.round(this._filterHoursUsed * 100) / 100, ack: true });
+        }
+        // Always publish current accumulated value (including current session)
+        await this.setStateChangedAsync('control.filter_running', Math.round(this._accumulateFilterHours() * 100) / 100, true);
+        // ──────────────────────────────────────────────────────────────────
+
         await setCtrl('control.target_temperature', data.target_temperature);
         await setCtrl('control.bubble_level',       data.bubble_level);
 
@@ -2304,6 +2356,19 @@ return;
                     await this._setManualOverride(true, Number(state.val) || 0);
                 } else {
                     await this.setStateAsync('control.manual_override_duration', Number(state.val) || 0, true);
+                }
+
+            } else if (key === 'filter_reset') {
+                if (state.val) {
+                    // Flush any currently running session into _filterHoursUsed first,
+                    // then reset to 0 and start a fresh session from now if filter is still ON.
+                    const wasRunning = this._filterOnSince !== null;
+                    this._filterHoursUsed = 0;
+                    this._filterOnSince   = wasRunning ? Date.now() : null;
+                    await this.setStateAsync('control.filter_running', { val: 0, ack: true });
+                    // Reset button → always write false back (it's a momentary trigger)
+                    await this.setStateAsync('control.filter_reset', { val: false, ack: true });
+                    this.log.info(`Filter runtime counter reset to 0 (filter was ${wasRunning ? 'running – new session started' : 'off'})`);
                 }
             }
         } catch (err) {

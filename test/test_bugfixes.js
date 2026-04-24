@@ -1031,6 +1031,155 @@ await (async () => {
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  18. Filter-Laufzeit-Zähler (filter_running / filter_reset)
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n══════════════════════════════════════════');
+console.log(' 18. filter_running / filter_reset');
+console.log('══════════════════════════════════════════');
+
+await (async () => {
+
+    // ── Hilfsfunktionen analog zu main.js ─────────────────────────────────
+    function accumulateFilterHours(filterHoursUsed, filterOnSince) {
+        let total = filterHoursUsed || 0;
+        if (filterOnSince !== null) {
+            total += (Date.now() - filterOnSince) / (1000 * 3600);
+        }
+        return total;
+    }
+
+    // Simulates the publishStatus filter-tracking block
+    async function processFilterState(ctx, filterIsOn) {
+        if (filterIsOn && ctx.filterOnSince === null) {
+            ctx.filterOnSince = Date.now();
+        } else if (!filterIsOn && ctx.filterOnSince !== null) {
+            ctx.filterHoursUsed = accumulateFilterHours(ctx.filterHoursUsed, ctx.filterOnSince);
+            ctx.filterOnSince   = null;
+            ctx.persistedVal    = Math.round(ctx.filterHoursUsed * 100) / 100;
+        }
+        ctx.publishedVal = Math.round(accumulateFilterHours(ctx.filterHoursUsed, ctx.filterOnSince) * 100) / 100;
+    }
+
+    // Simulates the onStateChange filter_reset handler
+    function handleFilterReset(ctx) {
+        const wasRunning      = ctx.filterOnSince !== null;
+        ctx.filterHoursUsed   = 0;
+        ctx.filterOnSince     = wasRunning ? Date.now() : null;
+        ctx.persistedVal      = 0;
+        ctx.publishedVal      = 0;
+        return wasRunning;
+    }
+
+    // ── Test 1: Filter läuft – Zähler steigt ──────────────────────────────
+    {
+        const ctx = { filterHoursUsed: 0, filterOnSince: null, publishedVal: 0, persistedVal: 0 };
+
+        // Filter geht AN
+        await processFilterState(ctx, true);
+        assert('Filter AN: filterOnSince wird gesetzt', ctx.filterOnSince !== null);
+        assert('Filter AN: publishedVal ≥ 0',           ctx.publishedVal >= 0);
+
+        // kurze Wartezeit simulieren (100 ms ≈ 0.0000278 h)
+        await sleep(100);
+        await processFilterState(ctx, true); // immer noch an
+        // Roh-Wert (ungerundet) prüfen – bei 100 ms ist gerundeter Wert auf 2 Stellen noch 0.00
+        const rawH = accumulateFilterHours(ctx.filterHoursUsed, ctx.filterOnSince);
+        assert('Filter läuft: roher Akkumulationswert > 0 nach 100 ms', rawH > 0);
+
+        // Filter geht AUS
+        const before = ctx.publishedVal;
+        await processFilterState(ctx, false);
+        assert('Filter AUS: filterOnSince = null',       ctx.filterOnSince === null);
+        assert('Filter AUS: filterHoursUsed > 0',        ctx.filterHoursUsed > 0);
+        assert('Filter AUS: persistedVal ≈ before',      Math.abs(ctx.persistedVal - before) < 0.001);
+    }
+
+    // ── Test 2: Zähler akkumuliert über mehrere Zyklen ─────────────────────
+    {
+        const ctx = { filterHoursUsed: 5.0, filterOnSince: null, publishedVal: 0, persistedVal: 0 };
+
+        // Filter AN → sofort AUS
+        ctx.filterOnSince = Date.now() - 3_600_000; // 1 Stunde simulieren
+        await processFilterState(ctx, false);
+        assert('Akkumulation: 5 h + 1 h = 6 h', Math.abs(ctx.filterHoursUsed - 6.0) < 0.01);
+        assert('persistedVal = 6.0',              Math.abs(ctx.persistedVal - 6.0)    < 0.01);
+    }
+
+    // ── Test 3: Reset während Filter läuft ────────────────────────────────
+    {
+        const ctx = {
+            filterHoursUsed: 10.5,
+            filterOnSince:   Date.now() - 1_800_000,  // 30 min laufend
+            publishedVal:    0,
+            persistedVal:    0,
+        };
+
+        const wasRunning = handleFilterReset(ctx);
+        assert('Reset während Filter läuft: wasRunning = true',     wasRunning);
+        assert('Reset: filterHoursUsed = 0',                        ctx.filterHoursUsed === 0);
+        assert('Reset: filterOnSince neu gesetzt (neue Session)',    ctx.filterOnSince !== null);
+        assert('Reset: persistedVal = 0',                           ctx.persistedVal === 0);
+        assert('Reset: publishedVal = 0',                           ctx.publishedVal === 0);
+
+        // Nach dem Reset: Neue Laufzeit beginnt von 0
+        await sleep(50);
+        await processFilterState(ctx, true); // filter still on
+        assert('Nach Reset: publishedVal beginnt von ~0',           ctx.publishedVal < 0.001);
+    }
+
+    // ── Test 4: Reset wenn Filter AUS ─────────────────────────────────────
+    {
+        const ctx = { filterHoursUsed: 3.75, filterOnSince: null, publishedVal: 0, persistedVal: 0 };
+
+        const wasRunning = handleFilterReset(ctx);
+        assert('Reset wenn Filter AUS: wasRunning = false',  !wasRunning);
+        assert('Reset: filterHoursUsed = 0',                  ctx.filterHoursUsed === 0);
+        assert('Reset: filterOnSince bleibt null',            ctx.filterOnSince === null);
+        assert('Reset: persistedVal = 0',                     ctx.persistedVal === 0);
+    }
+
+    // ── Test 5: Persistenz beim Adapter-Neustart ───────────────────────────
+    {
+        // Simuliert onReady: persistierter Wert wird aus dem State geladen
+        const persisted = 42.75;
+        const ctx = { filterHoursUsed: persisted, filterOnSince: null };
+
+        // Filter war beim letzten Stopp AUS → kein _filterOnSince
+        assert('Restore: filterHoursUsed aus persistiertem Wert', ctx.filterHoursUsed === 42.75);
+        assert('Restore: filterOnSince = null (Filter war AUS)',  ctx.filterOnSince === null);
+
+        // Filter war beim letzten Stopp AN → filterOnSince = Date.now()
+        const ctx2 = { filterHoursUsed: persisted, filterOnSince: Date.now() };
+        const acc  = accumulateFilterHours(ctx2.filterHoursUsed, ctx2.filterOnSince);
+        assert('Restore: Filter war AN → Akkumulation beginnt von persisted', Math.abs(acc - persisted) < 0.001);
+    }
+
+    // ── Test 6: STATE_DEFS enthält die neuen States ────────────────────────
+    {
+        const { STATE_DEFS } = require('../lib/constants');
+        assert('STATE_DEFS hat control.filter_running',
+            'control.filter_running' in STATE_DEFS);
+        assert('STATE_DEFS hat control.filter_reset',
+            'control.filter_reset' in STATE_DEFS);
+        assert('filter_running: type=number',
+            STATE_DEFS['control.filter_running'].type === 'number');
+        assert('filter_running: unit="h"',
+            STATE_DEFS['control.filter_running'].unit === 'h');
+        assert('filter_running: write=false (read-only Zähler)',
+            STATE_DEFS['control.filter_running'].write === false);
+        assert('filter_reset: type=boolean',
+            STATE_DEFS['control.filter_reset'].type === 'boolean');
+        assert('filter_reset: role=button',
+            STATE_DEFS['control.filter_reset'].role === 'button');
+        assert('filter_reset: write=true',
+            STATE_DEFS['control.filter_reset'].write === true);
+        assert('filter_reset: kein apiField (immer angelegt)',
+            STATE_DEFS['control.filter_reset'].apiField === undefined);
+    }
+
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  ZUSAMMENFASSUNG
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log('\n══════════════════════════════════════════');
