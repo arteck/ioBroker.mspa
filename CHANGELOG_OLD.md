@@ -47,6 +47,14 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.4 (2026-04-19)
+* (arteck) add cloud delay, heater delay uvc delay
+* (arteck) add min duration uv-lamp 
+* (arteck) winter modus refactoring
+* (arteck) add manual_override modus
+* (arteck) add app value change automatic detection 
+* (arteck) fix consumption
+
 ## 0.2.3 (2026-04-18)
 * (arteck) fix languages del BOM
 

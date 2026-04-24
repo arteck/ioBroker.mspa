@@ -96,6 +96,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### 0.2.15 (2026-04-24)
+* (arteck) create only model states
+
 ### 0.2.14 (2026-04-23)
 * (arteck) fix consumption
 
@@ -108,14 +111,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.5 (2026-04-19)
 * (arteck) fix uvc_expiry_date
-
-### 0.2.4 (2026-04-19)
-* (arteck) add cloud delay, heater delay uvc delay
-* (arteck) add min duration uv-lamp 
-* (arteck) winter modus refactoring
-* (arteck) add manual_override modus
-* (arteck) add app value change automatic detection 
-* (arteck) fix consumption
 
 ## License
 

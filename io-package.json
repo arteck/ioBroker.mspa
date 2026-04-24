@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.14",
+    "version": "0.2.15",
     "news": {
+      "0.2.15": {
+        "en": "create only model states",
+        "de": "nur modellzustände erstellen",
+        "ru": "создавать только модельные государства",
+        "pt": "criar apenas estados de modelo",
+        "nl": "alleen modelstaten aanmaken",
+        "fr": "créer uniquement des états modèles",
+        "it": "creare solo stati modello",
+        "es": "crear sólo estados modelo",
+        "pl": "tworzyć tylko państwa modelowe",
+        "uk": "створити тільки стан моделі",
+        "zh-cn": "只创建模式状态"
+      },
       "0.2.14": {
         "en": "fix consumption",
         "de": "verbrauch",
@@ -80,19 +93,6 @@
         "pl": "typo",
         "uk": "типо",
         "zh-cn": "类型"
-      },
-      "0.2.8": {
-        "en": "see Readme",
-        "de": "Siehe Readme",
-        "ru": "см. файл Readme",
-        "pt": "Consulte o arquivo Leia-me.",
-        "nl": "zie Readme",
-        "fr": "Voir le fichier Lisez-moi",
-        "it": "vedi il file Readme",
-        "es": "ver Léame",
-        "pl": "zobacz Readme",
-        "uk": "див. файл Readme",
-        "zh-cn": "请参阅自述文件"
       }
     },
     "titleLang": {

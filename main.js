@@ -99,6 +99,11 @@ class MspaAdapter extends utils.Adapter {
 
         this._firstPollDone         = false; // true after first successful poll (used for startup device-state check)
 
+        // Tracks which apiField-based states have been created for this specific device model.
+        // States NOT in this set are not published in publishStatus() to avoid setting
+        // non-existent ioBroker objects with zero-padded values.
+        this._dynamicStateIds       = new Set();
+
         this.on('ready',        this.onReady.bind(this));
         this.on('stateChange',  this.onStateChange.bind(this));
         this.on('unload',       this.onUnload.bind(this));
@@ -140,6 +145,9 @@ class MspaAdapter extends utils.Adapter {
             } else {
                 this.log.error(`MSpa init failed: ${err.message}`);
             }
+            // Do not continue – no subscriptions, timers or automations should start
+            // without a valid API connection.
+            return;
         }
 
         this.subscribeStates('control.*');
@@ -587,15 +595,15 @@ anyWindowManagesUvc = true;
         const raw = (cfg.uvc_install_date || '').trim();
         if (!raw) {
             this.log.debug('UVC: no installation date configured – skipping expiry calculation');
-            this.setStateAsync('status.uvc_expiry_date',      { val: '', ack: true });
-            this.setStateAsync('status.uvc_hours_remaining',  { val: 0,  ack: true });
+            await this.setStateAsync('status.uvc_expiry_date',     { val: '', ack: true });
+            await this.setStateAsync('status.uvc_hours_remaining', { val: 0,  ack: true });
             return;
         }
 
         const match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
         if (!match) {
             this.log.warn(`UVC: invalid installation date format "${raw}" – expected DD.MM.YYYY`);
-            this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
+            await this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
             return;
         }
 
@@ -603,7 +611,7 @@ anyWindowManagesUvc = true;
         const installDate = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
         if (isNaN(installDate.getTime())) {
             this.log.warn(`UVC: installation date "${raw}" could not be parsed`);
-            this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
+            await this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
             return;
         }
 
@@ -889,11 +897,13 @@ anyWindowManagesUvc = true;
 
         // ── Activation ───────────────────────────────────────────────────────
         if (shouldActivate && (!this._pvActive || this._pvStageTimer !== null)) {
+            // Capture staging state BEFORE cancelling timers
+            const wasStaging = this._pvStageTimer !== null;
             // Cancel any pending deactivation (debounce or staging)
             await this._pvCancelAllDeactivationTimers();
 
-            if (!this._pvActive) {
-                // Fresh activation
+            if (!wasStaging && !this._pvActive) {
+                // Fresh activation (not recovering from a staged shutdown)
                 this._pvActive = true;
                 this.log.info(`PV: surplus DETECTED (${surplus} W ≥ ${threshold} W) – activating`);
                 await notificationHelper.send(notificationHelper.format('pvActivated', { surplus }));
@@ -931,8 +941,8 @@ anyWindowManagesUvc = true;
                 if (this._pvActive) {
  this.enableRapidPolling(); 
 }
-            } else {
-                // Surplus recovered while staging was in progress → re-activate what was turned off
+            } else if (wasStaging) {
+                // Surplus recovered while staged deactivation was in progress → re-activate
                 await this._pvReactivate(pvWindows, surplus);
             }
 
@@ -1469,6 +1479,12 @@ anyWindowManagesUvc = true;
         });
 
         for (const [id, def] of Object.entries(STATE_DEFS)) {
+            // States with apiField are created dynamically after the first poll
+            // so only fields the device actually reports get an ioBroker state.
+            if (def.apiField !== undefined) {
+continue;
+}
+
             const common = {
                 id:    id,
                 name:  def.name,
@@ -1499,6 +1515,58 @@ anyWindowManagesUvc = true;
                 await this.setObjectAsync(id, existing);
             }
         }
+    }
+
+    /**
+     * Creates status states that have an apiField mapping – but only for fields
+     * that the device actually reports in its first raw API response.
+     * Called once after the first successful poll.
+     *
+     * @param {object} raw  – raw API payload from getHotTubStatus()
+     */
+    async createDynamicStates(raw) {
+        const apiKeys = new Set(Object.keys(raw));
+        let created = 0;
+        for (const [id, def] of Object.entries(STATE_DEFS)) {
+            if (def.apiField === undefined) {
+continue;
+}
+            if (!apiKeys.has(def.apiField)) {
+                this.log.debug(`createDynamicStates: skipping ${id} – field '${def.apiField}' not in API response`);
+                continue;
+            }
+            const common = {
+                id:    id,
+                name:  def.name,
+                role:  def.role,
+                type:  def.type,
+                read:  def.read,
+                write: def.write,
+                def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
+            };
+            if (def.unit   !== undefined) {
+common.unit   = def.unit;
+}
+            if (def.min    !== undefined) {
+common.min    = def.min;
+}
+            if (def.max    !== undefined) {
+common.max    = def.max;
+}
+            if (def.states !== undefined) {
+common.states = def.states;
+}
+
+            await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
+            const existing = await this.getObjectAsync(id);
+            if (existing) {
+                existing.common = { ...existing.common, ...common };
+                await this.setObjectAsync(id, existing);
+            }
+            this._dynamicStateIds.add(id);
+            created++;
+        }
+        this.log.info(`createDynamicStates: ${created} model-specific states created/updated for ${this._api.model}`);
     }
 
     async updateDeviceInfo() {
@@ -1561,6 +1629,14 @@ anyWindowManagesUvc = true;
                 raw = await this._api.getHotTubStatus();
             }
 
+            // DEBUG: einmalig rohe API-Daten loggen (nur beim ersten Poll)
+            if (!this._rawApiLogged) {
+                this._rawApiLogged = true;
+                this.log.info(`MSpa RAW API response (${this._api.model}): ${JSON.stringify(raw)}`);
+                // Create model-specific status states based on what the API actually reports
+                await this.createDynamicStates(raw);
+            }
+
             const data     = transformStatus(raw);
             this._lastData = data;
 
@@ -1603,9 +1679,17 @@ anyWindowManagesUvc = true;
 
     async publishStatus(data) {
         const set = async (id, val) => {
-            if (val !== undefined && val !== null) {
-                await this.setStateChangedAsync(id, val, true);
-            }
+            if (val === undefined || val === null) {
+return;
+}
+            // States with an apiField are only created when the device actually reports
+            // that field (createDynamicStates). Silently skip states that do not exist
+            // for this model to avoid polluting the object tree with zero-padded defaults.
+            const def = STATE_DEFS[id];
+            if (def && def.apiField !== undefined && !this._dynamicStateIds.has(id)) {
+return;
+}
+            await this.setStateChangedAsync(id, val, true);
         };
 
         await set('status.water_temperature', data.water_temperature);
