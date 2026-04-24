@@ -6,7 +6,7 @@
  */
 
 const utils  = require('@iobroker/adapter-core');
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { MSpaApiClient, MSpaThrottle } = require('./lib/mspaApi');
 const { transformStatus, RateTracker } = require('./lib/utils');
 const { STATE_DEFS }                   = require('./lib/constants');
