@@ -39,9 +39,18 @@
           "label": "Region / Server",
           "help": "Select the MSpa cloud server for your region",
           "options": [
-            { "value": "ROW", "label": "Europe / Rest of World" },
-            { "value": "US",  "label": "USA / Canada" },
-            { "value": "CH",  "label": "China" }
+            {
+              "value": "ROW",
+              "label": "Europe / Rest of World"
+            },
+            {
+              "value": "US",
+              "label": "USA / Canada"
+            },
+            {
+              "value": "CH",
+              "label": "China"
+            }
           ],
           "default": "ROW",
           "newLine": true,
@@ -685,8 +694,14 @@
           "label": "Notification language",
           "help": "Language for Telegram and other notification messages",
           "options": [
-            { "value": "en", "label": "English" },
-            { "value": "de", "label": "Deutsch" }
+            {
+              "value": "en",
+              "label": "English"
+            },
+            {
+              "value": "de",
+              "label": "Deutsch"
+            }
           ],
           "default": "en",
           "newLine": true,
@@ -695,6 +710,34 @@
           "md": 4,
           "lg": 4,
           "xl": 4
+        }
+      }
+    },
+    "tab_add_settings": {
+      "type": "panel",
+      "label": "Additional settings",
+      "items": {
+        "add_settings_header": {
+          "type": "header",
+          "text": "Additional settings",
+          "size": 4,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
+        },
+        "more_log_enabled": {
+          "type": "checkbox",
+          "label": "Enable more log information",
+          "default": false,
+          "newLine": true,
+          "xs": 12,
+          "sm": 12,
+          "md": 12,
+          "lg": 12,
+          "xl": 12
         }
       }
     }

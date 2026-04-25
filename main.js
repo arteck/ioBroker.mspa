@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /*
  * ioBroker MSpa Adapter – main.js
@@ -118,6 +118,7 @@ class MspaAdapter extends utils.Adapter {
     // -------------------------------------------------------------------------
     async onReady() {
         this.log.info('MSpa adapter starting…');
+
         await this.createStates();
 
         const cfg      = this.config;
@@ -141,7 +142,9 @@ class MspaAdapter extends utils.Adapter {
             await this._api.init();
             await this.updateDeviceInfo();
             await this.setStateAsync('info.connection', true, true);
+
             this.log.info(`MSpa connected – device: ${this._api.deviceAlias}`);
+
         } catch (err) {
             await this.setStateAsync('info.connection', false, true);
             if (err.message && err.message.includes('no devices returned from API')) {
@@ -180,10 +183,14 @@ class MspaAdapter extends utils.Adapter {
             if (persistedSkip && persistedDate === today) {
                 this._uvcEnsureSkipToday = true;
                 this._uvcEnsureSkipDate  = today;
-                this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
+                }
             } else {
                 if (persistedSkip) {
-                    this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
+                    }
                 }
                 this._uvcEnsureSkipToday = false;
                 this._uvcEnsureSkipDate  = '';
@@ -203,7 +210,9 @@ class MspaAdapter extends utils.Adapter {
         const filterCtrlState = await this.getStateAsync('control.filter');
         if (filterCtrlState && filterCtrlState.val) {
             this._filterOnSince = Date.now();
-            this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
+            }
         }
 
         // UVC hours: restore persisted value; if UVC was ON when adapter stopped, we
@@ -288,11 +297,15 @@ class MspaAdapter extends utils.Adapter {
         }
         const cfg = this.config;
         if (this._seasonEnabled) {
-            this.log.info(`Time control: season control active (${cfg.season_start} – ${cfg.season_end}), today inSeason=${this.isInSeason()}`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`Time control: season control active (${cfg.season_start} – ${cfg.season_end}), today inSeason=${this.isInSeason()}`);
+            }
         }
         // init tracking array to match current window count
         this._timeWindowActive = windows.map(() => false);
-        this.log.info(`Time control: starting scheduler for ${windows.filter(w => w.active).length} active window(s) (checks every 60 s)`);
+        if (this.config.more_log_enabled) {
+            this.log.info(`Time control: starting scheduler for ${windows.filter(w => w.active).length} active window(s) (checks every 60 s)`);
+        }
 
         // run immediately, then every 60 s aligned to next full minute
         this.checkTimeWindows();
@@ -322,7 +335,9 @@ class MspaAdapter extends utils.Adapter {
             for (let i = 0; i < windows.length; i++) {
                 if (this._timeWindowActive[i]) {
                     this._timeWindowActive[i] = false;
-                    this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
+                    }
                     await this._deactivateWindow(windows[i], i);
                     await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', { window: i + 1 }));
                 }
@@ -361,7 +376,9 @@ class MspaAdapter extends utils.Adapter {
 
             if (inWin && !wasIn) {
                 this._timeWindowActive[i] = true;
-                this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
+                }
                 await notificationHelper.send(notificationHelper.format('timeWindowStarted', { window: i + 1, start, end }));
                 try {
                     if (w.action_heating) {
@@ -399,7 +416,9 @@ class MspaAdapter extends utils.Adapter {
 
             } else if (!inWin && wasIn) {
                 this._timeWindowActive[i] = false;
-                this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
+                }
                 await notificationHelper.send(notificationHelper.format('timeWindowEnded', { window: i + 1, start, end }));
                 await this._deactivateWindow(w, i);
             }
@@ -434,7 +453,9 @@ class MspaAdapter extends utils.Adapter {
                     this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h ≥ ${uvcMinH} h)`);
                     await this.setFeature('uvc', false);
                 } else {
-                    this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
+                    }
                     // Filter must also stay ON for UVC – skip filter shutdown below
                     this.enableRapidPolling();
                     return;
@@ -457,11 +478,15 @@ class MspaAdapter extends utils.Adapter {
                 }
             } else {
                 // Follow-up active – pump keeps running for followUpMin minutes
-                this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
+                }
                 this._pumpFollowUpTimers[i] = setTimeout(async () => {
                     this._pumpFollowUpTimers[i] = null;
                     try {
-                        this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
+                        if (this.config.more_log_enabled) {
+                            this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
+                        }
                         await this.setFeature('filter', false);
                         this._pumpStartedForHeating = false;
                         this.enableRapidPolling();
@@ -548,11 +573,15 @@ anyWindowManagesUvc = true;
             return;
         }
 
-        this.log.info('Startup check: device appears to be running but no time window is active – checking for orphaned features');
+        if (this.config.more_log_enabled) {
+            this.log.info('Startup check: device appears to be running but no time window is active – checking for orphaned features');
+        }
 
         try {
             if (heaterOn && anyWindowManagesHeater) {
-                this.log.info('Startup check: heater ON but no active window → switching OFF');
+                if (this.config.more_log_enabled) {
+                    this.log.info('Startup check: heater ON but no active window → switching OFF');
+                }
                 await this.setFeature('heater', false);
             }
             // UVC before filter (filter may need to stay for UVC daily ensure)
@@ -560,16 +589,22 @@ anyWindowManagesUvc = true;
                 const todayH  = this._getUvcTodayHours();
                 const uvcMinH = this.config.uvc_daily_min_h ?? 2;
                 if (todayH >= uvcMinH) {
-                    this.log.info(`Startup check: UVC ON but no active window (daily min met: ${todayH.toFixed(2)} h) → switching OFF`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Startup check: UVC ON but no active window (daily min met: ${todayH.toFixed(2)} h) → switching OFF`);
+                    }
                     await this.setFeature('uvc', false);
                 } else {
-                    this.log.info(`Startup check: UVC ON, daily min not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h) – keeping ON for daily ensure`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Startup check: UVC ON, daily min not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h) – keeping ON for daily ensure`);
+                    }
                     // Filter must stay ON for UVC – skip filter shutdown
                     return;
                 }
             }
             if (filterOn && anyWindowManagesFilter) {
-                this.log.info('Startup check: filter ON but no active window → switching OFF');
+                if (this.config.more_log_enabled) {
+                    this.log.info('Startup check: filter ON but no active window → switching OFF');
+                }
                 await this.setFeature('filter', false);
             }
             this.enableRapidPolling();
@@ -694,7 +729,9 @@ anyWindowManagesUvc = true;
             this.log.warn(`UVC: lamp expires ~${expiryStr} (in ~${daysLeft} days, ${remainHours.toFixed(0)} h remaining) – replacement recommended`);
             await notificationHelper.send(notificationHelper.format('uvcExpirySoon', { expiry: expiryStr, daysLeft }));
         } else {
-            this.log.info(`UVC: ${usedHours.toFixed(1)} h used, ${remainHours.toFixed(0)} h remaining, est. expiry ~${expiryStr} (~${daysLeft} days, avg ${avgHoursPerDay.toFixed(2)} h/day)`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`UVC: ${usedHours.toFixed(1)} h used, ${remainHours.toFixed(0)} h remaining, est. expiry ~${expiryStr} (~${daysLeft} days, avg ${avgHoursPerDay.toFixed(2)} h/day)`);
+            }
         }
 
         await this.setStateChangedAsync('status.uvc_expiry_date', expiryStr, true);
@@ -781,16 +818,22 @@ anyWindowManagesUvc = true;
             return;
         }
         if (this._seasonEnabled) {
-            this.log.info(`PV: season control active (${cfg.season_start} – ${cfg.season_end}), today inSeason=${this.isInSeason()}`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`PV: season control active (${cfg.season_start} – ${cfg.season_end}), today inSeason=${this.isInSeason()}`);
+            }
         }
-        this.log.info(` initialising surplus control (threshold=${cfg.pv_threshold_w ?? 500} W, hysteresis=${cfg.pv_hysteresis_w ?? 100} W, heating=${!!cfg.pv_action_heating}, filter=${!!cfg.pv_action_filter}, targetTemp=${cfg.pv_target_temp ?? '—'}°C)`);
+        if (this.config.more_log_enabled) {
+            this.log.info(` initialising surplus control (threshold=${cfg.pv_threshold_w ?? 500} W, hysteresis=${cfg.pv_hysteresis_w ?? 100} W, heating=${!!cfg.pv_action_heating}, filter=${!!cfg.pv_action_filter}, targetTemp=${cfg.pv_target_temp ?? '—'}°C)`);
+        }
 
         if (cfg.pv_power_generated_id) {
             this.subscribeForeignStates(cfg.pv_power_generated_id);
             const s = await this.getForeignStateAsync(cfg.pv_power_generated_id);
             if (s && s.val !== null) {
                 this._pvPower = s.val;
-                this.log.info(` initial PV generation = ${this._pvPower} W  (id: ${cfg.pv_power_generated_id})`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(` initial PV generation = ${this._pvPower} W  (id: ${cfg.pv_power_generated_id})`);
+                }
             } else {
                 this.log.warn(` PV generation state not available yet (id: ${cfg.pv_power_generated_id})`);
             }
@@ -803,7 +846,9 @@ anyWindowManagesUvc = true;
             const s = await this.getForeignStateAsync(cfg.pv_power_house_id);
             if (s && s.val !== null) {
                 this._pvHouse = s.val;
-                this.log.info(` initial house consumption = ${this._pvHouse} W  (id: ${cfg.pv_power_house_id})`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(` initial house consumption = ${this._pvHouse} W  (id: ${cfg.pv_power_house_id})`);
+                }
             } else {
                 this.log.warn(` house consumption state not available yet (id: ${cfg.pv_power_house_id})`);
             }
@@ -817,14 +862,20 @@ anyWindowManagesUvc = true;
             const s = await this.getForeignStateAsync(cfg.external_power_w_id);
             if (s && s.val !== null) {
                 this._pvMspa = Number(s.val) || 0;
-                this.log.info(` initial MSpa power = ${this._pvMspa} W  (id: ${cfg.external_power_w_id})`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(` initial MSpa power = ${this._pvMspa} W  (id: ${cfg.external_power_w_id})`);
+                }
             } else {
                 this._pvMspa = 0;
                 this.log.warn(` MSpa power state not available yet (id: ${cfg.external_power_w_id})`);
             }
-            this.log.info(' PV surplus mode: PV − (house − MSpa) – MSpa self-consumption is excluded from house load, no oscillation');
+            if (this.config.more_log_enabled) {
+                this.log.info(' PV surplus mode: PV − (house − MSpa) – MSpa self-consumption is excluded from house load, no oscillation');
+            }
         } else {
-            this.log.info(' PV surplus mode: PV generation only (no house correction) – threshold = minimum PV generation to activate');
+            if (this.config.more_log_enabled) {
+                this.log.info(' PV surplus mode: PV generation only (no house correction) – threshold = minimum PV generation to activate');
+            }
         }
 
         this.log.debug(` init done – pvPower=${this._pvPower}, pvHouse=${this._pvHouse}, pvMspa=${this._pvMspa}, pvActive=${this._pvActive}`);
@@ -882,7 +933,9 @@ anyWindowManagesUvc = true;
             await this._pvCancelAllDeactivationTimers();
             if (this._pvActive) {
                 this._pvActive = false;
-                this.log.info('PV: season ended – staged deactivation');
+                if (this.config.more_log_enabled) {
+                    this.log.info('PV: season ended – staged deactivation');
+                }
                 const pvWindows = (cfg.timeWindows || []).filter(w => w.active && w.pv_steu);
                 await this._pvStagedDeactivate(pvWindows, true /* immediate */);
             }
@@ -939,7 +992,9 @@ anyWindowManagesUvc = true;
             if (!wasStaging && !this._pvActive) {
                 // Fresh activation (not recovering from a staged shutdown)
                 this._pvActive = true;
-                this.log.info(`PV: surplus DETECTED (${surplus} W ≥ ${threshold} W) – activating`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`PV: surplus DETECTED (${surplus} W ≥ ${threshold} W) – activating`);
+                }
                 await notificationHelper.send(notificationHelper.format('pvActivated', { surplus }));
                 for (const w of pvWindows) {
                     try {
@@ -983,13 +1038,17 @@ anyWindowManagesUvc = true;
         // ── Surplus recovered while debounce timer runs ───────────────────
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer && !this._pvStageTimer) {
             await this._pvCancelAllDeactivationTimers();
-            this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation cancelled`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation cancelled`);
+            }
 
         // ── Surplus gone: start debounce before staged deactivation ──────
         } else if (this._pvActive && shouldDeactivate && !this._pvDeactivateTimer && !this._pvStageTimer) {
             const delayMin   = cfg.pv_deactivate_delay_min ?? 5;
             const debounceMs = delayMin * 60_000;
-            this.log.info(`PV: surplus below threshold (${surplus} W < ${offAt} W) – waiting ${delayMin} min (cloud cover protection)`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`PV: surplus below threshold (${surplus} W < ${offAt} W) – waiting ${delayMin} min (cloud cover protection)`);
+            }
 
             this._pvDeactivateCountdown = delayMin;
             await this.setStateAsync('computed.pv_deactivate_remaining', delayMin, true);
@@ -1017,7 +1076,9 @@ anyWindowManagesUvc = true;
                 this._pvDeactivateCountdown = 0;
                 await this.setStateAsync('computed.pv_deactivate_remaining', 0, true);
 
-                this.log.info('PV: debounce elapsed – starting staged deactivation');
+                if (this.config.more_log_enabled) {
+                    this.log.info('PV: debounce elapsed – starting staged deactivation');
+                }
                 await notificationHelper.send(notificationHelper.format('pvDeactivated'));
                 this._pvActive = false;
                 await this._pvStagedDeactivate(pvWindows, false);
@@ -1049,7 +1110,9 @@ anyWindowManagesUvc = true;
     // PV: Re-activate features that were turned off during staging
     // -------------------------------------------------------------------------
     async _pvReactivate(pvWindows, surplus) {
-        this.log.info(`PV: surplus recovered during staging (${surplus} W) – re-activating managed features`);
+        if (this.config.more_log_enabled) {
+            this.log.info(`PV: surplus recovered during staging (${surplus} W) – re-activating managed features`);
+        }
         for (const w of pvWindows) {
             try {
                 if (w.action_heating && !this._pvManagedFeatures.heater) {
@@ -1108,10 +1171,14 @@ anyWindowManagesUvc = true;
             if (heatState() === 4) {
                 // Firmware already reached target temperature and set heater to idle
                 // → no API call needed, just clear our tracking flag
-                this.log.info('PV staged shutdown [1/3]: heater already idle (target temp reached by firmware) – skipping API call');
+                if (this.config.more_log_enabled) {
+                    this.log.info('PV staged shutdown [1/3]: heater already idle (target temp reached by firmware) – skipping API call');
+                }
             } else {
                 try {
-                    this.log.info(`PV staged shutdown [1/3]: heater OFF (heat_state=${heatState()})`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`PV staged shutdown [1/3]: heater OFF (heat_state=${heatState()})`);
+                    }
                     await this.setFeature('heater', false);
                 } catch (err) {
                     this.log.error(`PV staged shutdown [1/3]: heater OFF FAILED – ${err.message}`);
@@ -1128,16 +1195,22 @@ anyWindowManagesUvc = true;
             if (this._pvManagedFeatures.filter) {
                 if (firmwareActivelyHeating()) {
                     // Firmware still uses the pump → leave it, re-check after stage delay
-                    this.log.info(`PV staged shutdown [1/3]: filter kept ON – firmware actively heating (heat_state=${heatState()}), will re-check`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`PV staged shutdown [1/3]: filter kept ON – firmware actively heating (heat_state=${heatState()}), will re-check`);
+                    }
                     this._pvStageTimer = setTimeout(async () => {
                         this._pvStageTimer = null;
                         if (firmwareActivelyHeating()) {
-                            this.log.info(`PV staged shutdown: firmware still heating (heat_state=${heatState()}) – filter stays on for now`);
+                            if (this.config.more_log_enabled) {
+                                this.log.info(`PV staged shutdown: firmware still heating (heat_state=${heatState()}) – filter stays on for now`);
+                            }
                         } else {
                             try {
  await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; 
 } catch (_) { /* ignore */ }
-                            this.log.info('PV staged shutdown: heating-only filter now OFF');
+                            if (this.config.more_log_enabled) {
+                                this.log.info('PV staged shutdown: heating-only filter now OFF');
+                            }
                         }
                         this.enableRapidPolling();
                     }, stageDelayMs || 120_000);
@@ -1157,7 +1230,9 @@ anyWindowManagesUvc = true;
             if (this._pvManagedFeatures.uvc) {
                 const todayH = this._getUvcTodayHours();
                 if (todayH >= uvcMinH || immediate) {
-                    this.log.info(`PV staged shutdown [2/3]: UVC OFF (today ${todayH.toFixed(2)} h ≥ min ${uvcMinH} h)`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`PV staged shutdown [2/3]: UVC OFF (today ${todayH.toFixed(2)} h ≥ min ${uvcMinH} h)`);
+                    }
                     try {
  await this.setFeature('uvc', false); this._pvManagedFeatures.uvc = false; 
 } catch (err) {
@@ -1166,7 +1241,9 @@ anyWindowManagesUvc = true;
                 } else {
                     // Daily minimum not yet met → keep UVC + filter running, retry after delay
                     const remaining = (uvcMinH - todayH).toFixed(2);
-                    this.log.info(`PV staged shutdown [2/3]: UVC kept ON (today ${todayH.toFixed(2)} h, need ${uvcMinH} h, ${remaining} h remaining) – re-checking in ${cfg.pv_stage_delay_min ?? 2} min`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`PV staged shutdown [2/3]: UVC kept ON (today ${todayH.toFixed(2)} h, need ${uvcMinH} h, ${remaining} h remaining) – re-checking in ${cfg.pv_stage_delay_min ?? 2} min`);
+                    }
                     this._pvStageTimer = setTimeout(runStage2, stageDelayMs || 120_000);
                     return; // don't proceed to stage 3 yet
                 }
@@ -1176,7 +1253,9 @@ anyWindowManagesUvc = true;
             const runStage3 = async () => {
                 // UVC must be off before filter (hardware dependency)
                 if (this._pvManagedFeatures.uvc) {
-                    this.log.info('PV staged shutdown [3/3]: UVC OFF (forced before filter stop)');
+                    if (this.config.more_log_enabled) {
+                        this.log.info('PV staged shutdown [3/3]: UVC OFF (forced before filter stop)');
+                    }
                     try {
  await this.setFeature('uvc', false); this._pvManagedFeatures.uvc = false; 
 } catch (err) {
@@ -1187,11 +1266,15 @@ anyWindowManagesUvc = true;
                     if (!immediate && firmwareActivelyHeating()) {
                         // Firmware is still heating (e.g. it re-activated itself or preheat) →
                         // don't fight the firmware, leave filter on and retry
-                        this.log.info(`PV staged shutdown [3/3]: filter kept ON – firmware actively heating (heat_state=${heatState()}), will re-check in ${cfg.pv_stage_delay_min ?? 2} min`);
+                        if (this.config.more_log_enabled) {
+                            this.log.info(`PV staged shutdown [3/3]: filter kept ON – firmware actively heating (heat_state=${heatState()}), will re-check in ${cfg.pv_stage_delay_min ?? 2} min`);
+                        }
                         this._pvStageTimer = setTimeout(runStage3, stageDelayMs || 120_000);
                         return;
                     }
-                    this.log.info(`PV staged shutdown [3/3]: filter OFF (heat_state=${heatState()})`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`PV staged shutdown [3/3]: filter OFF (heat_state=${heatState()})`);
+                    }
                     try {
  await this.setFeature('filter', false); this._pvManagedFeatures.filter = false; 
 } catch (err) {
@@ -1199,7 +1282,9 @@ anyWindowManagesUvc = true;
                     }
                 }
                 this._pvStageTimer = null;
-                this.log.info('PV staged shutdown: complete');
+                if (this.config.more_log_enabled) {
+                    this.log.info('PV staged shutdown: complete');
+                }
                 this.enableRapidPolling();
             };
 
@@ -1238,7 +1323,9 @@ anyWindowManagesUvc = true;
             return;
         }
         const ensureTime = cfg.uvc_daily_ensure_time || '10:00';
-        this.log.info(`UVC daily ensure: active – minimum ${minH} h/day, starts checking from ${ensureTime}`);
+        if (this.config.more_log_enabled) {
+            this.log.info(`UVC daily ensure: active – minimum ${minH} h/day, starts checking from ${ensureTime}`);
+        }
 
         // Run immediately, then align to next full minute
         this.checkUvcDailyMinimum();
@@ -1260,7 +1347,9 @@ anyWindowManagesUvc = true;
         // Manual override pauses all automations including this
         if (this._manualOverride) {
             if (this._uvcEnsureActive) {
-                this.log.info('UVC daily ensure: paused by manual override');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC daily ensure: paused by manual override');
+                }
                 await this._stopUvcEnsure();
             }
             return;
@@ -1272,7 +1361,9 @@ anyWindowManagesUvc = true;
             // Compare against _uvcEnsureDate OR _uvcEnsureSkipDate (set when skip was activated)
             const skipDate = this._uvcEnsureSkipDate || this._uvcEnsureDate;
             if (!skipDate || skipDate !== today) {
-                this.log.info('UVC daily ensure: new day – skip flag reset');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC daily ensure: new day – skip flag reset');
+                }
                 this._uvcEnsureSkipToday = false;
                 this._uvcEnsureSkipDate  = '';
                 await this.setStateAsync('control.uvc_ensure_skip_today', false, true);
@@ -1283,7 +1374,9 @@ anyWindowManagesUvc = true;
         // User requested to skip ensure for today
         if (this._uvcEnsureSkipToday) {
             if (this._uvcEnsureActive) {
-                this.log.info('UVC daily ensure: skipped by user request – stopping');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC daily ensure: skipped by user request – stopping');
+                }
                 await this._stopUvcEnsure();
             }
             return;
@@ -1295,7 +1388,9 @@ anyWindowManagesUvc = true;
         // UVC ensure only makes sense when the pool is in active bathing season.
         if (!this._seasonEnabled) {
             if (this._uvcEnsureActive) {
-                this.log.info('UVC daily ensure: season disabled – stopping ensure run');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC daily ensure: season disabled – stopping ensure run');
+                }
                 await this._stopUvcEnsure();
             }
             return;
@@ -1320,7 +1415,9 @@ anyWindowManagesUvc = true;
 
         // Date change detection – stop any active ensure-run at midnight
         if (this._uvcEnsureActive && this._uvcEnsureDate && this._uvcEnsureDate !== today) {
-            this.log.info('UVC daily ensure: new day detected – stopping previous session');
+            if (this.config.more_log_enabled) {
+                this.log.info('UVC daily ensure: new day detected – stopping previous session');
+            }
             await this._stopUvcEnsure();
         }
 
@@ -1329,7 +1426,9 @@ anyWindowManagesUvc = true;
         if (todayH >= minH) {
             // Daily minimum already reached
             if (this._uvcEnsureActive) {
-                this.log.info(`UVC daily ensure: daily minimum reached (${todayH.toFixed(2)} h ≥ ${minH} h) – stopping`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`UVC daily ensure: daily minimum reached (${todayH.toFixed(2)} h ≥ ${minH} h) – stopping`);
+                }
                 await this._stopUvcEnsure();
             }
             return;
@@ -1384,7 +1483,9 @@ anyWindowManagesUvc = true;
         // Time to ensure the minimum → start if not already running
         if (!this._uvcEnsureActive) {
             const remaining = (minH - todayH).toFixed(2);
-            this.log.info(`UVC daily ensure: starting (${todayH.toFixed(2)} h today, need ${minH} h, ${remaining} h remaining)`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`UVC daily ensure: starting (${todayH.toFixed(2)} h today, need ${minH} h, ${remaining} h remaining)`);
+            }
             await notificationHelper.send(notificationHelper.format('uvcEnsureStarted', { remaining }));
             this._uvcEnsureActive = true;
             this._uvcEnsureDate   = today;
@@ -1600,7 +1701,9 @@ common.states = def.states;
             this._dynamicStateIds.add(id);
             created++;
         }
-        this.log.info(`createDynamicStates: ${created} model-specific states created/updated for ${this._api.model}`);
+        if (this.config.more_log_enabled) {
+            this.log.info(`createDynamicStates: ${created} model-specific states created/updated for ${this._api.model}`);
+        }
     }
 
     async updateDeviceInfo() {
@@ -1666,7 +1769,9 @@ common.states = def.states;
             // DEBUG: einmalig rohe API-Daten loggen (nur beim ersten Poll)
             if (!this._rawApiLogged) {
                 this._rawApiLogged = true;
-                this.log.info(`MSpa RAW API response (${this._api.model}): ${JSON.stringify(raw)}`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`MSpa RAW API response (${this._api.model}): ${JSON.stringify(raw)}`);
+                }
                 // Create model-specific status states based on what the API actually reports
                 await this.createDynamicStates(raw);
             }
@@ -1695,10 +1800,14 @@ common.states = def.states;
             await this.setStateAsync('info.connection', false, true);
 
             if (this._consecutiveErrors <= this._maxReconnectTries) {
-                this.log.info(`MSpa attempting reconnect (try ${this._consecutiveErrors}/${this._maxReconnectTries})…`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`MSpa attempting reconnect (try ${this._consecutiveErrors}/${this._maxReconnectTries})…`);
+                }
                 const reconnected = await this.tryReconnect();
                 if (reconnected) {
-                    this.log.info('MSpa reconnect successful – retrying poll immediately');
+                    if (this.config.more_log_enabled) {
+                        this.log.info('MSpa reconnect successful – retrying poll immediately');
+                    }
                     this.schedulePoll();
                     return;
                 }
@@ -1820,7 +1929,9 @@ return;
                     ? deviceVal !== commanded
                     : deviceVal !== commanded;
                 if (mismatch) {
-                    this.log.info(`App change detected: ${key} is ${JSON.stringify(deviceVal)} on device but adapter last set it to ${JSON.stringify(commanded)} – activating manual override (${autoOverrideDuration} min)`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`App change detected: ${key} is ${JSON.stringify(deviceVal)} on device but adapter last set it to ${JSON.stringify(commanded)} – activating manual override (${autoOverrideDuration} min)`);
+                    }
                     await notificationHelper.send(notificationHelper.format('appChangeDetected', { key, duration: autoOverrideDuration }));
                     // Update _adapterCommanded to current device state so we don't keep re-triggering
                     this._adapterCommanded[key] = deviceVal;
@@ -1841,7 +1952,9 @@ return;
             const cfg       = this.config;
             const pvWindows = (cfg.timeWindows || []).filter(w => w.active && w.pv_steu);
             if (pvWindows.length > 0) {
-                this.log.info(`PV: firmware reached target temperature (heat_state=4) – starting staged shutdown for UVC/filter`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`PV: firmware reached target temperature (heat_state=4) – starting staged shutdown for UVC/filter`);
+                }
                 // Stage 1 already done by firmware; go directly to stage 2
                 this._pvActive = false;
                 await this._pvStagedDeactivate(pvWindows, false);
@@ -1942,7 +2055,9 @@ return;
 
         if (this._lastIsOnline !== null) {
             if (this._lastIsOnline && !currentOnline) {
-                this.log.info('MSpa power OFF detected – saving state');
+                if (this.config.more_log_enabled) {
+                    this.log.info('MSpa power OFF detected – saving state');
+                }
                 this._savedState = {
                     heater:             data.heater,
                     target_temperature: data.target_temperature,
@@ -1953,7 +2068,9 @@ return;
                 };
             } else if (!this._lastIsOnline && currentOnline) {
                 powerCycle = true;
-                this.log.info('MSpa power ON detected (is_online transition)');
+                if (this.config.more_log_enabled) {
+                    this.log.info('MSpa power ON detected (is_online transition)');
+                }
             }
         }
 
@@ -2008,13 +2125,17 @@ return;
     async enforceTemperatureUnit(data) {
         const desired = 0; // °C
         if ((data.temperature_unit || 0) !== desired) {
-            this.log.info('MSpa enforcing temperature unit → Celsius');
+            if (this.config.more_log_enabled) {
+                this.log.info('MSpa enforcing temperature unit → Celsius');
+            }
             await this._api.setTemperatureUnit(desired);
         }
     }
 
     async restoreSavedState() {
-        this.log.info('MSpa restoring state after power cycle…');
+        if (this.config.more_log_enabled) {
+            this.log.info('MSpa restoring state after power cycle…');
+        }
         await this.sleep(2000);
 
         if (this._savedState.target_temperature) {
@@ -2058,7 +2179,9 @@ return;
             // if frost was active but winter mode got disabled → switch off
             if (this._winterFrostActive) {
                 this._winterFrostActive = false;
-                this.log.info('Winter mode: disabled – switching heater + filter OFF');
+                if (this.config.more_log_enabled) {
+                    this.log.info('Winter mode: disabled – switching heater + filter OFF');
+                }
                 await this.setFeature('heater', false);
                 await this.setFeature('filter', false);
             }
@@ -2074,14 +2197,18 @@ return;
 
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
-            this.log.info(`Winter mode: temp ${temp}°C ≤ ${threshold}°C – switching heater + filter ON`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`Winter mode: temp ${temp}°C ≤ ${threshold}°C – switching heater + filter ON`);
+            }
             await notificationHelper.send(notificationHelper.format('frostActive', { temp, threshold }));
             await this.setFeature('filter', true);
             await this.setFeature('heater', true);
             this.enableRapidPolling();
         } else if (this._winterFrostActive && temp >= threshold + hysteresis) {
             this._winterFrostActive = false;
-            this.log.info(`Winter mode: temp ${temp}°C ≥ ${threshold + hysteresis}°C – switching heater + filter OFF`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`Winter mode: temp ${temp}°C ≥ ${threshold + hysteresis}°C – switching heater + filter OFF`);
+            }
             await notificationHelper.send(notificationHelper.format('frostDeactivated', { temp, hysteresis: threshold + hysteresis }));
             await this.setFeature('heater', false);
             await this.setFeature('filter', false);
@@ -2113,7 +2240,9 @@ return;
             const filterState = await this.getStateAsync('control.filter');
             const filterOn    = filterState && !!filterState.val;
             if (!filterOn) {
-                this.log.info('UVC ON deferred – filter not running yet, waiting up to 15 s');
+                if (this.config.more_log_enabled) {
+                    this.log.info('UVC ON deferred – filter not running yet, waiting up to 15 s');
+                }
                 await new Promise(resolve => setTimeout(resolve, 15_000));
                 // Re-check after waiting
                 const filterStateNow = await this.getStateAsync('control.filter');
@@ -2136,7 +2265,9 @@ return;
                     const pendingTemp = this._pendingTargetTemp;
                     this._pendingTempTimer = setTimeout(async () => {
                         this._pendingTempTimer = null;
-                        this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
+                        if (this.config.more_log_enabled) {
+                            this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
+                        }
                         try {
                             await this._sendTargetTempDirect(pendingTemp);
                             this._pendingTargetTemp = null;
@@ -2162,7 +2293,9 @@ return;
                     const heaterState = await this.getStateAsync('control.heater');
 
                     if (uvcState && uvcState.val) {
-                        this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
+                        if (this.config.more_log_enabled) {
+                            this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
+                        }
                         await this._setStatusCheck('send');
                         await this._api.setUvcState(0);
                         await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
@@ -2170,7 +2303,9 @@ return;
                         await this.sleep(500);
                     }
                     if (bubbleState && bubbleState.val) {
-                        this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
+                        if (this.config.more_log_enabled) {
+                            this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
+                        }
                         await this._setStatusCheck('send');
                         await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
                         await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
@@ -2178,7 +2313,9 @@ return;
                         await this.sleep(500);
                     }
                     if (heaterState && heaterState.val) {
-                        this.log.info('filter OFF – auto-disabling heater first');
+                        if (this.config.more_log_enabled) {
+                            this.log.info('filter OFF – auto-disabling heater first');
+                        }
                         await this.setFeature('heater', false);
                         await this.sleep(500);
                     }
@@ -2202,7 +2339,9 @@ return;
         const heaterOn    = heaterState && !!heaterState.val;
         if (!heaterOn) {
             this._pendingTargetTemp = temp;
-            this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
+            if (this.config.more_log_enabled) {
+                this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
+            }
             await this._setStatusCheck('queued');
             return;
         }
@@ -2248,11 +2387,15 @@ return;
             }
 
             if (durationMin > 0) {
-                this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
+                }
                 await notificationHelper.send(notificationHelper.format('overrideOnTimed', { durationMin }));
                 this._manualOverrideTimer = setTimeout(async () => {
                     this._manualOverrideTimer = null;
-                    this.log.info('Manual override: duration elapsed – automations RESUMED');
+                    if (this.config.more_log_enabled) {
+                        this.log.info('Manual override: duration elapsed – automations RESUMED');
+                    }
                     await notificationHelper.send(notificationHelper.format('overrideEnded'));
                     this._manualOverride = false;
                     await this.setStateAsync('control.manual_override', false, true);
@@ -2265,11 +2408,15 @@ return;
                     await this.evaluatePvSurplus();
                 }, durationMin * 60 * 1000);
             } else {
-                this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
+                if (this.config.more_log_enabled) {
+                    this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
+                }
                 await notificationHelper.send(notificationHelper.format('overrideOnIndefinite'));
             }
         } else {
-            this.log.info('Manual override: DISABLED – all automations RESUMED');
+            if (this.config.more_log_enabled) {
+                this.log.info('Manual override: DISABLED – all automations RESUMED');
+            }
             await notificationHelper.send(notificationHelper.format('overrideOff'));
             await this.setStateAsync('control.manual_override_duration', 0, true);
             // immediately re-evaluate automations with latest data
@@ -2293,29 +2440,39 @@ return;
 
         try {
             if (['heater', 'filter', 'bubble', 'jet', 'ozone', 'uvc'].includes(key)) {
-                this.log.info(`MSpa command: ${key} → ${state.val}`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`MSpa command: ${key} → ${state.val}`);
+                }
                 await this.setFeature(key, !!state.val);
                 this.enableRapidPolling();
             } else if (key === 'target_temperature') {
-                this.log.info(`MSpa command: set temperature → ${state.val}°C`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`MSpa command: set temperature → ${state.val}°C`);
+                }
                 await this.setTargetTemp(state.val);
                 this.enableRapidPolling();
             } else if (key === 'bubble_level') {
-                this.log.info(`MSpa command: bubble level → ${state.val}`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`MSpa command: bubble level → ${state.val}`);
+                }
                 await this._setStatusCheck('send');
                 await this._api.setBubbleLevel(state.val);
                 await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 this.enableRapidPolling();
             } else if (key === 'winter_mode') {
                 this._winterModeActive = !!state.val;
-                this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
+                }
                 await this.setStateAsync('control.winter_mode', this._winterModeActive, true);
                 if (this._lastData) {
  await this.checkFrostProtection(this._lastData); 
 }
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
-                this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
+                if (this.config.more_log_enabled) {
+                    this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
+                }
                 await this.setStateAsync('control.season_enabled', this._seasonEnabled, true);
 
             } else if (key === 'manual_override') {
@@ -2329,7 +2486,9 @@ return;
                 await this.setStateAsync('control.uvc_ensure_skip_today', skip, true);
                 await this.setStateAsync('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate, true);
                 if (skip) {
-                    this.log.info('UVC daily ensure: skip requested by user – pausing for today');
+                    if (this.config.more_log_enabled) {
+                        this.log.info('UVC daily ensure: skip requested by user – pausing for today');
+                    }
                     await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
                     // stop immediately if ensure is currently running
                     if (this._uvcEnsureActive) {
@@ -2339,13 +2498,17 @@ return;
                         // or manually) – if so, turn it off as an explicit manual abort
                         const uvcState = await this.getStateAsync('control.uvc');
                         if (uvcState && uvcState.val) {
-                            this.log.info('UVC daily ensure: UVC is ON – switching OFF (manual abort via skip)');
+                            if (this.config.more_log_enabled) {
+                                this.log.info('UVC daily ensure: UVC is ON – switching OFF (manual abort via skip)');
+                            }
                             await this.setFeature('uvc', false);
                             this.enableRapidPolling();
                         }
                     }
                 } else {
-                    this.log.info('UVC daily ensure: skip cancelled – ensure active again');
+                    if (this.config.more_log_enabled) {
+                        this.log.info('UVC daily ensure: skip cancelled – ensure active again');
+                    }
                     // trigger immediate re-check so ensure starts without waiting up to 60s
                     this.checkUvcDailyMinimum().catch(e => this.log.error(`UVC ensure re-check: ${e.message}`));
                 }
@@ -2368,7 +2531,9 @@ return;
                     await this.setStateAsync('control.filter_running', { val: 0, ack: true });
                     // Reset button → always write false back (it's a momentary trigger)
                     await this.setStateAsync('control.filter_reset', { val: false, ack: true });
-                    this.log.info(`Filter runtime counter reset to 0 (filter was ${wasRunning ? 'running – new session started' : 'off'})`);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Filter runtime counter reset to 0 (filter was ${wasRunning ? 'running – new session started' : 'off'})`);
+                    }
                 }
             }
         } catch (err) {

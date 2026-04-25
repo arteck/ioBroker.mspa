@@ -96,6 +96,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### 0.2.17 (2026-04-25)
+* (arteck) log information can be customized (more or less information)
+
 ### 0.2.16 (2026-04-24)
 * (arteck) add manuall filter counter and reset button
 
@@ -107,10 +110,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.7 (2026-04-19)
 * (arteck) fix manual override
-
-### 0.2.6 (2026-04-19)
-* (arteck) skip uv lamp daily duration 
-* (arteck) add language selector for telegramm message
 
 ## License
 

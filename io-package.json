@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.16",
+    "version": "0.2.17",
     "news": {
+      "0.2.17": {
+        "en": "log information can be customized (more or less information)",
+        "de": "log-informationen können angepasst werden (mehr oder weniger informationen)",
+        "ru": "информация журнала может быть настроена (больше или меньше информации)",
+        "pt": "informações de log podem ser personalizadas (mais ou menos informações)",
+        "nl": "log informatie kan worden aangepast (min of meer informatie)",
+        "fr": "les informations du journal peuvent être personnalisées (plus ou moins d'informations)",
+        "it": "informazioni di registro possono essere personalizzate (più o meno informazioni)",
+        "es": "información de registro se puede personalizar (más o menos información)",
+        "pl": "informacje dziennika można dostosować (mniej więcej)",
+        "uk": "інформація про журнал можна налаштувати (більше або менше інформації)",
+        "zh-cn": "日志信息可以定制(或多或少的信息)"
+      },
       "0.2.16": {
         "en": "add manuall filter counter and reset button",
         "de": "manuell filterzähler und reset-taste hinzufügen",
@@ -80,19 +93,6 @@
         "pl": "dodaj info.statusCheck\nnaprawić filtr",
         "uk": "додати інформацію.statusCheck\nфіксувати фільтр вимкнення",
         "zh-cn": "添加信息. status 检查\n关闭过滤器"
-      },
-      "0.2.10": {
-        "en": "fix uvc_ensure_skip_today",
-        "de": "uvc ensure skip today",
-        "ru": "скачать uvc ensure skip today",
-        "pt": "corrigir uvc  assure  skip  hoje",
-        "nl": "fix uvc ensure skip today",
-        "fr": "réparer uvc ensur skip today",
-        "it": "fix uvc ensure skip today",
-        "es": "arreglar uvc ensure skip today",
-        "pl": "fix uvc _ ensure _ skip _ today",
-        "uk": "javascript licenses api веб-сайт go1.13.8",
-        "zh-cn": "修复 uvc ensure skip today"
       }
     },
     "titleLang": {
