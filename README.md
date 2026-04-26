@@ -22,7 +22,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 - 🌡️ Read/set water temperature & target temperature (20–40 °C, 0.5 °C steps)
 - 🔥 Turn heating, filter, bubble, jet, ozone and UVC on/off
 - 📊 Automatic heating & cooling rate calculation (°C/h, moving average)
-- ⏳ ETA in hours until target temperature is reached (`status.heat_target_temp_reached`) – calculated from `computed.heat_rate_per_hour` and the target/water temperature delta; capped at 48 h, `0` when not heating or target already reached
+- ⏳ ETA as `hh:mm` until target temperature is reached (`status.heat_target_temp_reached`) – calculated from `computed.heat_rate_per_hour` and the target/water temperature delta; capped at 48 h, `00:00` when not heating or target already reached
 - ⚡ Power failure detection with optional state restoration
 - 🌍 3 server regions: Europe (ROW), USA, China
 - 🔒 Rate limiter (max. 2.5 requests/second)
@@ -97,11 +97,15 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) del mspa.0.status.uvc_expiry_date
+* (arteck) status.heat_target_temp_reached new format hh:mm
+
 ### 0.2.19 (2026-04-26)
 * (arteck) typo
 
 ### 0.2.18 (2026-04-26)
-* (arteck) add status.heat_target_temp_reached – ETA (hours) until target temperature is reached, computed from heat_rate_per_hour
+* (arteck) add status.heat_target_temp_reached – ETA (hh:mm) until target temperature is reached, computed from heat_rate_per_hour
 
 ### 0.2.17 (2026-04-25)
 * (arteck) log information can be customized (more or less information)

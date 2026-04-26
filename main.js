@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const { MSpaApiClient, MSpaThrottle } = require('./lib/mspaApi');
 const { transformStatus, RateTracker } = require('./lib/utils');
 const { STATE_DEFS }                   = require('./lib/constants');
+const stateMgr                         = require('./lib/states');
 const consumptionHelper                = require('./lib/consumptionHelper');
 const notificationHelper               = require('./lib/notificationHelper');
 
@@ -109,6 +110,10 @@ class MspaAdapter extends utils.Adapter {
         // non-existent ioBroker objects with zero-padded values.
         this._dynamicStateIds       = new Set();
 
+        // Tracks all "fire-and-forget" setTimeout handles so onUnload can clear
+        // them and prevent late callbacks on a destroyed adapter.
+        this._strayTimers           = new Set();
+
         this.on('ready',        this.onReady.bind(this));
         this.on('stateChange',  this.onStateChange.bind(this));
         this.on('unload',       this.onUnload.bind(this));
@@ -141,7 +146,7 @@ class MspaAdapter extends utils.Adapter {
 
         try {
             await this._api.init();
-            await this.updateDeviceInfo();
+            // Device info (static) wird einmalig beim ersten erfolgreichen Poll geschrieben.
             await this.setStateAsync('info.connection', true, true);
 
             this.log.info(`MSpa connected – device: ${this._api.deviceAlias}`);
@@ -150,11 +155,14 @@ class MspaAdapter extends utils.Adapter {
             await this.setStateAsync('info.connection', false, true);
             if (err.message && err.message.includes('no devices returned from API')) {
                 this.log.error('MSpa init failed: No devices found in your MSpa account. Please check your e-mail address, password and region in the adapter settings.');
-            } else {
-                this.log.error(`MSpa init failed: ${err.message}`);
+                // Auth/Account-Fehler: KEIN Retry – sonst loggen wir alle 30 s denselben Fehler
+                return;
             }
-            // Do not continue – no subscriptions, timers or automations should start
-            // without a valid API connection.
+            // FIX: Bei Netz-/API-Fehlern alle 30 s erneut versuchen, bis ein onUnload kommt
+            this.log.error(`MSpa init failed: ${err.message} – retry in 30 s`);
+            this._initRetryTimer = this.setStray(() => {
+                this.onReady().catch(e => this.log.error(`MSpa init retry failed: ${e.message}`));
+            }, 30_000);
             return;
         }
 
@@ -179,7 +187,7 @@ class MspaAdapter extends utils.Adapter {
             const skipDateSt   = await this.getStateAsync('control.uvc_ensure_skip_date');
             const persistedSkip = skipState && skipState.val === true;
             const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
-            const today         = this._todayStr();
+            const today         = this.todayStr();
 
             if (persistedSkip && persistedDate === today) {
                 this._uvcEnsureSkipToday = true;
@@ -204,13 +212,19 @@ class MspaAdapter extends utils.Adapter {
         await consumptionHelper.init(this);
         notificationHelper.init(this);
 
-        // Filter runtime: restore persisted value; if filter was ON when adapter stopped,
-        // we start tracking from now (conservative – can't know how long it ran).
+        // Filter runtime: restore persisted value; if filter was ON when adapter
+        // stopped, use the timestamp of the last successful poll (`info.lastUpdate`)
+        // as a conservative session start so we don't lose the runtime gap between
+        // the unload-write and the restart.
         const filterRunningState = await this.getStateAsync('control.filter_running');
         this._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number') ? filterRunningState.val : 0;
         const filterCtrlState = await this.getStateAsync('control.filter');
         if (filterCtrlState && filterCtrlState.val) {
-            this._filterOnSince = Date.now();
+            const lastUpd = await this.getStateAsync('info.lastUpdate');
+            const lu      = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
+            // Plausibilitäts-Cutoff: maximal 6 h zurück, sonst Date.now() (konservativ)
+            const maxBack = 6 * 3600 * 1000;
+            this._filterOnSince = (lu > 0 && (Date.now() - lu) <= maxBack) ? lu : Date.now();
             if (this.config.more_log_enabled) {
                 this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
             }
@@ -222,7 +236,7 @@ class MspaAdapter extends utils.Adapter {
         this._uvcHoursUsed  = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
         // Snapshot for today's hours tracking (lazy: _getUvcTodayHours() re-snapshots on date change)
         this._uvcDayStartHours = this._uvcHoursUsed;
-        this._uvcDayStartDate  = this._todayStr();
+        this._uvcDayStartDate  = this.todayStr();
         // check current UVC state from last known control state
         const uvcCtrlState = await this.getStateAsync('control.uvc');
         if (uvcCtrlState && uvcCtrlState.val) {
@@ -230,48 +244,54 @@ class MspaAdapter extends utils.Adapter {
             this._uvcOnSince = Date.now();
         }
 
-        this.computeUvcExpiry();
+        this.computeUvcExpiry().catch(e => this.log.error(`computeUvcExpiry: ${e.message}`));
         this.initUvcDailyEnsure();
         this.doPoll();
     }
 
+    /**
+     * Wrapper for fire-and-forget setTimeout that registers the handle in
+     * `_strayTimers` so onUnload can clear it. Use everywhere where the timer
+     * handle is not stored in a dedicated property.
+     *
+     * @param {Function} fn  callback
+     * @param {number}   ms  delay in milliseconds
+     * @returns {NodeJS.Timeout}
+     */
+    setStray(fn, ms) {
+        const t = setTimeout(() => {
+            this._strayTimers.delete(t);
+            try { fn(); } catch (e) { this.log.error(`stray timer cb: ${e.message}`); }
+        }, ms);
+        this._strayTimers.add(t);
+        return t;
+    }
+
     async onUnload(callback) {
-        if (this._pollTimer)                {
- clearTimeout(this._pollTimer); 
-}
-        if (this._timeTimer)                {
- clearInterval(this._timeTimer); 
-}
-        if (this._pvDeactivateTimer)        {
- clearTimeout(this._pvDeactivateTimer); 
-}
-        if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); 
-}
-        if (this._pvStageTimer)             {
- clearTimeout(this._pvStageTimer); 
-}
-        if (this._uvcEnsureTimer)           {
- clearInterval(this._uvcEnsureTimer); 
-}
-        if (this._pendingTempTimer)         {
- clearTimeout(this._pendingTempTimer); 
-}
+        if (this._pollTimer)                { clearTimeout(this._pollTimer); }
+        if (this._timeTimer)                { clearInterval(this._timeTimer); }
+        if (this._pvDeactivateTimer)        { clearTimeout(this._pvDeactivateTimer); }
+        if (this._pvDeactivateCountdownInt) { clearInterval(this._pvDeactivateCountdownInt); }
+        if (this._pvStageTimer)             { clearTimeout(this._pvStageTimer); }
+        if (this._uvcEnsureTimer)           { clearInterval(this._uvcEnsureTimer); }
+        if (this._pendingTempTimer)         { clearTimeout(this._pendingTempTimer); }
+        if (this._manualOverrideTimer)      { clearTimeout(this._manualOverrideTimer); }
         for (const t of this._pumpFollowUpTimers) {
-            if (t) {
- clearTimeout(t); 
-}
+            if (t) { clearTimeout(t); }
         }
+        // Clear any stray fire-and-forget timers registered via _setStray()
+        for (const t of this._strayTimers) { clearTimeout(t); }
+        this._strayTimers.clear();
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
         // Persist accumulated filter runtime hours (including any currently-running session)
         try {
-            const finalFilterH = this._accumulateFilterHours();
+            const finalFilterH = this.accumulateFilterHours();
             await this.setStateAsync('control.filter_running', { val: Math.round(finalFilterH * 100) / 100, ack: true });
         } catch (_) { /* ignore on unload */ }
         // Persist accumulated UVC hours (including any currently-running session)
         try {
-            const finalHours = this._accumulateUvcHours();
+            const finalHours = this.accumulateUvcHours();
             await this.setStateAsync('status.uvc_hours_used', { val: Math.round(finalHours * 100) / 100, ack: true });
         } catch (_) { /* ignore on unload */ }
         callback();
@@ -309,12 +329,15 @@ class MspaAdapter extends utils.Adapter {
         }
 
         // run immediately, then every 60 s aligned to next full minute
-        this.checkTimeWindows();
+        this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
         const now     = new Date();
         const msToMin = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-        setTimeout(() => {
-            this.checkTimeWindows();
-            this._timeTimer = setInterval(() => this.checkTimeWindows(), 60_000);
+        this.setStray(() => {
+            this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
+            this._timeTimer = setInterval(
+                () => this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`)),
+                60_000,
+            );
         }, msToMin);
     }
 
@@ -339,7 +362,7 @@ class MspaAdapter extends utils.Adapter {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
                     }
-                    await this._deactivateWindow(windows[i], i);
+                    await this.deactivateWindow(windows[i], i);
                     await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', { window: i + 1 }));
                 }
             }
@@ -362,7 +385,7 @@ class MspaAdapter extends utils.Adapter {
                 // if it was active before, deactivate cleanly
                 if (this._timeWindowActive[i]) {
                     this._timeWindowActive[i] = false;
-                    await this._deactivateWindow(w, i);
+                    await this.deactivateWindow(w, i);
                 }
                 continue;
             }
@@ -393,8 +416,8 @@ class MspaAdapter extends utils.Adapter {
                         await this.setFeature('heater', true);
                         if (w.target_temp) {
                             this.log.debug(`Time control [${i + 1}]: target temperature → ${w.target_temp}°C – sending in 10 s`);
-                            setTimeout(() => {
-                                this._sendTargetTempDirect(w.target_temp).catch(e =>
+                            this.setStray(() => {
+                                this.sendTargetTempDirect(w.target_temp).catch(e =>
                                     this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
                                 );
                             }, 10_000);
@@ -421,12 +444,12 @@ class MspaAdapter extends utils.Adapter {
                     this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
                 }
                 await notificationHelper.send(notificationHelper.format('timeWindowEnded', { window: i + 1, start, end }));
-                await this._deactivateWindow(w, i);
+                await this.deactivateWindow(w, i);
             }
         }
     }
 
-    async _deactivateWindow(w, i) {
+    async deactivateWindow(w, i) {
         // Cancel any existing follow-up timer for this window
         if (this._pumpFollowUpTimers[i]) {
             clearTimeout(this._pumpFollowUpTimers[i]);
@@ -436,7 +459,7 @@ class MspaAdapter extends utils.Adapter {
         const followUpMin = Number(this.config.pump_follow_up) || 0;
         const cfg         = this.config;
         const uvcMinH     = cfg.uvc_daily_min_h ?? 2;
-        const todayH      = this._getUvcTodayHours();
+        const todayH      = this.getUvcTodayHours();
         const uvcMinMet   = todayH >= uvcMinH;
 
         try {
@@ -524,7 +547,7 @@ class MspaAdapter extends utils.Adapter {
      *
      * @param data
      */
-    async _checkStartupDeviceState(data) {
+    async checkStartupDeviceState(data) {
         // Skip if manual override or PV is active – those automations take over
         if (this._manualOverride || this._pvActive) {
             this.log.debug('Startup check: skipped (manual override or PV active)');
@@ -587,7 +610,7 @@ anyWindowManagesUvc = true;
             }
             // UVC before filter (filter may need to stay for UVC daily ensure)
             if (uvcOn && anyWindowManagesUvc) {
-                const todayH  = this._getUvcTodayHours();
+                const todayH  = this.getUvcTodayHours();
                 const uvcMinH = this.config.uvc_daily_min_h ?? 2;
                 if (todayH >= uvcMinH) {
                     if (this.config.more_log_enabled) {
@@ -621,7 +644,7 @@ anyWindowManagesUvc = true;
      * Returns total accumulated filter runtime hours including the currently running
      * session (if filter is ON right now). Does NOT mutate this._filterHoursUsed.
      */
-    _accumulateFilterHours() {
+    accumulateFilterHours() {
         let total = this._filterHoursUsed || 0;
         if (this._filterOnSince !== null) {
             total += (Date.now() - this._filterOnSince) / (1000 * 3600);
@@ -636,7 +659,7 @@ anyWindowManagesUvc = true;
      * Returns total accumulated UVC hours including the currently running session
      * (if UVC is ON right now). Does NOT mutate this._uvcHoursUsed.
      */
-    _accumulateUvcHours() {
+    accumulateUvcHours() {
         let total = this._uvcHoursUsed || 0;
         if (this._uvcOnSince !== null) {
             total += (Date.now() - this._uvcOnSince) / (1000 * 3600);
@@ -648,32 +671,28 @@ anyWindowManagesUvc = true;
     // UVC lamp expiry calculation
     // -------------------------------------------------------------------------
     /**
-     * Calculates the estimated expiry date for the UVC lamp.
+     * Calculates the remaining UVC lamp hours.
      *
      * Logic:
      *  - uvc_install_date  (DD.MM.YYYY): date the lamp was installed / last reset
      *  - uvc_operating_hours (number)  : rated lamp lifetime in operating hours (default 8000 h)
      *
      * The adapter counts real operating hours (only while UVC is switched ON).
-     * The remaining hours are projected onto calendar days using the average
-     * daily usage observed since the install date.
-     *
-     * If no install date is set, the function silently skips.
+     * Only `status.uvc_hours_remaining` is exposed – an estimated calendar
+     * expiry date is NOT calculated (we track operating hours only).
      */
     async computeUvcExpiry() {
         const cfg = this.config;
         const raw = (cfg.uvc_install_date || '').trim();
         if (!raw) {
-            this.log.debug('UVC: no installation date configured – skipping expiry calculation');
-            await this.setStateAsync('status.uvc_expiry_date',     { val: '', ack: true });
-            await this.setStateAsync('status.uvc_hours_remaining', { val: 0,  ack: true });
+            this.log.debug('UVC: no installation date configured – skipping remaining-hours calculation');
+            await this.setStateAsync('status.uvc_hours_remaining', { val: 0, ack: true });
             return;
         }
 
         const match = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
         if (!match) {
             this.log.warn(`UVC: invalid installation date format "${raw}" – expected DD.MM.YYYY`);
-            await this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
             return;
         }
 
@@ -681,61 +700,24 @@ anyWindowManagesUvc = true;
         const installDate = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
         if (isNaN(installDate.getTime())) {
             this.log.warn(`UVC: installation date "${raw}" could not be parsed`);
-            await this.setStateAsync('status.uvc_expiry_date', { val: 'invalid date', ack: true });
             return;
         }
 
         // Rated lifetime in operating hours (configurable, default 8 000 h)
-        const ratedHours   = cfg.uvc_operating_hours || 8000;
+        const ratedHours  = cfg.uvc_operating_hours || 8000;
 
         // Actual operating hours counted since install date
-        const usedHours    = this._accumulateUvcHours();
-        const remainHours  = Math.max(0, ratedHours - usedHours);
+        const usedHours   = this.accumulateUvcHours();
+        const remainHours = Math.max(0, ratedHours - usedHours);
 
         await this.setStateChangedAsync('status.uvc_hours_remaining', Math.round(remainHours * 100) / 100, true);
-
-        // Estimate expiry date:
-        // average daily usage = usedHours / calendarDaysSinceInstall
-        // Then: remainDays = remainHours / avgHoursPerDay
-        const pad = (n) => String(n).padStart(2, '0');
-        const now             = new Date();
-        const calendarDays    = Math.max(1, Math.ceil((now - installDate) / (1000 * 3600 * 24)));
-        const avgHoursPerDay  = usedHours / calendarDays;  // h/day
-
-        let expiryStr;
-        let daysLeft;
-
-        if (avgHoursPerDay <= 0) {
-            // No usage recorded yet – show remaining hours, leave expiry date empty
-            this.log.debug(`UVC: no operating hours recorded yet – ${ratedHours} h rated lifetime remaining`);
-            await this.setStateChangedAsync('status.uvc_expiry_date', '', true);
-            await this.setStateChangedAsync('status.uvc_hours_remaining', ratedHours, true);
-            return;
-        }
-
-        const remainDays  = remainHours / avgHoursPerDay;
-        const expiryDate  = new Date(now.getTime() + remainDays * 24 * 3600 * 1000);
-        expiryStr         = `${pad(expiryDate.getDate())}.${pad(expiryDate.getMonth() + 1)}.${expiryDate.getFullYear()}`;
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        expiryDate.setHours(0, 0, 0, 0);
-        daysLeft = Math.ceil((expiryDate - today) / (1000 * 3600 * 24));
 
         if (remainHours <= 0) {
             this.log.warn(`UVC: lamp lifetime exhausted! ${usedHours.toFixed(0)} h used of ${ratedHours} h rated – please replace!`);
             await notificationHelper.send(notificationHelper.format('uvcExpired', { usedHours: usedHours.toFixed(0) }));
-            expiryStr = 'replace now';
-        } else if (daysLeft <= 30) {
-            this.log.warn(`UVC: lamp expires ~${expiryStr} (in ~${daysLeft} days, ${remainHours.toFixed(0)} h remaining) – replacement recommended`);
-            await notificationHelper.send(notificationHelper.format('uvcExpirySoon', { expiry: expiryStr, daysLeft }));
-        } else {
-            if (this.config.more_log_enabled) {
-                this.log.info(`UVC: ${usedHours.toFixed(1)} h used, ${remainHours.toFixed(0)} h remaining, est. expiry ~${expiryStr} (~${daysLeft} days, avg ${avgHoursPerDay.toFixed(2)} h/day)`);
-            }
+        } else if (this.config.more_log_enabled) {
+            this.log.info(`UVC: ${usedHours.toFixed(1)} h used, ${remainHours.toFixed(0)} h remaining of ${ratedHours} h rated`);
         }
-
-        await this.setStateChangedAsync('status.uvc_expiry_date', expiryStr, true);
     }
 
     /**
@@ -931,14 +913,14 @@ anyWindowManagesUvc = true;
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
             this.log.debug('PV: outside season – skipping surplus evaluation');
-            await this._pvCancelAllDeactivationTimers();
+            await this.pvCancelAllDeactivationTimers();
             if (this._pvActive) {
                 this._pvActive = false;
                 if (this.config.more_log_enabled) {
                     this.log.info('PV: season ended – staged deactivation');
                 }
                 const pvWindows = (cfg.timeWindows || []).filter(w => w.active && w.pv_steu);
-                await this._pvStagedDeactivate(pvWindows, true /* immediate */);
+                await this.pvStagedDeactivate(pvWindows, true /* immediate */);
             }
             return;
         }
@@ -988,7 +970,7 @@ anyWindowManagesUvc = true;
             // Capture staging state BEFORE cancelling timers
             const wasStaging = this._pvStageTimer !== null;
             // Cancel any pending deactivation (debounce or staging)
-            await this._pvCancelAllDeactivationTimers();
+            await this.pvCancelAllDeactivationTimers();
 
             if (!wasStaging && !this._pvActive) {
                 // Fresh activation (not recovering from a staged shutdown)
@@ -1007,8 +989,8 @@ anyWindowManagesUvc = true;
                             await this.setFeature('heater', true);
                             this._pvManagedFeatures.heater = true;
                             if (w.target_temp) {
-                                setTimeout(() => {
-                                    this._sendTargetTempDirect(w.target_temp).catch(e =>
+                                this.setStray(() => {
+                                    this.sendTargetTempDirect(w.target_temp).catch(e =>
                                         this.log.error(`PV: target temperature send FAILED – ${e.message}`)
                                     );
                                 }, 10_000);
@@ -1033,12 +1015,12 @@ anyWindowManagesUvc = true;
 }
             } else if (wasStaging) {
                 // Surplus recovered while staged deactivation was in progress → re-activate
-                await this._pvReactivate(pvWindows, surplus);
+                await this.pvReactivate(pvWindows, surplus);
             }
 
         // ── Surplus recovered while debounce timer runs ───────────────────
         } else if (this._pvActive && !shouldDeactivate && this._pvDeactivateTimer && !this._pvStageTimer) {
-            await this._pvCancelAllDeactivationTimers();
+            await this.pvCancelAllDeactivationTimers();
             if (this.config.more_log_enabled) {
                 this.log.info(`PV: surplus recovered (${surplus} W ≥ ${offAt} W) – deactivation cancelled`);
             }
@@ -1082,7 +1064,7 @@ anyWindowManagesUvc = true;
                 }
                 await notificationHelper.send(notificationHelper.format('pvDeactivated'));
                 this._pvActive = false;
-                await this._pvStagedDeactivate(pvWindows, false);
+                await this.pvStagedDeactivate(pvWindows, false);
             }, debounceMs);
 
         } else {
@@ -1093,7 +1075,7 @@ anyWindowManagesUvc = true;
     // -------------------------------------------------------------------------
     // PV: Cancel all deactivation timers (debounce + stage)
     // -------------------------------------------------------------------------
-    async _pvCancelAllDeactivationTimers() {
+    async pvCancelAllDeactivationTimers() {
         if (this._pvDeactivateTimer)        {
  clearTimeout(this._pvDeactivateTimer);         this._pvDeactivateTimer = null; 
 }
@@ -1110,7 +1092,7 @@ anyWindowManagesUvc = true;
     // -------------------------------------------------------------------------
     // PV: Re-activate features that were turned off during staging
     // -------------------------------------------------------------------------
-    async _pvReactivate(pvWindows, surplus) {
+    async pvReactivate(pvWindows, surplus) {
         if (this.config.more_log_enabled) {
             this.log.info(`PV: surplus recovered during staging (${surplus} W) – re-activating managed features`);
         }
@@ -1124,8 +1106,8 @@ anyWindowManagesUvc = true;
                     await this.setFeature('heater', true);
                     this._pvManagedFeatures.heater = true;
                     if (w.target_temp) {
-                        setTimeout(() => {
-                            this._sendTargetTempDirect(w.target_temp).catch(e =>
+                        this.setStray(() => {
+                            this.sendTargetTempDirect(w.target_temp).catch(e =>
                                 this.log.error(`PV: target temperature send FAILED – ${e.message}`)
                             );
                         }, 10_000);
@@ -1157,7 +1139,7 @@ anyWindowManagesUvc = true;
     //
     //  immediate=true skips inter-stage delays (season-end / manual shutdown).
     // -------------------------------------------------------------------------
-    async _pvStagedDeactivate(pvWindows, immediate = false) {
+    async pvStagedDeactivate(pvWindows, immediate = false) {
         const cfg          = this.config;
         const stageDelayMs = immediate ? 0 : (cfg.pv_stage_delay_min ?? 2) * 60_000;
         const uvcMinH      = cfg.uvc_daily_min_h ?? 2;
@@ -1229,7 +1211,7 @@ anyWindowManagesUvc = true;
         // ── Stage 2: UVC OFF (after delay, if daily minimum reached) ─────────
         const runStage2 = async () => {
             if (this._pvManagedFeatures.uvc) {
-                const todayH = this._getUvcTodayHours();
+                const todayH = this.getUvcTodayHours();
                 if (todayH >= uvcMinH || immediate) {
                     if (this.config.more_log_enabled) {
                         this.log.info(`PV staged shutdown [2/3]: UVC OFF (today ${todayH.toFixed(2)} h ≥ min ${uvcMinH} h)`);
@@ -1329,12 +1311,15 @@ anyWindowManagesUvc = true;
         }
 
         // Run immediately, then align to next full minute
-        this.checkUvcDailyMinimum();
+        this.checkUvcDailyMinimum().catch(e => this.log.error(`checkUvcDailyMinimum: ${e.message}`));
         const now     = new Date();
         const msToMin = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-        setTimeout(() => {
-            this.checkUvcDailyMinimum();
-            this._uvcEnsureTimer = setInterval(() => this.checkUvcDailyMinimum(), 60_000);
+        this.setStray(() => {
+            this.checkUvcDailyMinimum().catch(e => this.log.error(`checkUvcDailyMinimum: ${e.message}`));
+            this._uvcEnsureTimer = setInterval(
+                () => this.checkUvcDailyMinimum().catch(e => this.log.error(`checkUvcDailyMinimum: ${e.message}`)),
+                60_000,
+            );
         }, msToMin);
     }
 
@@ -1351,13 +1336,13 @@ anyWindowManagesUvc = true;
                 if (this.config.more_log_enabled) {
                     this.log.info('UVC daily ensure: paused by manual override');
                 }
-                await this._stopUvcEnsure();
+                await this.stopUvcEnsure();
             }
             return;
         }
 
         // Date change detection early: reset skip flag at midnight
-        const today = this._todayStr();
+        const today = this.todayStr();
         if (this._uvcEnsureSkipToday) {
             // Compare against _uvcEnsureDate OR _uvcEnsureSkipDate (set when skip was activated)
             const skipDate = this._uvcEnsureSkipDate || this._uvcEnsureDate;
@@ -1378,7 +1363,7 @@ anyWindowManagesUvc = true;
                 if (this.config.more_log_enabled) {
                     this.log.info('UVC daily ensure: skipped by user request – stopping');
                 }
-                await this._stopUvcEnsure();
+                await this.stopUvcEnsure();
             }
             return;
         }
@@ -1392,7 +1377,7 @@ anyWindowManagesUvc = true;
                 if (this.config.more_log_enabled) {
                     this.log.info('UVC daily ensure: season disabled – stopping ensure run');
                 }
-                await this._stopUvcEnsure();
+                await this.stopUvcEnsure();
             }
             return;
         }
@@ -1412,14 +1397,14 @@ anyWindowManagesUvc = true;
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
         const ensureMin  = (hh || 0) * 60 + (mm || 0);
 
-        const todayH = this._getUvcTodayHours();
+        const todayH = this.getUvcTodayHours();
 
         // Date change detection – stop any active ensure-run at midnight
         if (this._uvcEnsureActive && this._uvcEnsureDate && this._uvcEnsureDate !== today) {
             if (this.config.more_log_enabled) {
                 this.log.info('UVC daily ensure: new day detected – stopping previous session');
             }
-            await this._stopUvcEnsure();
+            await this.stopUvcEnsure();
         }
 
         this.log.debug(`UVC daily ensure: today=${todayH.toFixed(2)} h, min=${minH} h, ensureFrom=${ensureTime}, nowMin=${nowMinutes}, ensureMin=${ensureMin}, active=${this._uvcEnsureActive}, winterFrost=${this._winterFrostActive}`);
@@ -1430,7 +1415,7 @@ anyWindowManagesUvc = true;
                 if (this.config.more_log_enabled) {
                     this.log.info(`UVC daily ensure: daily minimum reached (${todayH.toFixed(2)} h ≥ ${minH} h) – stopping`);
                 }
-                await this._stopUvcEnsure();
+                await this.stopUvcEnsure();
             }
             return;
         }
@@ -1516,7 +1501,7 @@ anyWindowManagesUvc = true;
         }
     }
 
-    async _stopUvcEnsure() {
+    async stopUvcEnsure() {
         this._uvcEnsureActive = false;
         try {
             await this.setFeature('uvc', false);
@@ -1541,18 +1526,18 @@ anyWindowManagesUvc = true;
     // -------------------------------------------------------------------------
     // UVC: today's operating hours (resets automatically at date change)
     // -------------------------------------------------------------------------
-    _getUvcTodayHours() {
-        const today = this._todayStr();
+    getUvcTodayHours() {
+        const today = this.todayStr();
         if (this._uvcDayStartDate !== today) {
             // New calendar day → snapshot current total as the new day's baseline
             this._uvcDayStartHours = this._uvcHoursUsed;  // persisted value (current session not yet flushed)
             this._uvcDayStartDate  = today;
             this.log.debug(`UVC: new day detected – day-start snapshot: ${this._uvcDayStartHours.toFixed(2)} h`);
         }
-        return Math.max(0, this._accumulateUvcHours() - this._uvcDayStartHours);
+        return Math.max(0, this.accumulateUvcHours() - this._uvcDayStartHours);
     }
 
-    _todayStr() {
+    todayStr() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
@@ -1561,95 +1546,7 @@ anyWindowManagesUvc = true;
     // State management
     // -------------------------------------------------------------------------
     async createStates() {
-        const channels = ['info', 'status', 'computed', 'device', 'control', 'consumption'];
-        for (const channel of channels) {
-            await this.setObjectNotExistsAsync(channel, {
-                type: 'channel',
-                common: { name: channel },
-                native: {},
-            });
-        }
-
-        // consumption states (only created, values are set by consumptionHelper)
-        const consumptionStates = {
-            'consumption.day_kwh':        { name: 'Daily consumption (kWh)',              unit: 'kWh', type: 'number' },
-            'consumption.last_total_kwh': { name: 'Raw meter value at day start (kWh)',   unit: 'kWh', type: 'number' },
-        };
-        for (const [id, def] of Object.entries(consumptionStates)) {
-            await this.setObjectNotExistsAsync(id, {
-                type: 'state',
-                common: { name: def.name, type: def.type || 'number', role: def.type === 'string' ? 'text' : 'value.power.consumption', unit: def.unit, read: true, write: false, def: def.type === 'string' ? '' : 0 },
-                native: {},
-            });
-        }
-
-        await this.setObjectNotExistsAsync('status.uvc_expiry_date', {
-            type: 'state',
-            common: { name: 'UVC lamp expiry date', type: 'string', role: 'text', read: true, write: false, def: '' },
-            native: {},
-        });
-
-        await this.setObjectNotExistsAsync('status.time_windows_json', {
-            type: 'state',
-            common: { name: 'Configured time windows (JSON)', type: 'string', role: 'json', read: true, write: false, def: '[]' },
-            native: {},
-        });
-
-        await this.setObjectNotExistsAsync('computed.pv_deactivate_remaining', {
-            type: 'state',
-            common: { name: 'PV deactivate delay remaining (min)', type: 'number', role: 'value', unit: 'min', read: true, write: false, def: 0 },
-            native: {},
-        });
-
-        await this.setObjectNotExistsAsync('info.statusCheck', {
-            type: 'state',
-            common: { name: 'Last command status', type: 'string', role: 'text', read: true, write: false, def: '' },
-            native: {},
-        });
-
-        await this.setObjectNotExistsAsync('control.uvc_ensure_skip_date', {
-            type: 'state',
-            common: { name: 'Date when uvc_ensure_skip_today was set (YYYY-MM-DD)', type: 'string', role: 'text', read: true, write: false, def: '' },
-            native: {},
-        });
-
-        for (const [id, def] of Object.entries(STATE_DEFS)) {
-            // States with apiField are created dynamically after the first poll
-            // so only fields the device actually reports get an ioBroker state.
-            if (def.apiField !== undefined) {
-continue;
-}
-
-            const common = {
-                id:    id,
-                name:  def.name,
-                role:  def.role,
-                type:  def.type,
-                read:  def.read,
-                write: def.write,
-                def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
-            };
-            if (def.unit   !== undefined) {
- common.unit   = def.unit;   
-}
-            if (def.min    !== undefined) {
- common.min    = def.min;    
-}
-            if (def.max    !== undefined) {
- common.max    = def.max;    
-}
-            if (def.states !== undefined) {
- common.states = def.states; 
-}
-
-            await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
-
-            const existing = await this.getObjectAsync(id);
-            if (existing) {
-                existing.common = { ...existing.common, ...common };
-                await this.setObjectAsync(id, existing);
-            }
-        }
+        return stateMgr.createStates(this);
     }
 
     /**
@@ -1660,78 +1557,11 @@ continue;
      * @param {object} raw  – raw API payload from getHotTubStatus()
      */
     async createDynamicStates(raw) {
-        const apiKeys = new Set(Object.keys(raw));
-        let created = 0;
-        for (const [id, def] of Object.entries(STATE_DEFS)) {
-            if (def.apiField === undefined) {
-continue;
-}
-            if (!apiKeys.has(def.apiField)) {
-                this.log.debug(`createDynamicStates: skipping ${id} – field '${def.apiField}' not in API response`);
-                continue;
-            }
-            const common = {
-                id:    id,
-                name:  def.name,
-                role:  def.role,
-                type:  def.type,
-                read:  def.read,
-                write: def.write,
-                def:   def.def !== undefined ? def.def : (def.type === 'boolean' ? false : (def.min ?? 0)),
-            };
-            if (def.unit   !== undefined) {
-common.unit   = def.unit;
-}
-            if (def.min    !== undefined) {
-common.min    = def.min;
-}
-            if (def.max    !== undefined) {
-common.max    = def.max;
-}
-            if (def.states !== undefined) {
-common.states = def.states;
-}
-
-            await this.setObjectNotExistsAsync(id, { type: 'state', common, native: {} });
-            const existing = await this.getObjectAsync(id);
-            if (existing) {
-                existing.common = { ...existing.common, ...common };
-                await this.setObjectAsync(id, existing);
-            }
-            this._dynamicStateIds.add(id);
-            created++;
-        }
-        if (this.config.more_log_enabled) {
-            this.log.info(`createDynamicStates: ${created} model-specific states created/updated for ${this._api.model}`);
-        }
+        return stateMgr.createDynamicStates(this, raw);
     }
 
     async updateDeviceInfo() {
-        const api = this._api;
-        await this.setStateAsync('device.model',           api.model           || '', true);
-        await this.setStateAsync('device.series',          api.series          || '', true);
-        await this.setStateAsync('device.softwareVersion', api.softwareVersion || '', true);
-        await this.setStateAsync('device.wifiVersion',     api.wifiVersion     || '', true);
-        await this.setStateAsync('device.mcuVersion',      api.mcuVersion      || '', true);
-        await this.setStateAsync('device.serialNumber',    api.serialNumber    || '', true);
-        await this.setStateAsync('device.alias',           api.deviceAlias     || '', true);
-        await this.setStateAsync('device.macAddress',      api.macAddress      || '', true);
-        await this.setStateAsync('device.productId',       api.productId       || '', true);
-        await this.setStateAsync('device.productTubPk',    api.productTubPk    || '', true);
-        await this.setStateAsync('device.deviceUuid',      api.deviceUuid      || '', true);
-        await this.setStateAsync('device.serviceRegion',   api.serviceRegion   || '', true);
-        await this.setStateAsync('device.activateIp',      api.activateIp      || '', true);
-        await this.setStateAsync('device.bindingTime',     api.bindingTime     || '', true);
-        await this.setStateAsync('device.activateTime',    api.activateTime    || '', true);
-        if (api.bindingRole      !== null) {
- await this.setStateAsync('device.bindingRole',      api.bindingRole,            true); 
-}
-        if (api.isCloudActivated !== null) {
- await this.setStateAsync('device.isCloudActivated', api.isCloudActivated === 1, true); 
-}
-        if (api.productPicUrl)             {
- await this.setStateAsync('device.pictureUrl',        api.productPicUrl,          true); 
-}
+        return stateMgr.updateDeviceInfo(this);
     }
 
     // -------------------------------------------------------------------------
@@ -1747,7 +1577,7 @@ common.states = def.states;
         try {
             this._authStore.token = null;
             await this._api.init();
-            await this.updateDeviceInfo();
+            // Device info ist statisch und wurde bereits beim ersten Poll geschrieben.
             await this.setStateAsync('info.connection', true, true);
             return true;
         } catch (err) {
@@ -1791,7 +1621,14 @@ common.states = def.states;
             // against active time windows and shut down orphaned features.
             if (!this._firstPollDone) {
                 this._firstPollDone = true;
-                await this._checkStartupDeviceState(data);
+                // Statische Geräteinfos (Modell, Seriennummer, FW-Versionen, …)
+                // werden EINMALIG beim ersten erfolgreichen Poll geschrieben.
+                try {
+                    await this.updateDeviceInfo();
+                } catch (e) {
+                    this.log.warn(`updateDeviceInfo failed: ${e.message}`);
+                }
+                await this.checkStartupDeviceState(data);
             }
 
         } catch (err) {
@@ -1935,7 +1772,7 @@ return;
                     await notificationHelper.send(notificationHelper.format('appChangeDetected', { key, duration: autoOverrideDuration }));
                     // Update _adapterCommanded to current device state so we don't keep re-triggering
                     this._adapterCommanded[key] = deviceVal;
-                    await this._setManualOverride(true, autoOverrideDuration > 0 ? autoOverrideDuration : null);
+                    await this.setManualOverride(true, autoOverrideDuration > 0 ? autoOverrideDuration : null);
                     break; // one trigger is enough
                 }
             }
@@ -1957,7 +1794,7 @@ return;
                 }
                 // Stage 1 already done by firmware; go directly to stage 2
                 this._pvActive = false;
-                await this._pvStagedDeactivate(pvWindows, false);
+                await this.pvStagedDeactivate(pvWindows, false);
             }
         }
         // ─────────────────────────────────────────────────────────────────────
@@ -1989,15 +1826,15 @@ return;
             this.log.debug('UVC ON – started tracking operating hours');
         } else if (!uvcIsOn && this._uvcOnSince !== null) {
             // UVC just turned OFF → accumulate elapsed hours
-            this._uvcHoursUsed = this._accumulateUvcHours();
+            this._uvcHoursUsed = this.accumulateUvcHours();
             this._uvcOnSince   = null;
             this.log.debug(`UVC OFF – total hours used: ${this._uvcHoursUsed.toFixed(2)} h`);
             await this.setStateAsync('status.uvc_hours_used', { val: Math.round(this._uvcHoursUsed * 100) / 100, ack: true });
             await this.computeUvcExpiry();
         }
         // Always publish current accumulated value (including current session)
-        await this.setStateChangedAsync('status.uvc_hours_used', Math.round(this._accumulateUvcHours() * 100) / 100, true);
-        await this.setStateChangedAsync('status.uvc_today_hours', Math.round(this._getUvcTodayHours() * 100) / 100, true);
+        await this.setStateChangedAsync('status.uvc_hours_used', Math.round(this.accumulateUvcHours() * 100) / 100, true);
+        await this.setStateChangedAsync('status.uvc_today_hours', Math.round(this.getUvcTodayHours() * 100) / 100, true);
         // ──────────────────────────────────────────────────────────────────
 
         // ── Filter pump runtime tracking ───────────────────────────────────
@@ -2008,13 +1845,13 @@ return;
             this.log.debug('Filter ON – started tracking runtime hours');
         } else if (!filterIsOn && this._filterOnSince !== null) {
             // filter just turned OFF → accumulate elapsed hours
-            this._filterHoursUsed = this._accumulateFilterHours();
+            this._filterHoursUsed = this.accumulateFilterHours();
             this._filterOnSince   = null;
             this.log.debug(`Filter OFF – total runtime: ${this._filterHoursUsed.toFixed(2)} h`);
             await this.setStateAsync('control.filter_running', { val: Math.round(this._filterHoursUsed * 100) / 100, ack: true });
         }
         // Always publish current accumulated value (including current session)
-        await this.setStateChangedAsync('control.filter_running', Math.round(this._accumulateFilterHours() * 100) / 100, true);
+        await this.setStateChangedAsync('control.filter_running', Math.round(this.accumulateFilterHours() * 100) / 100, true);
         // ──────────────────────────────────────────────────────────────────
 
         await setCtrl('control.target_temperature', data.target_temperature);
@@ -2035,7 +1872,7 @@ return;
             await set('computed.cool_rate_per_hour', Math.round(coolRate * 100) / 100);
         }
 
-        // ── ETA bis Zieltemperatur erreicht ist (Stunden) ─────────────────
+        // ── ETA bis Zieltemperatur erreicht ist (hh:mm) ───────────────────
         {
             const target  = Number(data.target_temperature);
             const current = Number(data.water_temperature);
@@ -2056,9 +1893,15 @@ return;
                 } else if (etaHours > 48) {
                     etaHours = 48; // unrealistische Werte begrenzen
                 }
-                etaHours = Math.round(etaHours * 100) / 100;
             }
-            await this.setStateChangedAsync('status.heat_target_temp_reached', etaHours, true);
+
+            // Umrechnung in hh:mm (auf volle Minute gerundet)
+            const totalMinutes = Math.round(etaHours * 60);
+            const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+            const mm = String(totalMinutes % 60).padStart(2, '0');
+            const etaStr = `${hh}:${mm}`;
+
+            await this.setStateChangedAsync('status.heat_target_temp_reached', etaStr, true);
         }
         // ──────────────────────────────────────────────────────────────────
     }
@@ -2095,6 +1938,8 @@ return;
                     temperature_unit:   data.temperature_unit,
                     ozone:              data.ozone,
                     uvc:                data.uvc,
+                    bubble:             data.bubble,
+                    bubble_level:       data.bubble_level,
                 };
             } else if (!this._lastIsOnline && currentOnline) {
                 powerCycle = true;
@@ -2171,11 +2016,17 @@ return;
         if (this._savedState.target_temperature) {
             await this.safeCmd(() => this.setTargetTemp(this._savedState.target_temperature), 'temperature');
         }
-        for (const feature of ['heater', 'filter', 'ozone', 'uvc']) {
+        for (const feature of ['heater', 'filter', 'ozone', 'uvc', 'bubble']) {
             if (this._savedState[feature] === 'on') {
                 await this.safeCmd(() => this.setFeature(feature, true), feature);
                 await this.sleep(500);
             }
+        }
+        if (this._savedState.bubble === 'on' && this._savedState.bubble_level) {
+            await this.safeCmd(
+                () => this._api.setBubbleLevel(this._savedState.bubble_level),
+                'bubble_level',
+            );
         }
     }
 
@@ -2252,8 +2103,8 @@ return;
     // -------------------------------------------------------------------------
     // Command status helper
     // -------------------------------------------------------------------------
-    async _setStatusCheck(status) {
-        await this.setStateAsync('info.statusCheck', { val: status, ack: true });
+    async setStatusCheck(status) {
+        return stateMgr.setStatusCheck(this, status);
     }
 
     async setFeature(feature, boolVal) {
@@ -2265,18 +2116,33 @@ return;
         this._lastCommandTime = Date.now();
 
         // UVC can only be switched on when the filter pump is already running.
-        // If the pump is not running yet, wait up to 15 s for it to start.
+        // If the pump is not running yet, poll up to 15 s for it to start
+        // (early-exit as soon as filter is reported ON).
         if (feature === 'uvc' && boolVal) {
-            const filterState = await this.getStateAsync('control.filter');
-            const filterOn    = filterState && !!filterState.val;
-            if (!filterOn) {
+            // FIX: bevorzugt den frischen API-Status (_lastStatus / _lastData) abfragen,
+            // nicht nur den eventuell veralteten ioBroker-Control-State.
+            const filterRunning = () =>
+                (this._lastData && this._lastData.filter === 'on') ||
+                (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1);
+
+            if (!filterRunning()) {
                 if (this.config.more_log_enabled) {
-                    this.log.info('UVC ON deferred – filter not running yet, waiting up to 15 s');
+                    this.log.info('UVC ON deferred – filter not running yet, polling up to 15 s');
                 }
-                await new Promise(resolve => setTimeout(resolve, 15_000));
-                // Re-check after waiting
-                const filterStateNow = await this.getStateAsync('control.filter');
-                if (!filterStateNow || !filterStateNow.val) {
+                const start = Date.now();
+                let ok = false;
+                while (Date.now() - start < 15_000) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    if (filterRunning()) { ok = true; break; }
+                    // Aktiv pollen – sonst wartet die Schleife auf das Polling-Intervall
+                    try {
+                        const raw = await this._api.getHotTubStatus();
+                        this._lastData = transformStatus(raw);
+                    } catch (e) {
+                        this.log.debug(`UVC pre-check poll failed: ${e.message}`);
+                    }
+                }
+                if (!ok) {
                     this.log.warn('UVC ON: filter still not running after 15 s – sending UVC command anyway');
                 }
             }
@@ -2284,23 +2150,26 @@ return;
 
         switch (feature) {
             case 'heater': {
-                await this._setStatusCheck('send');
+                await this.setStatusCheck('send');
                 const result = await this._api.setHeaterState(state);
-                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 if (boolVal && this._pendingTargetTemp !== null) {
                     // Heater just switched ON → send pending target temperature after 10 s
                     if (this._pendingTempTimer) {
                         clearTimeout(this._pendingTempTimer);
+                        this._pendingTempTimer = null;
                     }
                     const pendingTemp = this._pendingTargetTemp;
+                    // Sofort entwerten – konkurrierende Aufrufer (z. B. setTargetTemp)
+                    // dürfen den Wert nicht erneut abgreifen.
+                    this._pendingTargetTemp = null;
                     this._pendingTempTimer = setTimeout(async () => {
                         this._pendingTempTimer = null;
                         if (this.config.more_log_enabled) {
                             this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
                         }
                         try {
-                            await this._sendTargetTempDirect(pendingTemp);
-                            this._pendingTargetTemp = null;
+                            await this.sendTargetTempDirect(pendingTemp);
                         } catch (err) {
                             this.log.error(`target_temperature: delayed send FAILED – ${err.message}`);
                         }
@@ -2326,9 +2195,9 @@ return;
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
                         }
-                        await this._setStatusCheck('send');
+                        await this.setStatusCheck('send');
                         await this._api.setUvcState(0);
-                        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                         this._adapterCommanded.uvc = false;
                         await this.sleep(500);
                     }
@@ -2336,9 +2205,9 @@ return;
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
                         }
-                        await this._setStatusCheck('send');
+                        await this.setStatusCheck('send');
                         await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
-                        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                         this._adapterCommanded.bubble = false;
                         await this.sleep(500);
                     }
@@ -2350,15 +2219,15 @@ return;
                         await this.sleep(500);
                     }
                 }
-                await this._setStatusCheck('send');
+                await this.setStatusCheck('send');
                 await this._api.setFilterState(state);
-                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 return;
             }
-            case 'bubble': await this._setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-            case 'jet':    await this._setStatusCheck('send'); await this._api.setJetState(state);    return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-            case 'ozone':  await this._setStatusCheck('send'); await this._api.setOzoneState(state);  return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-            case 'uvc':    await this._setStatusCheck('send'); await this._api.setUvcState(state);    return void await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'bubble': await this.setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); return void await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'jet':    await this.setStatusCheck('send'); await this._api.setJetState(state);    return void await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'ozone':  await this.setStatusCheck('send'); await this._api.setOzoneState(state);  return void await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+            case 'uvc':    await this.setStatusCheck('send'); await this._api.setUvcState(state);    return void await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
         }
     }
 
@@ -2372,11 +2241,11 @@ return;
             if (this.config.more_log_enabled) {
                 this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
             }
-            await this._setStatusCheck('queued');
+            await this.setStatusCheck('queued');
             return;
         }
         this._pendingTargetTemp = null;
-        return this._sendTargetTempDirect(temp);
+        return this.sendTargetTempDirect(temp);
     }
 
     /**
@@ -2385,19 +2254,19 @@ return;
      *
      * @param temp
      */
-    async _sendTargetTempDirect(temp) {
+    async sendTargetTempDirect(temp) {
         this._adapterCommanded.target_temperature = temp;
         this._lastCommandTime = Date.now();
-        await this._setStatusCheck('send');
+        await this.setStatusCheck('send');
         const result = await this._api.setTemperatureSetting(temp);
-        await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
         return result;
     }
 
     // -------------------------------------------------------------------------
     // Manual override – pausiert alle Automationen (Zeitfenster, PV, Frostschutz)
     // -------------------------------------------------------------------------
-    async _setManualOverride(enable, durationMin = null) {
+    async setManualOverride(enable, durationMin = null) {
         // cancel any existing auto-reset timer
         if (this._manualOverrideTimer) {
             clearTimeout(this._manualOverrideTimer);
@@ -2462,7 +2331,24 @@ return;
     // State change handler (writable controls)
     // -------------------------------------------------------------------------
     async onStateChange(id, state) {
-        if (!state || state.ack) {
+        if (!state) {
+            return;
+        }
+
+        // ── Foreign states (PV, house, MSpa power, energy meter) ─────────
+        // Sie werden über subscribeForeignStates() abonniert und kommen mit ack=true.
+        // Eigene States dieses Adapters beginnen mit `${this.namespace}.` (z. B. mspa.0.).
+        if (!id.startsWith(`${this.namespace}.`)) {
+            try {
+                await this.onForeignStateChange(id, state);
+            } catch (e) {
+                this.log.error(`onForeignStateChange(${id}) failed: ${e.message}`);
+            }
+            return;
+        }
+
+        // Eigene Control-States: nur unbestätigte Schreibvorgänge verarbeiten
+        if (state.ack) {
             return;
         }
 
@@ -2485,9 +2371,9 @@ return;
                 if (this.config.more_log_enabled) {
                     this.log.info(`MSpa command: bubble level → ${state.val}`);
                 }
-                await this._setStatusCheck('send');
+                await this.setStatusCheck('send');
                 await this._api.setBubbleLevel(state.val);
-                await this._setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 this.enableRapidPolling();
             } else if (key === 'winter_mode') {
                 this._winterModeActive = !!state.val;
@@ -2507,12 +2393,12 @@ return;
 
             } else if (key === 'manual_override') {
                 const enable = !!state.val;
-                await this._setManualOverride(enable);
+                await this.setManualOverride(enable);
 
             } else if (key === 'uvc_ensure_skip_today') {
                 const skip = !!state.val;
                 this._uvcEnsureSkipToday = skip;
-                this._uvcEnsureSkipDate  = skip ? this._todayStr() : '';
+                this._uvcEnsureSkipDate  = skip ? this.todayStr() : '';
                 await this.setStateAsync('control.uvc_ensure_skip_today', skip, true);
                 await this.setStateAsync('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate, true);
                 if (skip) {
@@ -2522,7 +2408,7 @@ return;
                     await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
                     // stop immediately if ensure is currently running
                     if (this._uvcEnsureActive) {
-                        await this._stopUvcEnsure();
+                        await this.stopUvcEnsure();
                     } else {
                         // ensure was not active, but UVC may still be ON (e.g. started by time window
                         // or manually) – if so, turn it off as an explicit manual abort
@@ -2546,7 +2432,7 @@ return;
             } else if (key === 'manual_override_duration') {
                 // duration change only relevant while override is active → restart timer
                 if (this._manualOverride) {
-                    await this._setManualOverride(true, Number(state.val) || 0);
+                    await this.setManualOverride(true, Number(state.val) || 0);
                 } else {
                     await this.setStateAsync('control.manual_override_duration', Number(state.val) || 0, true);
                 }

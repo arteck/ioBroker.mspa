@@ -12,7 +12,7 @@ Steuert MSpa Whirlpools über die MSpa Cloud API.
 - 🌡️ Wassertemperatur & Zieltemperatur lesen/setzen (20–40 °C, 0,5 °C Schritte)
 - 🔥 Heizung, Filter, Massage, Jet, Ozon und UVC ein-/ausschalten
 - 📊 Automatische Berechnung der Heiz- & Kühlrate (°C/h, EMA-geglättet) + Firmware-Heizrate (`status.device_heat_perhour`)
-- ⏳ Geschätzte Restzeit bis Zieltemperatur erreicht ist (`status.heat_target_temp_reached`, in Stunden) – berechnet aus `computed.heat_rate_per_hour` und der Differenz Ziel-/Wassertemperatur; auf max. 48 h begrenzt, `0` wenn nicht geheizt wird oder die Zieltemperatur bereits erreicht ist
+- ⏳ Geschätzte Restzeit bis Zieltemperatur erreicht ist (`status.heat_target_temp_reached`, Format `hh:mm`) – berechnet aus `computed.heat_rate_per_hour` und der Differenz Ziel-/Wassertemperatur; auf max. 48 h begrenzt, `00:00` wenn nicht geheizt wird oder die Zieltemperatur bereits erreicht ist
 - ⚡ Stromausfallserkennung mit optionaler Zustandswiederherstellung
 - 🌍 3 Serverregionen: Europa (ROW), USA, China
 - 🔒 Rate-Limiter (max. 2,5 Anfragen/Sekunde, serialisierte Befehlswarteschlange)
