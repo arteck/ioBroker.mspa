@@ -97,6 +97,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) del deprectated setStateAsync
+
 ### 0.2.20 (2026-04-26)
 * (arteck) del mspa.0.status.uvc_expiry_date
 * (arteck) status.heat_target_temp_reached new format hh:mm
