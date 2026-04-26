@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "news": {
+      "0.3.1": {
+        "en": "see Readme",
+        "de": "Siehe Readme",
+        "ru": "см. файл Readme",
+        "pt": "Consulte o arquivo Leia-me.",
+        "nl": "zie Readme",
+        "fr": "Voir le fichier Lisez-moi",
+        "it": "vedi il file Readme",
+        "es": "ver Léame",
+        "pl": "zobacz Readme",
+        "uk": "див. файл Readme",
+        "zh-cn": "请参阅自述文件"
+      },
       "0.3.0": {
         "en": "del deprectated setStateAsync",
         "de": "del deprected setStateAsync",

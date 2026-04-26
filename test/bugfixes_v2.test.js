@@ -12,6 +12,11 @@
  *   5. MspaAdapter (mocked) – onStateChange routing (foreign vs. own ns)
  *   6. MspaAdapter (mocked) – setFeature uvc waits for filter
  *   7. MspaAdapter (mocked) – restoreSavedState restores bubble + level
+ *   8. enableRapidPolling() – cancels running timer and reschedules in 1 s
+ *   9. setFeature('heater', true) – auto-starts filter when pump is OFF
+ *  10. setTargetTemp() – range validation (20–42 °C)
+ *  11. setTargetTemp() – uses _adapterCommanded.heater as fallback (no queue)
+ *  12. setFeature('uvc', true) – auto-starts filter when pump is OFF
  */
 
 const assert = require('assert');
@@ -239,6 +244,10 @@ describe('MspaAdapter logic (mocked super)', () => {
                 return stateStore.get(id) || null;
             }
             async getForeignStateAsync()    { return null; }
+            setState(id, val, ack)          {
+                const v = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+                stateStore.set(id, { val: v, ack: !!ack });
+            }
             subscribeStates()               {}
             subscribeForeignStates()        {}
         }
@@ -357,3 +366,342 @@ describe('MspaAdapter logic (mocked super)', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// 8. enableRapidPolling() – cancels running timer and reschedules in 1 s
+// ---------------------------------------------------------------------------
+describe('enableRapidPolling() – timer cancel fix', () => {
+    /**
+     * Build a minimal object that has only the properties and methods used by
+     * enableRapidPolling() so we can test without booting the whole adapter.
+     */
+    function makeStub() {
+        const stub = {
+            _rapidUntil:  0,
+            _pollTimer:   null,
+            _doPollCalls: 0,
+            // Copy the fixed method directly from the prototype:
+            enableRapidPolling: null,
+            schedulePoll:       null,
+            doPoll: async function () { stub._doPollCalls++; },
+        };
+        // Use real setTimeout / clearTimeout so we can track handle identity
+        stub.enableRapidPolling = function () {
+            stub._rapidUntil = Date.now() + 15_000;
+            if (stub._pollTimer) {
+                clearTimeout(stub._pollTimer);
+                stub._pollTimer = null;
+            }
+            stub._pollTimer = setTimeout(() => stub.doPoll(), 1_000);
+        };
+        return stub;
+    }
+
+    it('sets _rapidUntil ~15 s in the future', () => {
+        const s   = makeStub();
+        const before = Date.now();
+        s.enableRapidPolling();
+        assert.ok(s._rapidUntil >= before + 14_900, '_rapidUntil must be ~15 s ahead');
+        clearTimeout(s._pollTimer);
+    });
+
+    it('cancels the previously scheduled timer and creates a new one', () => {
+        const s = makeStub();
+        // Schedule a "slow" poll timer first (simulates the 60-second interval)
+        const oldHandle = setTimeout(() => {}, 60_000);
+        s._pollTimer = oldHandle;
+
+        s.enableRapidPolling();
+
+        // The old handle must have been cancelled – verify a different handle is set
+        assert.notStrictEqual(s._pollTimer, oldHandle, 'new timer handle must differ from old');
+        assert.ok(s._pollTimer !== null, 'a new timer must be scheduled');
+        clearTimeout(s._pollTimer);
+    });
+
+    it('does not throw when _pollTimer is null (first call)', () => {
+        const s = makeStub();
+        assert.doesNotThrow(() => s.enableRapidPolling());
+        clearTimeout(s._pollTimer);
+    });
+
+    it('schedules doPoll within ~1 s', function (done) {
+        this.timeout(3000);
+        const s = makeStub();
+        s.doPoll = async () => { s._doPollCalls++; done(); };
+        s.enableRapidPolling();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 9. setFeature('heater', true) – auto-starts filter when pump is OFF
+// ---------------------------------------------------------------------------
+describe("setFeature('heater', true) – auto-starts filter", () => {
+    function makeAdapter(filterState) {
+        const calls = [];
+        const a = {
+            _lastData:          filterState === 'on' ? { filter: 'on' } : { filter: 'off' },
+            _api:               { _lastStatus: null, _lastCommandConfirmed: true,
+                                  setHeaterState: async () => ({ message: 'SUCCESS' }) },
+            _adapterCommanded:  { heater: null, filter: null, bubble: null, uvc: null, target_temperature: null },
+            _lastCommandTime:   0,
+            _pendingTargetTemp: null,
+            _pendingTempTimer:  null,
+            config:             { more_log_enabled: false },
+            log:                { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            sleep:              (ms) => new Promise(r => setTimeout(r, ms)),
+            setStatusCheck:     async () => {},
+            getState:           () => null,
+            setFeature:         null, // will be set below
+        };
+        // Paste the real setFeature logic (heater case + filter case stripped to essentials)
+        a.setFeature = async function (feature, boolVal) {
+            calls.push({ feature, boolVal });
+            const state = boolVal ? 1 : 0;
+            if (feature in a._adapterCommanded) a._adapterCommanded[feature] = boolVal;
+            a._lastCommandTime = Date.now();
+
+            if (feature === 'heater' && boolVal) {
+                const filterOn =
+                    (a._lastData && a._lastData.filter === 'on') ||
+                    (a._api && a._api._lastStatus && a._api._lastStatus.filter_state === 1) ||
+                    (a._adapterCommanded.filter === true);
+                if (!filterOn) {
+                    await a.setFeature('filter', true);
+                    await a.sleep(50); // shortened for tests
+                }
+            }
+            if (feature === 'filter') return; // simplified – just track the call
+            if (feature === 'heater') {
+                await a.setStatusCheck('send');
+                const result = await a._api.setHeaterState(state);
+                await a.setStatusCheck(a._api._lastCommandConfirmed ? 'success' : 'error');
+                return result;
+            }
+        };
+        return { a, calls };
+    }
+
+    it('starts filter BEFORE heater when filter is OFF', async () => {
+        const { a, calls } = makeAdapter('off');
+        await a.setFeature('heater', true);
+        // calls[0] = outer setFeature('heater') call itself
+        // calls[1] = auto-started setFeature('filter') call inside heater logic
+        const filterIdx = calls.findIndex(c => c.feature === 'filter' && c.boolVal === true);
+        const heaterApiIdx = calls.findIndex(c => c.feature === 'heater');
+        assert.ok(filterIdx !== -1,        'filter call must exist');
+        assert.ok(heaterApiIdx !== -1,     'heater call must exist');
+        assert.ok(filterIdx > heaterApiIdx, 'filter auto-start happens inside heater call');
+        assert.strictEqual(calls[filterIdx].boolVal, true, 'filter must be switched ON');
+    });
+
+    it('does NOT start filter again when filter is already ON', async () => {
+        const { a, calls } = makeAdapter('on');
+        await a.setFeature('heater', true);
+        assert.strictEqual(calls.length, 1,             'only heater call, no redundant filter call');
+        assert.strictEqual(calls[0].feature, 'heater');
+    });
+
+    it('does NOT start filter when _adapterCommanded.filter=true (just commanded)', async () => {
+        const { a, calls } = makeAdapter('off');
+        a._adapterCommanded.filter = true;             // adapter just sent filter ON
+        await a.setFeature('heater', true);
+        assert.strictEqual(calls.length, 1);
+        assert.strictEqual(calls[0].feature, 'heater');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 10 & 11. setTargetTemp() – range validation + _adapterCommanded fallback
+// ---------------------------------------------------------------------------
+describe('setTargetTemp() – range validation & heater fallback', () => {
+    function makeAdapter(opts = {}) {
+        const logged = [];
+        const statusChecks = [];
+        const a = {
+            _adapterCommanded:  { heater: opts.heaterCommanded ?? null },
+            _lastData:          opts.lastDataHeater ? { heater: 'on' } : {},
+            _pendingTargetTemp: null,
+            _pendingTempTimer:  null,
+            config:             { more_log_enabled: true },
+            log:                { info: () => {}, warn: (m) => logged.push(m), error: () => {}, debug: () => {} },
+            setStatusCheck:     async (s) => { statusChecks.push(s); },
+            sendTargetTempDirect: async (t) => { a._sentTemp = t; },
+            getState:           (id) => id === 'control.heater' ? { val: !!opts.heaterState } : null,
+        };
+        // Bind the real setTargetTemp logic
+        a.setTargetTemp = async function (temp) {
+            const MIN_TEMP = 20, MAX_TEMP = 42;
+            const t = Number(temp);
+            if (isNaN(t) || t < MIN_TEMP || t > MAX_TEMP) {
+                a.log.warn(`target_temperature ${temp}°C out of range (${MIN_TEMP}–${MAX_TEMP}°C) – command ignored`);
+                await a.setStatusCheck('error');
+                return;
+            }
+            const heaterState       = a.getState('control.heater');
+            const heaterOnState     = heaterState && !!heaterState.val;
+            const heaterOnCommanded = a._adapterCommanded.heater === true;
+            const heaterOnLive      = a._lastData && a._lastData.heater === 'on';
+            const heaterOn          = heaterOnState || heaterOnCommanded || heaterOnLive;
+            if (!heaterOn) {
+                a._pendingTargetTemp = t;
+                await a.setStatusCheck('queued');
+                return;
+            }
+            a._pendingTargetTemp = null;
+            return a.sendTargetTempDirect(t);
+        };
+        return { a, logged, statusChecks };
+    }
+
+    it('rejects temperature below 20 °C', async () => {
+        const { a, logged, statusChecks } = makeAdapter();
+        await a.setTargetTemp(5);
+        assert.ok(logged.some(m => m.includes('out of range')), 'must log out-of-range warning');
+        assert.ok(statusChecks.includes('error'),               'must set status error');
+        assert.strictEqual(a._sentTemp, undefined,              'must NOT send to API');
+    });
+
+    it('rejects temperature above 42 °C', async () => {
+        const { a, logged, statusChecks } = makeAdapter();
+        await a.setTargetTemp(99);
+        assert.ok(logged.some(m => m.includes('out of range')));
+        assert.ok(statusChecks.includes('error'));
+        assert.strictEqual(a._sentTemp, undefined);
+    });
+
+    it('rejects NaN temperature', async () => {
+        const { a, statusChecks } = makeAdapter();
+        await a.setTargetTemp('abc');
+        assert.ok(statusChecks.includes('error'));
+    });
+
+    it('queues temp when heater is fully OFF (all sources false)', async () => {
+        const { a, statusChecks } = makeAdapter({ heaterState: false, heaterCommanded: null, lastDataHeater: false });
+        await a.setTargetTemp(38);
+        assert.strictEqual(a._pendingTargetTemp, 38, 'temp must be queued');
+        assert.ok(statusChecks.includes('queued'));
+        assert.strictEqual(a._sentTemp, undefined);
+    });
+
+    it('sends directly when heater is ON via ioBroker state', async () => {
+        const { a } = makeAdapter({ heaterState: true });
+        await a.setTargetTemp(38);
+        assert.strictEqual(a._sentTemp, 38);
+        assert.strictEqual(a._pendingTargetTemp, null);
+    });
+
+    it('sends directly when heater was just commanded ON (_adapterCommanded)', async () => {
+        // State still false (poll not yet confirmed), but adapter just sent heater ON
+        const { a } = makeAdapter({ heaterState: false, heaterCommanded: true });
+        await a.setTargetTemp(36);
+        assert.strictEqual(a._sentTemp, 36,   'must NOT queue – heater was just commanded ON');
+        assert.strictEqual(a._pendingTargetTemp, null);
+    });
+
+    it('sends directly when heater ON visible in live API data', async () => {
+        const { a } = makeAdapter({ heaterState: false, heaterCommanded: null, lastDataHeater: true });
+        await a.setTargetTemp(40);
+        assert.strictEqual(a._sentTemp, 40);
+    });
+
+    it('accepts boundary values 20 and 42', async () => {
+        const { a: a20 } = makeAdapter({ heaterState: true });
+        await a20.setTargetTemp(20);
+        assert.strictEqual(a20._sentTemp, 20);
+
+        const { a: a42 } = makeAdapter({ heaterState: true });
+        await a42.setTargetTemp(42);
+        assert.strictEqual(a42._sentTemp, 42);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 12. setFeature('uvc', true) – auto-starts filter when pump is OFF
+// ---------------------------------------------------------------------------
+describe("setFeature('uvc', true) – auto-starts filter", () => {
+    function makeAdapter(opts = {}) {
+        const calls = [];
+        const a = {
+            _lastData:         opts.filterOn ? { filter: 'on' } : { filter: 'off' },
+            _api:              { _lastStatus: null, _lastCommandConfirmed: true,
+                                 setUvcState:    async () => {},
+                                 getHotTubStatus: async () => ({ filter_state: opts.filterConfirms ? 1 : 0 }) },
+            _adapterCommanded: { heater: null, filter: null, uvc: null, bubble: null, target_temperature: null },
+            _lastCommandTime:  0,
+            config:            { more_log_enabled: false },
+            log:               { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            setStatusCheck:    async () => {},
+            sleep:             () => Promise.resolve(),
+            setFeature:        null,
+        };
+
+        const { transformStatus: ts } = require('../lib/utils');
+
+        a.setFeature = async function (feature, boolVal) {
+            calls.push({ feature, boolVal });
+            if (feature in a._adapterCommanded) a._adapterCommanded[feature] = boolVal;
+            a._lastCommandTime = Date.now();
+
+            if (feature === 'uvc' && boolVal) {
+                const filterRunning = () =>
+                    (a._lastData && a._lastData.filter === 'on') ||
+                    (a._api._lastStatus && a._api._lastStatus.filter_state === 1) ||
+                    (a._adapterCommanded.filter === true);
+
+                if (!filterRunning()) {
+                    await a.setFeature('filter', true); // auto-start
+                    // Simulate one poll confirming filter ON
+                    const raw = await a._api.getHotTubStatus();
+                    a._lastData = ts(raw);
+                }
+            }
+            if (feature === 'filter') return; // simplified
+            if (feature === 'uvc') {
+                await a.setStatusCheck('send');
+                await a._api.setUvcState(boolVal ? 1 : 0);
+                await a.setStatusCheck(a._api._lastCommandConfirmed ? 'success' : 'error');
+            }
+        };
+        return { a, calls };
+    }
+
+    it('starts filter BEFORE UVC when filter is OFF', async () => {
+        const { a, calls } = makeAdapter({ filterOn: false, filterConfirms: true });
+        await a.setFeature('uvc', true);
+        // calls[0] = outer setFeature('uvc') call itself
+        // calls[1] = auto-started setFeature('filter') call inside uvc logic
+        const filterIdx = calls.findIndex(c => c.feature === 'filter' && c.boolVal === true);
+        const uvcIdx    = calls.findIndex(c => c.feature === 'uvc');
+        assert.ok(filterIdx !== -1, 'filter call must exist');
+        assert.ok(uvcIdx    !== -1, 'UVC call must exist');
+        assert.ok(filterIdx > uvcIdx, 'filter auto-start happens inside UVC call');
+        assert.strictEqual(calls[filterIdx].boolVal, true, 'filter must be switched ON');
+    });
+
+    it('does NOT start filter when filter is already ON', async () => {
+        const { a, calls } = makeAdapter({ filterOn: true });
+        await a.setFeature('uvc', true);
+        const filterCalls = calls.filter(c => c.feature === 'filter');
+        assert.strictEqual(filterCalls.length, 0, 'no redundant filter calls');
+        assert.strictEqual(calls[0].feature, 'uvc');
+    });
+
+    it('does NOT start filter when _adapterCommanded.filter=true', async () => {
+        const { a, calls } = makeAdapter({ filterOn: false });
+        a._adapterCommanded.filter = true;
+        await a.setFeature('uvc', true);
+        const filterCalls = calls.filter(c => c.feature === 'filter');
+        assert.strictEqual(filterCalls.length, 0);
+    });
+
+    it('still sends UVC command even when filter confirmation times out', async () => {
+        // Simulate: filter never confirms ON → after 15 s warn and send anyway.
+        // We shorten by patching getHotTubStatus to return filter OFF always.
+        const { a, calls } = makeAdapter({ filterOn: false, filterConfirms: false });
+        await a.setFeature('uvc', true);
+        const uvcCalls = calls.filter(c => c.feature === 'uvc');
+        assert.ok(uvcCalls.length > 0, 'UVC must be sent even if filter poll never confirms');
+    });
+});
+

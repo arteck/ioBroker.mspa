@@ -931,6 +931,13 @@ class MspaAdapter extends utils.Adapter {
 
     enableRapidPolling() {
         this._rapidUntil = Date.now() + 15_000;
+        // Cancel the currently scheduled poll and reschedule immediately (1 s)
+        // so the ACK arrives quickly instead of waiting up to 60 s.
+        if (this._pollTimer) {
+            clearTimeout(this._pollTimer);
+            this._pollTimer = null;
+        }
+        this._pollTimer = setTimeout(() => this.doPoll(), 1_000);
     }
 
     // -------------------------------------------------------------------------
@@ -1130,27 +1137,26 @@ class MspaAdapter extends utils.Adapter {
         this._lastCommandTime = Date.now();
 
         // UVC can only be switched on when the filter pump is already running.
-        // If the pump is not running yet, poll up to 15 s for it to start
-        // (early-exit as soon as filter is reported ON).
+        // Auto-start filter if needed, then wait up to 15 s for the device to confirm it.
         if (feature === 'uvc' && boolVal) {
-            // FIX: bevorzugt den frischen API-Status (_lastStatus / _lastData) abfragen,
-            // nicht nur den eventuell veralteten ioBroker-Control-State.
             const filterRunning = () =>
                 (this._lastData && this._lastData.filter === 'on') ||
-                (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1);
+                (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1) ||
+                (this._adapterCommanded.filter === true);
 
             if (!filterRunning()) {
                 if (this.config.more_log_enabled) {
-                    this.log.info('UVC ON deferred – filter not running yet, polling up to 15 s');
+                    this.log.info('UVC ON – filter not running, auto-starting filter pump first');
                 }
+                await this.setFeature('filter', true);
+                // Poll up to 15 s until filter is confirmed ON by the device
                 const start = Date.now();
                 let ok = false;
                 while (Date.now() - start < 15_000) {
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 1_000));
                     if (filterRunning()) {
  ok = true; break; 
 }
-                    // Aktiv pollen – sonst wartet die Schleife auf das Polling-Intervall
                     try {
                         const raw = await this._api.getHotTubStatus();
                         this._lastData = transformStatus(raw);
@@ -1159,13 +1165,28 @@ class MspaAdapter extends utils.Adapter {
                     }
                 }
                 if (!ok) {
-                    this.log.warn('UVC ON: filter still not running after 15 s – sending UVC command anyway');
+                    this.log.warn('UVC ON: filter still not confirmed after 15 s – sending UVC command anyway');
                 }
             }
         }
 
         switch (feature) {
             case 'heater': {
+                if (boolVal) {
+                    // The heater requires the filter pump to be running.
+                    // Auto-start it if not already ON (live API data takes priority).
+                    const filterOn =
+                        (this._lastData && this._lastData.filter === 'on') ||
+                        (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1) ||
+                        (this._adapterCommanded.filter === true);
+                    if (!filterOn) {
+                        if (this.config.more_log_enabled) {
+                            this.log.info('heater ON – auto-starting filter pump first (required by device)');
+                        }
+                        await this.setFeature('filter', true);
+                        await this.sleep(1_500); // give the pump time to spin up
+                    }
+                }
                 await this.setStatusCheck('send');
                 const result = await this._api.setHeaterState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
@@ -1248,20 +1269,36 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async setTargetTemp(temp) {
+        // Validate range (MSpa: 20–42 °C)
+        const MIN_TEMP = 20;
+        const MAX_TEMP = 42;
+        const t = Number(temp);
+        if (isNaN(t) || t < MIN_TEMP || t > MAX_TEMP) {
+            this.log.warn(`target_temperature ${temp}°C out of range (${MIN_TEMP}–${MAX_TEMP}°C) – command ignored`);
+            await this.setStatusCheck('error');
+            return;
+        }
+
         // If heater is not currently on (user command via state), store as pending.
         // Automations that just called setFeature('heater', true) use _scheduleTargetTempAfterHeaterOn().
+        // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
+        // when the heater was just switched ON but the poll hasn't confirmed it yet.
         const heaterState = this.getState('control.heater');
-        const heaterOn    = heaterState && !!heaterState.val;
+        const heaterOnState     = heaterState && !!heaterState.val;
+        const heaterOnCommanded = this._adapterCommanded.heater === true;
+        const heaterOnLive      = this._lastData && this._lastData.heater === 'on';
+        const heaterOn = heaterOnState || heaterOnCommanded || heaterOnLive;
+
         if (!heaterOn) {
-            this._pendingTargetTemp = temp;
+            this._pendingTargetTemp = t;
             if (this.config.more_log_enabled) {
-                this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);
+                this.log.info(`target_temperature ${t}°C queued – will be sent 10 s after heater is switched ON`);
             }
             await this.setStatusCheck('queued');
             return;
         }
         this._pendingTargetTemp = null;
-        return this.sendTargetTempDirect(temp);
+        return this.sendTargetTempDirect(t);
     }
 
     /**

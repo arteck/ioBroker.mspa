@@ -19,14 +19,18 @@ Controls MSpa hot tubs via the MSpa Cloud API
 ## Features
 
 ### Device Control
-- 🌡️ Read/set water temperature & target temperature (20–40 °C, 0.5 °C steps)
+- 🌡️ Read/set water temperature & target temperature (**20–42 °C**, 0.5 °C steps) – values outside this range are rejected with a log warning
 - 🔥 Turn heating, filter, bubble, jet, ozone and UVC on/off
+- 🔗 **Auto-dependency management:**
+  - Switching **heater ON** automatically starts the filter pump first if it is not already running (device requirement)
+  - Switching **UVC ON** automatically starts the filter pump first if it is not already running (device requirement)
+  - Switching **filter OFF** automatically stops heater, UVC and bubble first (API requirement)
 - 📊 Automatic heating & cooling rate calculation (°C/h, moving average)
 - ⏳ ETA as `hh:mm` until target temperature is reached (`status.heat_target_temp_reached`) – calculated from `computed.heat_rate_per_hour` and the target/water temperature delta; capped at 48 h, `00:00` when not heating or target already reached
 - ⚡ Power failure detection with optional state restoration
 - 🌍 3 server regions: Europe (ROW), USA, China
 - 🔒 Rate limiter (max. 2.5 requests/second)
-- 🚀 Rapid polling after commands (1-second interval for 15 s)
+- 🚀 Rapid polling after commands (1-second interval for 15 s) – running poll timer is cancelled immediately so ACK arrives within ~2 s
 
 ### Time Window Control
 - ⏰ Up to 3 configurable time windows (weekday selection, start/end time)
@@ -97,6 +101,13 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### 0.3.1 (2026-04-26)
+* (arteck) heater ON now auto-starts filter pump if not already running (device requirement)
+* (arteck) UVC ON now auto-starts filter pump if not already running (device requirement)
+* (arteck) target_temperature: added range validation (20–42 °C), invalid values are rejected with log warning
+* (arteck) target_temperature: uses _adapterCommanded.heater + live API data as fallback so temperature is sent directly when heater was just switched ON (no unnecessary queue)
+* (arteck) enableRapidPolling: running 60-second poll timer is now cancelled immediately so ACK arrives within ~2 s instead of up to 60 s
+
 ### 0.3.0 (2026-04-26)
 * (arteck) del deprectated setStateAsync
 
@@ -110,9 +121,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.18 (2026-04-26)
 * (arteck) add status.heat_target_temp_reached – ETA (hh:mm) until target temperature is reached, computed from heat_rate_per_hour
-
-### 0.2.17 (2026-04-25)
-* (arteck) log information can be customized (more or less information)
 
 ## License
 

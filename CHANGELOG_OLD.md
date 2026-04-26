@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.17 (2026-04-25)
+* (arteck) log information can be customized (more or less information)
+
 ## 0.2.16 (2026-04-24)
 * (arteck) add manuall filter counter and reset button
 
