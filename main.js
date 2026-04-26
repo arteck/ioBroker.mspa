@@ -1,7 +1,7 @@
 ﻿'use strict';
 
 /*
- * ioBroker MSpa Adapter – main.js
+ * ioBroker MSpa Adapter  
  *
  */
 
@@ -50,6 +50,7 @@ class MspaAdapter extends utils.Adapter {
 
         this._heatTracker  = new RateTracker({ min: 0.05, max: 3.0 });
         this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
+        this._lastHeatRate = 0; // last positive heating rate (°C/h) for ETA calculation
 
         // PV surplus control
         this._pvPower                  = null;
@@ -2025,12 +2026,42 @@ return;
         if (heatRate !== null) {
             await set('computed.heat_rate_per_hour', Math.round(heatRate * 100) / 100);
         }
+        if (heatRate !== null && heatRate > 0) {
+            this._lastHeatRate = heatRate;
+        }
 
         const isNotHeating = ![2, 3].includes(data.heat_state);
         const coolRate = this._coolTracker.update(data.water_temperature, isNotHeating, false);
         if (coolRate !== null) {
             await set('computed.cool_rate_per_hour', Math.round(coolRate * 100) / 100);
         }
+
+        // ── ETA bis Zieltemperatur erreicht ist (Stunden) ─────────────────
+        {
+            const target  = Number(data.target_temperature);
+            const current = Number(data.water_temperature);
+            const isHeatingNow = [2, 3].includes(data.heat_state) && data.heater === 'on';
+            const rate = Number(this._lastHeatRate) || 0;
+
+            let etaHours = 0;
+            if (
+                isHeatingNow &&
+                Number.isFinite(target) &&
+                Number.isFinite(current) &&
+                target > current &&
+                rate > 0
+            ) {
+                etaHours = (target - current) / rate;
+                if (!Number.isFinite(etaHours) || etaHours < 0) {
+                    etaHours = 0;
+                } else if (etaHours > 48) {
+                    etaHours = 48; // unrealistische Werte begrenzen
+                }
+                etaHours = Math.round(etaHours * 100) / 100;
+            }
+            await this.setStateChangedAsync('status.heat_target_temp_reached', etaHours, true);
+        }
+        // ──────────────────────────────────────────────────────────────────
     }
 
     // -------------------------------------------------------------------------

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.17",
+    "version": "0.2.18",
     "news": {
+      "0.2.18": {
+        "en": "add status.heat_target_temp_reached – ETA (hours) until target temperature is reached, computed from heat_rate_per_hour",
+        "de": "status.heat target temp reached – ETA (Stunden) bis die Zieltemperatur erreicht ist, berechnet aus heat rate per hour",
+        "ru": "добавить status.heat target temp reached - ETA (часы) до достижения целевой температуры, вычисляемой из тепловой скорости per hour",
+        "pt": "adicionar status.heat target temp ached – ETA (horas) até atingir a temperatura alvo, calculada a partir de calor rate per hour",
+        "nl": "status.heat target temp reached ETA (uren) toevoegen totdat de doeltemperatuur is bereikt, berekend vanuit heat rate per hour",
+        "fr": "ajouter status.heat target temp reached – ETA (heures) jusqu'à ce que la température cible soit atteinte, calculée à partir de heating rate per heure",
+        "it": "aggiungere status.heat target temp reached – ETA (ore) fino a raggiungere la temperatura di destinazione, calcolato da heat rate per hour",
+        "es": "añadir status.heat target temp reached – ETA (horas) hasta que se alcanza la temperatura objetivo, computado desde heat rate per hour",
+        "pl": "dodaj status.heat _ target _ temporary _ reaced - ETA (hours) aż do osiągnięcia temperatury docelowej, obliczonej na podstawie wartości _ rate _ per _ hour",
+        "uk": "add Status.heat target temp reached - ETA (години) до досягнення температури цілі, комп'ютерних від тепла rate per годину",
+        "zh-cn": "添加状态. heat target temp reached – ETA(小时)直至达到目标温度,从热率 每小时计算"
+      },
       "0.2.17": {
         "en": "log information can be customized (more or less information)",
         "de": "log-informationen können angepasst werden (mehr oder weniger informationen)",
@@ -80,19 +93,6 @@
         "pl": "zobacz Readme",
         "uk": "див. файл Readme",
         "zh-cn": "请参阅自述文件"
-      },
-      "0.2.11": {
-        "en": "add info.statusCheck \nfix filter off",
-        "de": "info hinzufügen.statusCheck\nfilter entfernen",
-        "ru": "добавить info.statusCheck\nфиксировать фильтр",
-        "pt": "adicionar info.statusCheck\ncorrigir o filtro desligado",
-        "nl": "info.statusCheck toevoegen\nfix filter uit",
-        "fr": "ajouter info.statusCheck\ncorrection du filtre",
-        "it": "aggiungere info.statusCheck\nfissare il filtro",
-        "es": "añadir info.statusCheck\nfija el filtro",
-        "pl": "dodaj info.statusCheck\nnaprawić filtr",
-        "uk": "додати інформацію.statusCheck\nфіксувати фільтр вимкнення",
-        "zh-cn": "添加信息. status 检查\n关闭过滤器"
       }
     },
     "titleLang": {
