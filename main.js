@@ -1252,6 +1252,7 @@ class MspaAdapter extends utils.Adapter {
         // Automations that just called setFeature('heater', true) use _scheduleTargetTempAfterHeaterOn().
         const heaterState = this.getState('control.heater');
         const heaterOn    = heaterState && !!heaterState.val;
+        if (!heaterOn) {
             this._pendingTargetTemp = temp;
             if (this.config.more_log_enabled) {
                 this.log.info(`target_temperature ${temp}°C queued – will be sent 10 s after heater is switched ON`);

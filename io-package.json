@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.20",
+    "version": "0.3.0",
     "news": {
+      "0.3.0": {
+        "en": "del deprectated setStateAsync",
+        "de": "del deprected setStateAsync",
+        "ru": "обсуждение StateAsync",
+        "pt": "del deprectated setStateAsync",
+        "nl": "del deprectated setStateAsync",
+        "fr": "set dépréciéStateAsync",
+        "it": "del set deprettatoStateAsync",
+        "es": "del deprectated setStateAsync",
+        "pl": "del deprectated setStateAsync",
+        "uk": "deprectated setStateAsync",
+        "zh-cn": "已贬值的设置"
+      },
       "0.2.20": {
         "en": "del mspa.0.status.uvc_expiry_date\nstatus.heat_target_temp_reached new format hh:mm\nfix set temp after enough PV",
         "de": "das ist der grund\nstatus.heat target temp reached new format hh:mm\nfix set temp nach genug PV",
@@ -80,19 +93,6 @@
         "pl": "tworzyć tylko państwa modelowe",
         "uk": "створити тільки стан моделі",
         "zh-cn": "只创建模式状态"
-      },
-      "0.2.14": {
-        "en": "fix consumption",
-        "de": "verbrauch",
-        "ru": "фиксировать потребление",
-        "pt": "fixar o consumo",
-        "nl": "vast te stellen verbruik",
-        "fr": "consommation fixe",
-        "it": "consumo corretto",
-        "es": "consumo de solución",
-        "pl": "zużycie stałe",
-        "uk": "споживана фіксація",
-        "zh-cn": "固定消费"
       }
     },
     "titleLang": {

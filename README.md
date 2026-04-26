@@ -97,7 +97,7 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.3.0 (2026-04-26)
 * (arteck) del deprectated setStateAsync
 
 ### 0.2.20 (2026-04-26)
@@ -113,9 +113,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.17 (2026-04-25)
 * (arteck) log information can be customized (more or less information)
-
-### 0.2.16 (2026-04-24)
-* (arteck) add manuall filter counter and reset button
 
 ## License
 

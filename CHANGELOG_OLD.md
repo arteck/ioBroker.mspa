@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.16 (2026-04-24)
+* (arteck) add manuall filter counter and reset button
+
 ## 0.2.15 (2026-04-24)
 * (arteck) create only model states
 
