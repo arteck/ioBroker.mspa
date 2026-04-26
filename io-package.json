@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.19",
+    "version": "0.2.20",
     "news": {
+      "0.2.20": {
+        "en": "del mspa.0.status.uvc_expiry_date\nstatus.heat_target_temp_reached new format hh:mm\nfix set temp after enough PV",
+        "de": "das ist der grund\nstatus.heat target temp reached new format hh:mm\nfix set temp nach genug PV",
+        "ru": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached новый формат hh:mm\nустановить температуру после достаточного количества PV",
+        "pt": "del mspa.0.status.uvc expiry date\nstatus.heat target temp alcançado novo formato hh:mm\ncorrigir a temperatura definida após PV suficiente",
+        "nl": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached new format hh:mm\nfix set temp na voldoende PV",
+        "fr": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached nouveau format hh:mm\nfixer la température de réglage après assez de PV",
+        "it": "del mspa.0.status.uvc expiry date\nstato.heat target temp reached nuovo formato hh:mm\nfix set temp dopo abbastanza PV",
+        "es": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached nuevo formato hh:mm\nfijar la temperatura set después de suficiente PV",
+        "pl": "del mspa.0.status.uvc _ expire _ date\nstatus.heat _ target _ temporary _ reached new format hh: mm\nustawiona temperatura po wystarczającej ilości PV",
+        "uk": "english, українська, français..\nстатус.heat target temp reached новий формат hh:mm\nфіксувати час встановлення після достатнього PV",
+        "zh-cn": "del mspa.0.status.uvc  expiry date (中文(简体) )\n状态. heat target temp reached 新的格式 hh:mm\n足够光电后固定设置临时值"
+      },
       "0.2.19": {
         "en": "typo",
         "de": "typo",
@@ -80,19 +93,6 @@
         "pl": "zużycie stałe",
         "uk": "споживана фіксація",
         "zh-cn": "固定消费"
-      },
-      "0.2.13": {
-        "en": "typo",
-        "de": "typo",
-        "ru": "опечатка",
-        "pt": "erro de digitação",
-        "nl": "type",
-        "fr": "typo",
-        "it": "tipo",
-        "es": "typo",
-        "pl": "typo",
-        "uk": "типо",
-        "zh-cn": "类型"
       }
     },
     "titleLang": {

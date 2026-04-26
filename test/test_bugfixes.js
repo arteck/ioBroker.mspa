@@ -291,14 +291,14 @@ console.log('══════════════════════�
 //  BUG 3 – _generateNonce – kryptografische Sicherheit
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log('\n══════════════════════════════════════════');
-console.log(' BUG 3 – MSpaApiClient._generateNonce Sicherheit');
+console.log(' BUG 3 – MSpaApiClient.generateNonce Sicherheit');
 console.log('══════════════════════════════════════════');
 
 {
     const CHARSET = /^[A-Za-z0-9]+$/;
-    const nonce1  = MSpaApiClient._generateNonce(32);
-    const nonce2  = MSpaApiClient._generateNonce(32);
-    const nonce16 = MSpaApiClient._generateNonce(16);
+    const nonce1  = MSpaApiClient.generateNonce(32);
+    const nonce2  = MSpaApiClient.generateNonce(32);
+    const nonce16 = MSpaApiClient.generateNonce(16);
 
     assert('Nonce hat korrekte Länge (32)',     nonce1.length === 32);
     assert('Nonce hat korrekte Länge (16)',     nonce16.length === 16);
@@ -308,7 +308,7 @@ console.log('══════════════════════�
     // Gleichverteilung: Buchstaben und Ziffern sollten alle vorkommen bei 10 000 Versuchen
     const charSet = new Set();
     for (let i = 0; i < 10_000; i++) {
-        for (const c of MSpaApiClient._generateNonce(8)) { charSet.add(c); }
+        for (const c of MSpaApiClient.generateNonce(8)) { charSet.add(c); }
     }
     // Alphabet: 26 + 26 + 10 = 62 Zeichen
     assert('Alle 62 erlaubten Zeichen erscheinen in 10 000 Nonces', charSet.size >= 60);
@@ -316,7 +316,7 @@ console.log('══════════════════════�
     // Sicherstellung: Math.random wird NICHT mehr direkt verwendet
     // (Indirekt prüfbar: crypto.randomBytes sollte nie werfen)
     let nonceCrash = false;
-    try { MSpaApiClient._generateNonce(64); } catch (_) { nonceCrash = true; }
+    try { MSpaApiClient.generateNonce(64); } catch (_) { nonceCrash = true; }
     assert('_generateNonce(64) wirft keine Exception', !nonceCrash);
 }
 
@@ -1200,3 +1200,4 @@ if (errors.length > 0) {
 }
 
 })();
+

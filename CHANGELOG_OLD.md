@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.15 (2026-04-24)
+* (arteck) create only model states
+
 ## 0.2.14 (2026-04-23)
 * (arteck) fix consumption
 

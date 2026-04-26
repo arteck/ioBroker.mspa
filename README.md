@@ -97,9 +97,10 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.2.20 (2026-04-26)
 * (arteck) del mspa.0.status.uvc_expiry_date
 * (arteck) status.heat_target_temp_reached new format hh:mm
+* (arteck) fix set temp after enough PV
 
 ### 0.2.19 (2026-04-26)
 * (arteck) typo
@@ -112,9 +113,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.16 (2026-04-24)
 * (arteck) add manuall filter counter and reset button
-
-### 0.2.15 (2026-04-24)
-* (arteck) create only model states
 
 ## License
 
