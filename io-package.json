@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.2.18",
+    "version": "0.2.19",
     "news": {
+      "0.2.19": {
+        "en": "typo",
+        "de": "typo",
+        "ru": "опечатка",
+        "pt": "erro de digitação",
+        "nl": "type",
+        "fr": "typo",
+        "it": "tipo",
+        "es": "typo",
+        "pl": "typo",
+        "uk": "типо",
+        "zh-cn": "类型"
+      },
       "0.2.18": {
         "en": "add status.heat_target_temp_reached – ETA (hours) until target temperature is reached, computed from heat_rate_per_hour",
         "de": "status.heat target temp reached – ETA (Stunden) bis die Zieltemperatur erreicht ist, berechnet aus heat rate per hour",
@@ -80,19 +93,6 @@
         "pl": "typo",
         "uk": "типо",
         "zh-cn": "类型"
-      },
-      "0.2.12": {
-        "en": "see Readme",
-        "de": "Siehe Readme",
-        "ru": "см. файл Readme",
-        "pt": "Consulte o arquivo Leia-me.",
-        "nl": "zie Readme",
-        "fr": "Voir le fichier Lisez-moi",
-        "it": "vedi il file Readme",
-        "es": "ver Léame",
-        "pl": "zobacz Readme",
-        "uk": "див. файл Readme",
-        "zh-cn": "请参阅自述文件"
       }
     },
     "titleLang": {

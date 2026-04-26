@@ -97,6 +97,9 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 
 ## Changelog
+### 0.2.19 (2026-04-26)
+* (arteck) typo
+
 ### 0.2.18 (2026-04-26)
 * (arteck) add status.heat_target_temp_reached – ETA (hours) until target temperature is reached, computed from heat_rate_per_hour
 
@@ -108,9 +111,6 @@ Controls MSpa hot tubs via the MSpa Cloud API
 
 ### 0.2.15 (2026-04-24)
 * (arteck) create only model states
-
-### 0.2.14 (2026-04-23)
-* (arteck) fix consumption
 
 ## License
 

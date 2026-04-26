@@ -1574,7 +1574,6 @@ anyWindowManagesUvc = true;
         const consumptionStates = {
             'consumption.day_kwh':        { name: 'Daily consumption (kWh)',              unit: 'kWh', type: 'number' },
             'consumption.last_total_kwh': { name: 'Raw meter value at day start (kWh)',   unit: 'kWh', type: 'number' },
-            'consumption.day_start_date': { name: 'Date of last day-start baseline (YYYY-MM-DD)', unit: '', type: 'string' },
         };
         for (const [id, def] of Object.entries(consumptionStates)) {
             await this.setObjectNotExistsAsync(id, {

@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.14 (2026-04-23)
+* (arteck) fix consumption
+
 ## 0.2.7 (2026-04-19)
 * (arteck) fix manual override
 
