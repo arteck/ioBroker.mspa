@@ -50,8 +50,17 @@ class MspaAdapter extends utils.Adapter {
         // to avoid false positives while the device is still catching up.
         this._lastCommandTime = 0;
 
-        this._heatTracker = new RateTracker({min: 0.05, max: 3.0});
-        this._coolTracker = new RateTracker({min: 0.01, max: 3.0});
+        // Physikalisch berechnete Heizrate für 2200 W Heizung / 930 L Wasser:
+        //   t = (930 kg · 4186 J/kg·K · 1 K) / 2200 W = 1769 s ≈ 29,5 min/°C
+        //   → theoretisches Maximum: ~2,03 °C/h
+        //   Mit realen Verlusten (Isolation, Umgebung): 1,2 – 1,8 °C/h
+        //   MAX_RATE = 3,5 °C/h  (+70 % Puffer für Sensor-Toleranz / kurze Heizphasen)
+        //   MIN_RATE = 0,3 °C/h  (unterhalb = Rauschen oder Heizung steht still)
+        //   minSampleMinutes = 20: bei ~30 min/°C braucht man mind. 15–20 min Fenster
+        //   für eine stabile Messung; bei 60s-Polling = 20 Samples
+        this._heatTracker = new RateTracker({min: 0.3, max: 3.5, minSampleMinutes: 20});
+        // Abkühlung: ohne Heizung kühlt 930 L Whirlpool i.d.R. 0,3–1,5 °C/h (je nach Außentemp.)
+        this._coolTracker = new RateTracker({min: 0.05, max: 2.0, minSampleMinutes: 30});
         this._lastHeatRate = 0; // last positive heating rate (°C/h) for ETA calculation
 
         // PV surplus control
