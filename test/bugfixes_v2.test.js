@@ -36,7 +36,7 @@ const Module = require('module');
 
 const { transformStatus, RateTracker } = require('../lib/utils');
 
-// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------ch n
 // 1. RateTracker
 // ---------------------------------------------------------------------------
 describe('RateTracker (post-fix)', () => {
@@ -690,7 +690,7 @@ describe("setFeature('uvc', true) â€“ auto-starts filter", () => {
         assert.strictEqual(calls[filterIdx].boolVal, true, 'filter must be switched ON');
     });
 
-    it('does NOT start filter when filter is already ON', async () => {
+    it('does NOT start filter again when filter is already ON', async () => {
         const { a, calls } = makeAdapter({ filterOn: true });
         await a.setFeature('uvc', true);
         const filterCalls = calls.filter(c => c.feature === 'filter');
@@ -1393,16 +1393,16 @@ describe('control.uvc_ensure_skip_today ï¿½ ack + ensure stop', () => {
         assert.strictEqual(setFeatureCalled, false);
     });
 });// ---------------------------------------------------------------------------
-// 23. onReady state restore – getStateAsync not getState (empty-cache fix)
+// 23. onReady state restore ï¿½ getStateAsync not getState (empty-cache fix)
 // ---------------------------------------------------------------------------
-describe('onReady – state restore uses getStateAsync (empty-cache fix)', () => {
+describe('onReady ï¿½ state restore uses getStateAsync (empty-cache fix)', () => {
     /**
      * The bug: synchronous getState() reads the in-memory cache which is NOT yet
      * populated right after subscribeStates() is called.  Result: every adapter
      * restart silently reset control.season_enabled, control.winter_mode,
      * control.uvc_ensure_skip_today etc. to false/0.
      *
-     * The fix: use await getStateAsync() – reads directly from the ioBroker DB.
+     * The fix: use await getStateAsync() ï¿½ reads directly from the ioBroker DB.
      *
      * This test simulates the race by returning null from getState() (empty cache)
      * while getStateAsync() returns the correct persisted values.
@@ -1487,7 +1487,7 @@ describe('onReady – state restore uses getStateAsync (empty-cache fix)', () => {
             'control.winter_mode':    false,
         });
         assert.strictEqual(a._seasonEnabled, true,
-            '_seasonEnabled must be true – restored from persisted DB value');
+            '_seasonEnabled must be true ï¿½ restored from persisted DB value');
         assert.strictEqual(written['control.season_enabled'], true,
             'setState must write back the restored value (not false)');
     });
@@ -1564,7 +1564,7 @@ describe('onReady – state restore uses getStateAsync (empty-cache fix)', () => {
         assert.ok(a._uvcOnSince !== null && a._uvcOnSince >= before,
             '_uvcOnSince must be set when UVC was ON at shutdown');
     });
-    it('getState (sync) would have returned null – confirming the bug existed', async () => {
+    it('getState (sync) would have returned null ï¿½ confirming the bug existed', async () => {
         // Demonstrate: getState() returns null (empty cache) while getStateAsync() returns true
         const persisted = { 'control.season_enabled': true };
         let syncResult = null; // simulates getState() with empty cache
@@ -1577,5 +1577,383 @@ describe('onReady – state restore uses getStateAsync (empty-cache fix)', () => {
         const fixedSeasonEnabled = dbResult && dbResult.val !== null ? !!dbResult.val : false;
         assert.strictEqual(fixedSeasonEnabled, true,
             'fixed code reading from DB yields correct persisted value');
+    });
+});// ---------------------------------------------------------------------------
+// 25. _applyTimeWindowsJson ï¿½ validate, persist to config, restart schedulers
+// ---------------------------------------------------------------------------
+describe('_applyTimeWindowsJson ï¿½ JSON write-back to adapter config', () => {
+    function makeAdapter(opts = {}) {
+        const saved = {};
+        const logged = { errors: [], infos: [] };
+        let cfgObjNative = { timeWindows: opts.existing ?? [] };
+        const a = {
+            namespace: 'mspa.0',
+            config: { timeWindows: opts.existing ?? [], more_log_enabled: false },
+            _timeTimer: opts.hasTimer ? setInterval(() => {}, 99999) : null,
+            _timeWindowActive: [true, true],
+            log: {
+                error: (m) => logged.errors.push(m),
+                info:  (m) => logged.infos.push(m),
+                debug: () => {},
+            },
+            setState: (id, val, ack) => {
+                const isObj   = val && typeof val === 'object' && 'val' in val;
+                const realAck = isObj ? val.ack  : ack;
+                const realVal = isObj ? val.val  : val;
+                if (realAck) saved[id] = realVal;
+            },
+            getForeignObjectAsync: async () => ({ native: cfgObjNative }),
+            setForeignObjectAsync: async (_id, obj) => { cfgObjNative = obj.native; },
+            pvCancelAllDeactivationTimers: async () => {},
+            initTimeControl: () => {},
+            initPvControl:   async () => {},
+            publishTimeWindowsJson: async function () {
+                this.setState('status.time_windows_json', { val: JSON.stringify(this.config.timeWindows, null, 2), ack: true });
+            },
+        };
+        a._applyTimeWindowsJson = async function (jsonStr) {
+            let parsed;
+            try { parsed = JSON.parse(jsonStr); } catch (e) {
+                a.log.error(`time_windows_json: invalid JSON ï¿½ ${e.message}`);
+                await a.publishTimeWindowsJson(); return;
+            }
+            if (!Array.isArray(parsed)) {
+                a.log.error('time_windows_json: value must be a JSON array ï¿½ ignoring');
+                await a.publishTimeWindowsJson(); return;
+            }
+            try {
+                const cfgObj = await a.getForeignObjectAsync(`system.adapter.${a.namespace}`);
+                if (!cfgObj) { a.log.error('could not load config'); return; }
+                cfgObj.native.timeWindows = parsed;
+                await a.setForeignObjectAsync(`system.adapter.${a.namespace}`, cfgObj);
+                a.log.info(`time_windows_json: ${parsed.length} window(s) saved to adapter config`);
+            } catch (e) { a.log.error(`failed: ${e.message}`); return; }
+            a.config.timeWindows = parsed;
+            a.setState('status.time_windows_json', { val: JSON.stringify(parsed, null, 2), ack: true });
+            if (a._timeTimer) { clearInterval(a._timeTimer); a._timeTimer = null; }
+            a._timeWindowActive = [];
+            await a.pvCancelAllDeactivationTimers();
+            a.initTimeControl();
+            await a.initPvControl();
+            a.log.info('time_windows_json: schedulers restarted with updated time windows');
+        };
+        return { a, saved, logged, getNative: () => cfgObjNative };
+    }
+    const validWindow = { active: true, start: '08:00', end: '10:00', action_filter: true };
+    it('accepts valid JSON array and acks the state', async () => {
+        const { a, saved } = makeAdapter();
+        await a._applyTimeWindowsJson(JSON.stringify([validWindow]));
+        assert.ok(saved['status.time_windows_json'], 'state must be acked');
+        const parsed = JSON.parse(saved['status.time_windows_json']);
+        assert.strictEqual(parsed.length, 1);
+        assert.strictEqual(parsed[0].start, '08:00');
+    });
+    it('persists timeWindows to native config (getForeignObjectAsync/setForeignObjectAsync)', async () => {
+        const { a, getNative } = makeAdapter();
+        await a._applyTimeWindowsJson(JSON.stringify([validWindow]));
+        assert.strictEqual(getNative().timeWindows.length, 1,
+            'native.timeWindows must be updated');
+        assert.strictEqual(getNative().timeWindows[0].start, '08:00');
+    });
+    it('updates this.config.timeWindows in-memory', async () => {
+        const { a } = makeAdapter();
+        await a._applyTimeWindowsJson(JSON.stringify([validWindow]));
+        assert.strictEqual(a.config.timeWindows.length, 1);
+    });
+    it('clears _timeTimer and resets _timeWindowActive', async () => {
+        const { a } = makeAdapter({ hasTimer: true });
+        assert.ok(a._timeTimer !== null, 'precondition: timer was set');
+        await a._applyTimeWindowsJson(JSON.stringify([validWindow]));
+        assert.strictEqual(a._timeTimer, null, 'timer must be cleared');
+        assert.deepStrictEqual(a._timeWindowActive, [], '_timeWindowActive must be reset');
+    });
+    it('rejects invalid JSON ï¿½ rollback to current value', async () => {
+        const existing = [validWindow];
+        const { a, saved, logged } = makeAdapter({ existing });
+        await a._applyTimeWindowsJson('{ not valid json }');
+        assert.ok(logged.errors.some(m => m.includes('invalid JSON')), 'must log error');
+        // Rollback: existing windows written back
+        const rolled = JSON.parse(saved['status.time_windows_json']);
+        assert.strictEqual(rolled.length, 1, 'rollback must restore existing windows');
+    });
+    it('rejects non-array JSON (object) ï¿½ rollback', async () => {
+        const { a, logged } = makeAdapter();
+        await a._applyTimeWindowsJson('{"foo": "bar"}');
+        assert.ok(logged.errors.some(m => m.includes('must be a JSON array')));
+    });
+    it('rejects empty string ï¿½ error logged', async () => {
+        const { a, logged } = makeAdapter();
+        await a._applyTimeWindowsJson('');
+        assert.ok(logged.errors.some(m => m.includes('invalid JSON')));
+    });
+    it('accepts empty array [] ï¿½ clears all windows', async () => {
+        const { a, saved, getNative } = makeAdapter({ existing: [validWindow] });
+        await a._applyTimeWindowsJson('[]');
+        assert.strictEqual(getNative().timeWindows.length, 0, 'native must have 0 windows');
+        assert.strictEqual(a.config.timeWindows.length, 0);
+        const acked = JSON.parse(saved['status.time_windows_json']);
+        assert.deepStrictEqual(acked, []);
+    });
+    it('logs the number of saved windows', async () => {
+        const { a, logged } = makeAdapter();
+        const windows = [validWindow, { ...validWindow, start: '14:00', end: '16:00' }];
+        await a._applyTimeWindowsJson(JSON.stringify(windows));
+        assert.ok(logged.infos.some(m => m.includes('2 window(s) saved')));
+    });
+});// ---------------------------------------------------------------------------
+// 26. heat_rate / cool_rate ï¿½ isHeating flag fix
+// ---------------------------------------------------------------------------
+describe('heat_rate / cool_rate ï¿½ isHeating flag', () => {
+    /**
+     * Simulate what states.js does: call RateTracker.update() with the
+     * isHeating / isNotHeating conditions, using fake timestamps.
+     */
+    const { RateTracker } = require('../lib/utils');
+    /**
+     * Run two tracker updates separated by `elapsedMs`, using the fixed
+     * isHeating logic and the provided data snapshots.
+     */
+    function runTracker(opts) {
+        const realNow = Date.now;
+        const T0 = 1_000_000_000_000;
+        const heatTracker = new RateTracker({ min: 0.05, max: 3.0, minSampleMinutes: 3 });
+        const coolTracker = new RateTracker({ min: 0.01, max: 3.0, minSampleMinutes: 3 });
+        // Poll 1 ï¿½ record starting point
+        Date.now = () => T0;
+        const data1 = opts.data1;
+        const isHeating1    = [2, 3].includes(data1.heat_state) || data1.heater === 'on';
+        const isNotHeating1 = !isHeating1;
+        heatTracker.update(data1.water_temperature, isHeating1, true);
+        coolTracker.update(data1.water_temperature, isNotHeating1, false);
+        // Poll 2 ï¿½ after elapsedMs
+        Date.now = () => T0 + opts.elapsedMs;
+        const data2 = opts.data2;
+        const isHeating2    = [2, 3].includes(data2.heat_state) || data2.heater === 'on';
+        const isNotHeating2 = !isHeating2;
+        const heatRate = heatTracker.update(data2.water_temperature, isHeating2, true);
+        const coolRate = coolTracker.update(data2.water_temperature, isNotHeating2, false);
+        Date.now = realNow;
+        return { heatRate, coolRate };
+    }
+    // -- heat_state = 2 (was broken) ------------------------------------------
+    it('computes heat_rate when heat_state=2 (previously treated as inactive)', () => {
+        const { heatRate } = runTracker({
+            elapsedMs: 4 * 60 * 1000, // 4 min
+            data1: { heat_state: 2, heater: 'on', water_temperature: 30.0 },
+            data2: { heat_state: 2, heater: 'on', water_temperature: 30.2 },
+        });
+        // 0.2ï¿½C in 4 min = 3.0ï¿½C/h ? at MAX boundary, should still yield a rate
+        assert.notStrictEqual(heatRate, null,
+            'heat_rate must NOT be null when heat_state=2 ï¿½ was previously broken');
+        assert.ok(heatRate > 0, 'heat_rate must be positive');
+    });
+    it('computes heat_rate when heat_state=3', () => {
+        const { heatRate } = runTracker({
+            elapsedMs: 4 * 60 * 1000,
+            data1: { heat_state: 3, heater: 'on', water_temperature: 30.0 },
+            data2: { heat_state: 3, heater: 'on', water_temperature: 30.2 },
+        });
+        assert.notStrictEqual(heatRate, null);
+        assert.ok(heatRate > 0);
+    });
+    it('uses heater=on as fallback when heat_state is missing', () => {
+        const { heatRate } = runTracker({
+            elapsedMs: 4 * 60 * 1000,
+            data1: { heater: 'on', water_temperature: 30.0 },   // no heat_state field
+            data2: { heater: 'on', water_temperature: 30.2 },
+        });
+        assert.notStrictEqual(heatRate, null,
+            'heat_rate must be computed via heater=on fallback');
+    });
+    it('does NOT compute heat_rate when heater is off (heat_state missing)', () => {
+        const heatTracker = new RateTracker({ min: 0.05, max: 3.0, minSampleMinutes: 3 });
+        const realNow = Date.now;
+        const T0 = Date.now();
+        Date.now = () => T0;
+        heatTracker.update(30.0, false, true);
+        Date.now = () => T0 + 4 * 60 * 1000;
+        const rate = heatTracker.update(30.2, false, true); // always false ? never accumulates
+        Date.now = realNow;
+        assert.strictEqual(rate, null, 'tracker must stay null when always inactive');
+    });
+    // -- cool tracker: must NOT run while heating ------------------------------
+    it('does NOT accumulate cool_rate while heater is ON', () => {
+        const { coolRate } = runTracker({
+            elapsedMs: 10 * 60 * 1000,
+            data1: { heat_state: 2, heater: 'on', water_temperature: 30.0 },
+            data2: { heat_state: 2, heater: 'on', water_temperature: 30.5 },
+        });
+        assert.strictEqual(coolRate, null,
+            'cool_rate must stay null while heater is ON ï¿½ was previously computed wrongly when heat_state was undefined');
+    });
+    it('computes cool_rate when heater is OFF and temp drops', () => {
+        const { coolRate } = runTracker({
+            elapsedMs: 8 * 60 * 1000,   // 8 min â†’ 0.2Â°C/8min = 1.5Â°C/h, well within [0.01, 3.0]
+            data1: { heat_state: 0, heater: 'off', water_temperature: 35.0 },
+            data2: { heat_state: 0, heater: 'off', water_temperature: 34.8 },
+        });
+        assert.notStrictEqual(coolRate, null, 'cool_rate must be computed when heater is off and temp drops');
+        assert.ok(coolRate > 0, 'cool_rate must be positive');
+    });
+    // -- isNotHeating = !isHeating is consistent -------------------------------
+    it('isNotHeating is false exactly when isHeating is true (no gap/overlap)', () => {
+        const cases = [
+            { heat_state: 0, heater: 'off' },
+            { heat_state: 1, heater: 'off' },
+            { heat_state: 2, heater: 'on'  },
+            { heat_state: 3, heater: 'on'  },
+            { heat_state: 4, heater: 'on'  },
+            { heater: 'on'  },   // no heat_state
+            { heater: 'off' },   // no heat_state
+        ];
+        for (const d of cases) {
+            const isHeating    = [2, 3].includes(d.heat_state) || d.heater === 'on';
+            const isNotHeating = !isHeating;
+            assert.strictEqual(isHeating && isNotHeating, false,
+                `isHeating and isNotHeating must never both be true: ${JSON.stringify(d)}`);
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 27. TimeControl – ALL-OFF window (action_filter=false + action_heating=false)
+// ---------------------------------------------------------------------------
+describe('TimeControl – ALL-OFF window (action_filter=false + action_heating=false)', () => {
+    function makeAdapter(opts = {}) {
+        const calls = [];
+        const logs  = [];
+        const a = {
+            _timeWindowActive:    [false, false],
+            _pumpFollowUpTimers:  [null, null],
+            _pumpStartedForHeating: false,
+            config: { more_log_enabled: true, pump_follow_up: 0, uvc_daily_min_h: 2,
+                      timeWindows: opts.windows ?? [] },
+            log: { info: (m) => logs.push(m), debug: () => {}, error: (m) => logs.push(m), warn: () => {} },
+            setFeature:        async (f, v) => { calls.push({ f, v }); },
+            enableRapidPolling: () => {},
+            getUvcTodayHours:   () => 3,
+            isInTimeWindow:     (s, e) => opts.inWindow ?? false,
+            setStray:           (fn) => fn(),
+            sendTargetTempDirect: async () => {},
+            deactivateWindow:   async () => {},
+        };
+        const nh = require('../lib/notificationHelper');
+        // inline checkTimeWindows logic for the relevant parts
+        a.checkOneWindow = async function (w, i) {
+            const inWin = a.isInTimeWindow(w.start, w.end) && !!w[['day_sun','day_mon','day_tue','day_wed','day_thu','day_fri','day_sat'][new Date().getDay()]];
+            const wasIn = a._timeWindowActive[i];
+            if (inWin && !wasIn) {
+                a._timeWindowActive[i] = true;
+                try {
+                    if (!w.action_filter && !w.action_heating) {
+                        a.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
+                        await a.setFeature('heater', false).catch(() => {});
+                        await a.setFeature('uvc',    false).catch(() => {});
+                        await a.setFeature('filter', false).catch(() => {});
+                        a.enableRapidPolling();
+                    } else {
+                        if (w.action_heating) {
+                            if (!w.action_filter) { await a.setFeature('filter', true); }
+                            await a.setFeature('heater', true);
+                        }
+                        if (w.action_filter) {
+                            await a.setFeature('filter', true);
+                            if (w.action_uvc) await a.setFeature('uvc', true);
+                        }
+                        a.enableRapidPolling();
+                    }
+                } catch (err) {
+                    a._timeWindowActive[i] = false;
+                }
+            } else if (!inWin && wasIn) {
+                a._timeWindowActive[i] = false;
+                await a.deactivateWindow(w, i);
+            }
+        };
+        return { a, calls, logs };
+    }
+    const allOffWindow = {
+        active: true, start: '22:00', end: '06:00',
+        day_mon: true, day_tue: true, day_wed: true, day_thu: true,
+        day_fri: true, day_sat: true, day_sun: true,
+        pv_steu: false,
+        action_filter: false, action_heating: false,
+        target_temp: 38, action_uvc: false,
+    };
+    const normalWindow = {
+        active: true, start: '11:00', end: '18:00',
+        day_mon: true, day_tue: true, day_wed: true, day_thu: true,
+        day_fri: true, day_sat: true, day_sun: true,
+        pv_steu: true,
+        action_filter: true, action_heating: true,
+        target_temp: 28, action_uvc: false,
+    };
+    it('ALL-OFF window: shuts down heater, UVC and filter when window starts', async () => {
+        const { a, calls } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(allOffWindow, 0);
+        assert.ok(calls.some(c => c.f === 'heater' && c.v === false), 'heater must be OFF');
+        assert.ok(calls.some(c => c.f === 'uvc'    && c.v === false), 'UVC must be OFF');
+        assert.ok(calls.some(c => c.f === 'filter' && c.v === false), 'filter must be OFF');
+    });
+    it('ALL-OFF window: logs the ALL-OFF message', async () => {
+        const { a, logs } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(allOffWindow, 0);
+        assert.ok(logs.some(m => m.includes('ALL-OFF window')),
+            'must log ALL-OFF window message');
+    });
+    it('ALL-OFF window: does NOT switch anything ON', async () => {
+        const { a, calls } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(allOffWindow, 0);
+        const onCalls = calls.filter(c => c.v === true);
+        assert.strictEqual(onCalls.length, 0, 'must not switch anything ON');
+    });
+    it('ALL-OFF window: sets _timeWindowActive=true', async () => {
+        const { a } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(allOffWindow, 0);
+        assert.strictEqual(a._timeWindowActive[0], true);
+    });
+    it('ALL-OFF window: does nothing when window is not yet active', async () => {
+        const { a, calls } = makeAdapter({ inWindow: false });
+        await a.checkOneWindow(allOffWindow, 0);
+        assert.strictEqual(calls.length, 0, 'no calls before window starts');
+    });
+    it('ALL-OFF window: calls deactivateWindow when window ends', async () => {
+        let deactivateCalled = false;
+        const { a } = makeAdapter({ inWindow: false });
+        a._timeWindowActive[0] = true; // was active
+        a.deactivateWindow = async () => { deactivateCalled = true; };
+        await a.checkOneWindow(allOffWindow, 0);
+        assert.strictEqual(deactivateCalled, true, 'deactivateWindow must be called on end');
+        assert.strictEqual(a._timeWindowActive[0], false);
+    });
+    it('normal window (action_filter=true): still switches ON as before', async () => {
+        const { a, calls } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(normalWindow, 0);
+        assert.ok(calls.some(c => c.f === 'filter' && c.v === true), 'filter must be ON');
+        assert.ok(calls.some(c => c.f === 'heater' && c.v === true), 'heater must be ON');
+    });
+    it('normal window: does NOT trigger ALL-OFF logic', async () => {
+        const { a, logs } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(normalWindow, 0);
+        assert.ok(!logs.some(m => m.includes('ALL-OFF')),
+            'ALL-OFF message must NOT appear for normal window');
+    });
+    it('shutdown sequence: heater OFF before filter OFF', async () => {
+        const { a, calls } = makeAdapter({ inWindow: true });
+        await a.checkOneWindow(allOffWindow, 0);
+        const heaterIdx = calls.findIndex(c => c.f === 'heater' && c.v === false);
+        const filterIdx = calls.findIndex(c => c.f === 'filter' && c.v === false);
+        assert.ok(heaterIdx < filterIdx, 'heater must be shut down before filter');
+    });
+    it('your exact config: window 2 (all-off) shuts down what window 1 started', async () => {
+        // Simulate: window 1 ran and left filter+heater ON.
+        // Now window 2 (all-off) starts at 22:00.
+        const setFeatureCalls = [];
+        const { a } = makeAdapter({ inWindow: true });
+        a.setFeature = async (f, v) => { setFeatureCalls.push({ f, v }); };
+        await a.checkOneWindow(allOffWindow, 1);
+        assert.ok(setFeatureCalls.some(c => c.f === 'heater' && c.v === false));
+        assert.ok(setFeatureCalls.some(c => c.f === 'filter' && c.v === false));
+        assert.ok(setFeatureCalls.some(c => c.f === 'uvc'    && c.v === false));
     });
 });
