@@ -47,6 +47,11 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.2.18 (2026-04-26)
+* (arteck) added `status.heat_target_temp_reached` – ETA (hh:mm) until target temperature is reached
+
+---
+
 ## 0.2.17 (2026-04-25)
 * (arteck) log information can be customized (more or less information)
 

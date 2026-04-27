@@ -161,8 +161,7 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ---
 
 ## Changelog
-
-### **WORK IN PROGRESS**
+### 0.3.2 (2026-04-27)
 * (arteck) `computed.pv_active` – fixed: only `true` when a PV time window is currently open (day + time check); was previously activated outside configured windows
 * (arteck) Time window ALL-OFF: `action_filter=false` + `action_heating=false` now actively shuts down heater, UVC and filter when the window starts
 * (arteck) `status.uvc_hours_remaining` – now updated every poll while UVC is ON (previously only on UVC-OFF)
@@ -189,11 +188,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 ### 0.2.19 (2026-04-26)
 * (arteck) typo fix
-
-### 0.2.18 (2026-04-26)
-* (arteck) added `status.heat_target_temp_reached` – ETA (hh:mm) until target temperature is reached
-
----
 
 ## License
 
