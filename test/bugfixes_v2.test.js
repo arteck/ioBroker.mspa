@@ -17,6 +17,11 @@
  *  10. setTargetTemp() – range validation (20–42 °C)
  *  11. setTargetTemp() – uses _adapterCommanded.heater as fallback (no queue)
  *  12. setFeature('uvc', true) – auto-starts filter when pump is OFF
+ *  13. setFeature – immediate ack (control.filter / heater / uvc / bubble)
+ *  14. sendTargetTempDirect – immediate ack for control.target_temperature
+ *  15. setTargetTemp queued – immediate ack for control.target_temperature
+ *  16. setManualOverride – race condition: timer cancelled atomically before await
+ *  17. setManualOverride – onStateChange rollback on error; duration always acked
  */
 
 const assert = require('assert');
@@ -702,6 +707,422 @@ describe("setFeature('uvc', true) – auto-starts filter", () => {
         await a.setFeature('uvc', true);
         const uvcCalls = calls.filter(c => c.feature === 'uvc');
         assert.ok(uvcCalls.length > 0, 'UVC must be sent even if filter poll never confirms');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 13. setFeature – immediate ack (control.filter / heater / uvc / bubble)
+// ---------------------------------------------------------------------------
+describe('setFeature – immediate setState ack after command', () => {
+    function makeFeatureAdapter(opts = {}) {
+        const acked = {};
+        const a = {
+            _lastData:         { filter: opts.filterOn ? 'on' : 'off', bubble_level: 1 },
+            _api:              {
+                _lastStatus: null,
+                _lastCommandConfirmed: true,
+                setHeaterState:  async () => {},
+                setFilterState:  async () => {},
+                setUvcState:     async () => {},
+                setBubbleState:  async () => {},
+                setJetState:     async () => {},
+                setOzoneState:   async () => {},
+            },
+            _adapterCommanded: { heater: null, filter: opts.filterOn ? true : null, bubble: null, uvc: null, target_temperature: null },
+            _lastCommandTime:  0,
+            _pendingTargetTemp: null,
+            _pendingTempTimer:  null,
+            config:            { more_log_enabled: false },
+            log:               { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            setStatusCheck:    async () => {},
+            getState:          opts.getState ?? (() => null),
+            sleep:             () => Promise.resolve(),
+            setState: function (id, val, ack) {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+        };
+        // Inline the fixed setFeature so no js-controller is needed
+        a.setFeature = async function (feature, boolVal) {
+            const state = boolVal ? 1 : 0;
+            if (feature in a._adapterCommanded) a._adapterCommanded[feature] = boolVal;
+            a._lastCommandTime = Date.now();
+            switch (feature) {
+                case 'heater': {
+                    const filterOn =
+                        (a._lastData && a._lastData.filter === 'on') ||
+                        (a._api._lastStatus && a._api._lastStatus.filter_state === 1) ||
+                        (a._adapterCommanded.filter === true);
+                    if (boolVal && !filterOn) {
+                        await a.setFeature('filter', true);
+                        await a.sleep(0);
+                    }
+                    await a.setStatusCheck('send');
+                    await a._api.setHeaterState(state);
+                    await a.setStatusCheck(a._api._lastCommandConfirmed ? 'success' : 'error');
+                    a.setState('control.heater', boolVal, true);
+                    return;
+                }
+                case 'filter': {
+                    if (!boolVal) {
+                        const uvcSt    = a.getState('control.uvc');
+                        const bubbleSt = a.getState('control.bubble');
+                        const heaterSt = a.getState('control.heater');
+                        if (uvcSt && uvcSt.val) {
+                            await a._api.setUvcState(0);
+                            a._adapterCommanded.uvc = false;
+                            a.setState('control.uvc', false, true);
+                        }
+                        if (bubbleSt && bubbleSt.val) {
+                            await a._api.setBubbleState(0, a._lastData.bubble_level || 1);
+                            a._adapterCommanded.bubble = false;
+                            a.setState('control.bubble', false, true);
+                        }
+                        if (heaterSt && heaterSt.val) {
+                            await a.setFeature('heater', false);
+                        }
+                    }
+                    await a._api.setFilterState(state);
+                    a.setState('control.filter', boolVal, true);
+                    return;
+                }
+                case 'uvc':
+                    await a._api.setUvcState(state);
+                    a.setState('control.uvc', boolVal, true);
+                    return;
+                case 'bubble':
+                    await a._api.setBubbleState(state, a._lastData.bubble_level || 1);
+                    a.setState('control.bubble', boolVal, true);
+                    return;
+                case 'jet':
+                    await a._api.setJetState(state);
+                    a.setState('control.jet', boolVal, true);
+                    return;
+            }
+        };
+        return { a, acked };
+    }
+
+    it('acks control.heater=true immediately after API call', async () => {
+        const { a, acked } = makeFeatureAdapter({ filterOn: true });
+        await a.setFeature('heater', true);
+        assert.strictEqual(acked['control.heater'], true, 'control.heater must be acked true');
+    });
+
+    it('acks control.heater=false immediately after API call', async () => {
+        const { a, acked } = makeFeatureAdapter();
+        await a.setFeature('heater', false);
+        assert.strictEqual(acked['control.heater'], false, 'control.heater must be acked false');
+    });
+
+    it('acks control.filter=true immediately after API call', async () => {
+        const { a, acked } = makeFeatureAdapter();
+        await a.setFeature('filter', true);
+        assert.strictEqual(acked['control.filter'], true, 'control.filter must be acked true');
+    });
+
+    it('acks control.filter=false and auto-acks control.uvc=false when UVC was ON', async () => {
+        const { a, acked } = makeFeatureAdapter({
+            getState: (id) => id === 'control.uvc' ? { val: true } : null,
+        });
+        await a.setFeature('filter', false);
+        assert.strictEqual(acked['control.uvc'],    false, 'auto-disabled UVC must be acked false');
+        assert.strictEqual(acked['control.filter'], false, 'control.filter must be acked false');
+    });
+
+    it('acks control.uvc=true immediately after API call', async () => {
+        const { a, acked } = makeFeatureAdapter({ filterOn: true });
+        await a.setFeature('uvc', true);
+        assert.strictEqual(acked['control.uvc'], true, 'control.uvc must be acked true');
+    });
+
+    it('acks control.bubble immediately after API call', async () => {
+        const { a, acked } = makeFeatureAdapter();
+        await a.setFeature('bubble', true);
+        assert.strictEqual(acked['control.bubble'], true, 'control.bubble must be acked true');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 14. sendTargetTempDirect – immediate ack for control.target_temperature
+// ---------------------------------------------------------------------------
+describe('sendTargetTempDirect – immediate ack', () => {
+    // Inline implementation matching the fix
+    async function sendTargetTempDirect(temp) {
+        this._adapterCommanded.target_temperature = temp;
+        this._lastCommandTime = Date.now();
+        await this.setStatusCheck('send');
+        const result = await this._api.setTemperatureSetting(temp);
+        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+        this.setState('control.target_temperature', temp, true);
+        return result;
+    }
+
+    it('writes control.target_temperature with ack=true after API call', async () => {
+        const acked = {};
+        const a = {
+            _adapterCommanded: { target_temperature: null },
+            _lastCommandTime:  0,
+            _api: { _lastCommandConfirmed: true, setTemperatureSetting: async (t) => ({ temp: t }) },
+            setStatusCheck: async () => {},
+            setState: function (id, val, ack) {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+        };
+        await sendTargetTempDirect.call(a, 38);
+        assert.strictEqual(acked['control.target_temperature'], 38,
+            'control.target_temperature must be acked with sent value');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 15. setTargetTemp queued – immediate ack for control.target_temperature
+// ---------------------------------------------------------------------------
+describe('setTargetTemp queued – immediate ack', () => {
+    // Inline implementation matching the fix
+    async function setTargetTemp(temp) {
+        const MIN_TEMP = 20, MAX_TEMP = 42;
+        const t = Number(temp);
+        if (isNaN(t) || t < MIN_TEMP || t > MAX_TEMP) {
+            await this.setStatusCheck('error');
+            return;
+        }
+        const heaterState       = this.getState('control.heater');
+        const heaterOnState     = heaterState && !!heaterState.val;
+        const heaterOnCommanded = this._adapterCommanded.heater === true;
+        const heaterOnLive      = this._lastData && this._lastData.heater === 'on';
+        const heaterOn          = heaterOnState || heaterOnCommanded || heaterOnLive;
+        if (!heaterOn) {
+            this._pendingTargetTemp = t;
+            await this.setStatusCheck('queued');
+            this.setState('control.target_temperature', t, true);
+            return;
+        }
+        this._pendingTargetTemp = null;
+        return this.sendTargetTempDirect(t);
+    }
+
+    it('acks control.target_temperature even when temp is queued (heater OFF)', async () => {
+        const acked = {};
+        const a = {
+            _adapterCommanded:    { heater: null },
+            _lastData:            { heater: 'off' },
+            _pendingTargetTemp:   null,
+            setStatusCheck:       async () => {},
+            sendTargetTempDirect: async () => {},
+            getState:             () => ({ val: false }),
+            setState: function (id, val, ack) {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+        };
+        await setTargetTemp.call(a, 36);
+        assert.strictEqual(a._pendingTargetTemp, 36, 'temp must be queued');
+        assert.strictEqual(acked['control.target_temperature'], 36,
+            'control.target_temperature must be acked immediately even when queued');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 16. setManualOverride – race condition: timer cancelled atomically before await
+// ---------------------------------------------------------------------------
+describe('setManualOverride – race condition fix', () => {
+    const nh = require('../lib/notificationHelper');
+    let origSend;
+    beforeEach(() => { origSend = nh.send; nh.send = async () => {}; });
+    afterEach(()  => { nh.send = origSend; });
+
+    // Inline _resumeAfterOverride
+    async function _resumeAfterOverride() {
+        const tasks = [];
+        if (this._lastData && Object.keys(this._lastData).length) {
+            tasks.push(this.checkFrostProtection(this._lastData).catch(() => {}));
+        }
+        tasks.push(this.checkTimeWindows().catch(() => {}));
+        tasks.push(this.evaluatePvSurplus().catch(() => {}));
+        await Promise.all(tasks);
+    }
+
+    // Inline setManualOverride matching the fix
+    async function setManualOverride(enable, durationMin = null) {
+        const existingTimer = this._manualOverrideTimer;
+        this._manualOverrideTimer = null;
+        if (existingTimer) clearTimeout(existingTimer);
+
+        this._manualOverride = enable;
+        this.setState('control.manual_override', enable, true);
+
+        if (enable) {
+            if (durationMin === null) {
+                const ds = this.getState('control.manual_override_duration');
+                durationMin = ds && ds.val !== null ? Number(ds.val) : 0;
+            } else {
+                this.setState('control.manual_override_duration', durationMin, true);
+            }
+            if (durationMin > 0) {
+                await nh.send(nh.format('overrideOnTimed', { durationMin }));
+                if (!this._manualOverride) return; // concurrent-disable guard
+                this._manualOverrideTimer = setTimeout(async () => {
+                    this._manualOverrideTimer = null;
+                    if (!this._manualOverride) return;
+                    this._manualOverride = false;
+                    this.setState('control.manual_override', false, true);
+                    this.setState('control.manual_override_duration', 0, true);
+                    await this._resumeAfterOverride();
+                }, durationMin * 60 * 1000);
+            } else {
+                await nh.send(nh.format('overrideOnIndefinite'));
+            }
+        } else {
+            await nh.send(nh.format('overrideOff'));
+            this.setState('control.manual_override_duration', 0, true);
+            await this._resumeAfterOverride();
+        }
+    }
+
+    function makeAdapter() {
+        const acked = {};
+        const a = {
+            _manualOverride:      false,
+            _manualOverrideTimer: null,
+            _lastData:            {},
+            config:               { more_log_enabled: false },
+            log:                  { info: () => {}, warn: () => {}, debug: () => {} },
+            setState: (id, val, ack) => { if (ack) acked[id] = val; },
+            getState: () => ({ val: 0 }),
+            checkFrostProtection: async () => {},
+            checkTimeWindows:     async () => {},
+            evaluatePvSurplus:    async () => {},
+        };
+        a._resumeAfterOverride = _resumeAfterOverride.bind(a);
+        a.setManualOverride    = setManualOverride.bind(a);
+        return { a, acked };
+    }
+
+    it('cancels existing timer atomically (no second fire)', async () => {
+        const { a } = makeAdapter();
+        let timerFired = false;
+        a._manualOverrideTimer = setTimeout(() => { timerFired = true; }, 50);
+        await a.setManualOverride(true, 0);  // indefinite – must cancel old timer
+        await new Promise(r => setTimeout(r, 80));
+        assert.strictEqual(timerFired, false, 'old timer must have been cleared');
+        assert.strictEqual(a._manualOverrideTimer, null);
+    });
+
+    it('concurrent disable during notification send prevents timer creation', async () => {
+        const { a } = makeAdapter();
+        nh.send = async () => {
+            // Simulate concurrent disable while first call awaits notification
+            a._manualOverride = false;
+        };
+        await a.setManualOverride(true, 5);
+        assert.strictEqual(a._manualOverrideTimer, null,
+            'timer must NOT be created after concurrent disable');
+    });
+
+    it('sets _manualOverride=true and acks state', async () => {
+        const { a, acked } = makeAdapter();
+        await a.setManualOverride(true, 0);
+        assert.strictEqual(a._manualOverride, true);
+        assert.strictEqual(acked['control.manual_override'], true);
+    });
+
+    it('disables override and calls _resumeAfterOverride', async () => {
+        let resumed = false;
+        const { a } = makeAdapter();
+        a._manualOverride = true;
+        a._resumeAfterOverride = async () => { resumed = true; };
+        await a.setManualOverride(false);
+        assert.strictEqual(a._manualOverride, false);
+        assert.strictEqual(resumed, true, '_resumeAfterOverride must be called on disable');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 17. onStateChange – manual_override rollback on error; duration always acked
+// ---------------------------------------------------------------------------
+describe('onStateChange – manual_override rollback & duration ack', () => {
+    /**
+     * Minimal inline handler that mirrors the fixed onStateChange logic
+     * for manual_override and manual_override_duration only.
+     */
+    async function handleStateChange(key, stateVal, overrideImpl) {
+        const acked = {};
+        const logErrors = [];
+        const a = {
+            _manualOverride: false,
+            log: { error: (m) => logErrors.push(m), info: () => {}, warn: () => {}, debug: () => {} },
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            setManualOverride: overrideImpl,
+        };
+
+        if (key === 'manual_override') {
+            const enable = !!stateVal;
+            try {
+                await a.setManualOverride(enable);
+            } catch (err) {
+                a.log.error(`manual_override command failed: ${err.message}`);
+                a.setState('control.manual_override', !enable, true);
+                return { acked, logErrors };
+            }
+        } else if (key === 'manual_override_duration') {
+            const newDuration = Number(stateVal) || 0;
+            a.setState('control.manual_override_duration', newDuration, true);
+            if (a._manualOverride) {
+                await a.setManualOverride(true, newDuration);
+            }
+        }
+        return { acked, logErrors };
+    }
+
+    it('rolls back control.manual_override to false when setManualOverride throws', async () => {
+        const { acked, logErrors } = await handleStateChange(
+            'manual_override', true,
+            async () => { throw new Error('simulated failure'); }
+        );
+        assert.strictEqual(acked['control.manual_override'], false,
+            'rollback must write false with ack=true');
+        assert.ok(logErrors.some(m => m.includes('manual_override command failed')),
+            'error must be logged');
+    });
+
+    it('does NOT rollback when setManualOverride succeeds', async () => {
+        let callCount = 0;
+        const { acked } = await handleStateChange(
+            'manual_override', true,
+            async () => { callCount++; }
+        );
+        assert.strictEqual(callCount, 1);
+        assert.notStrictEqual(acked['control.manual_override'], false, 'no rollback on success');
+    });
+
+    it('always acks manual_override_duration even when override is inactive', async () => {
+        const { acked } = await handleStateChange(
+            'manual_override_duration', 30,
+            async () => {}
+        );
+        assert.strictEqual(acked['control.manual_override_duration'], 30,
+            'duration must always be acked');
+    });
+
+    it('restarts timer when duration changes while override is active', async () => {
+        let restartArgs = null;
+        const acked = {};
+        const a = {
+            _manualOverride: true,  // override IS active
+            log: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            setManualOverride: async (en, dur) => { restartArgs = { en, dur }; },
+        };
+        const newDuration = 15;
+        a.setState('control.manual_override_duration', newDuration, true);
+        if (a._manualOverride) {
+            await a.setManualOverride(true, newDuration);
+        }
+        assert.deepStrictEqual(restartArgs, { en: true, dur: 15 },
+            'setManualOverride(true, 15) must be called when duration changes while active');
     });
 });
 

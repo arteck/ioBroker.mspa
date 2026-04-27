@@ -5,14 +5,14 @@
  *
  */
 
-const utils  = require('@iobroker/adapter-core');
+const utils = require('@iobroker/adapter-core');
 const crypto = require('node:crypto');
-const { MSpaApiClient, MSpaThrottle } = require('./lib/mspaApi');
-const { transformStatus, RateTracker } = require('./lib/utils');
-const stateMgr           = require('./lib/states');
-const pvController       = require('./lib/pv');
-const uvcController      = require('./lib/uvc');
-const consumptionHelper  = require('./lib/consumptionHelper');
+const {MSpaApiClient, MSpaThrottle} = require('./lib/mspaApi');
+const {transformStatus, RateTracker} = require('./lib/utils');
+const stateMgr = require('./lib/states');
+const pvController = require('./lib/pv');
+const uvcController = require('./lib/uvc');
+const consumptionHelper = require('./lib/consumptionHelper');
 const notificationHelper = require('./lib/notificationHelper');
 
 // ---------------------------------------------------------------------------
@@ -20,15 +20,15 @@ const notificationHelper = require('./lib/notificationHelper');
 // ---------------------------------------------------------------------------
 class MspaAdapter extends utils.Adapter {
     constructor(options = {}) {
-        super({ ...options, name: 'mspa' });
+        super({...options, name: 'mspa'});
 
-        this._api          = null;
-        this._authStore    = { token: null, throttle: new MSpaThrottle() };
-        this._pollTimer    = null;
+        this._api = null;
+        this._authStore = {token: null, throttle: new MSpaThrottle()};
+        this._pollTimer = null;
         this._pollInterval = 60_000;  // ms
-        this._rapidUntil   = 0;
-        this._lastData     = {};
-        this._savedState   = {};
+        this._rapidUntil = 0;
+        this._lastData = {};
+        this._savedState = {};
         this._lastSnapshot = {};
         this._lastIsOnline = null;
         this._consecutiveErrors = 0;
@@ -38,10 +38,10 @@ class MspaAdapter extends utils.Adapter {
         // Used to detect external changes made via the MSpa app.
         // null means "unknown / not yet set by adapter" – no comparison for that feature.
         this._adapterCommanded = {
-            heater:             null,
-            filter:             null,
-            bubble:             null,
-            uvc:                null,
+            heater: null,
+            filter: null,
+            bubble: null,
+            uvc: null,
             target_temperature: null,
         };
 
@@ -50,74 +50,74 @@ class MspaAdapter extends utils.Adapter {
         // to avoid false positives while the device is still catching up.
         this._lastCommandTime = 0;
 
-        this._heatTracker  = new RateTracker({ min: 0.05, max: 3.0 });
-        this._coolTracker  = new RateTracker({ min: 0.01, max: 3.0 });
+        this._heatTracker = new RateTracker({min: 0.05, max: 3.0});
+        this._coolTracker = new RateTracker({min: 0.01, max: 3.0});
         this._lastHeatRate = 0; // last positive heating rate (°C/h) for ETA calculation
 
         // PV surplus control
-        this._pvPower                  = null;
-        this._pvHouse                  = null;
-        this._pvMspa                   = null;   // MSpa current power (W) from smart plug – used to correct house consumption
-        this._pvActive                 = false;
-        this._pvDeactivateTimer        = null;  // debounce timer for deactivation
-        this._pvDeactivateCountdown    = 0;     // remaining minutes for deactivation delay
+        this._pvPower = null;
+        this._pvHouse = null;
+        this._pvMspa = null;   // MSpa current power (W) from smart plug – used to correct house consumption
+        this._pvActive = false;
+        this._pvDeactivateTimer = null;  // debounce timer for deactivation
+        this._pvDeactivateCountdown = 0;     // remaining minutes for deactivation delay
         this._pvDeactivateCountdownInt = null;  // 1-min interval for countdown
-        this._pvStageTimer             = null;  // timer between staged-deactivation steps
+        this._pvStageTimer = null;  // timer between staged-deactivation steps
         // Tracks which features PV currently has switched ON
         // (heater/filter/uvc may differ from window config if staging is in progress)
-        this._pvManagedFeatures        = { heater: false, filter: false, uvc: false };
+        this._pvManagedFeatures = {heater: false, filter: false, uvc: false};
 
         // Manual override – pauses ALL automations (time windows, PV, frost protection)
-        this._manualOverride      = false;  // true = all automations paused
+        this._manualOverride = false;  // true = all automations paused
         this._manualOverrideTimer = null;   // auto-reset timer (optional duration)
 
         // Winter mode (frost protection)
-        this._winterModeActive  = false;  // runtime override (from control state)
+        this._winterModeActive = false;  // runtime override (from control state)
         this._winterFrostActive = false;  // true while frost protection heating is running
-        this._seasonEnabled     = false;  // controlled exclusively via control.season_enabled state
+        this._seasonEnabled = false;  // controlled exclusively via control.season_enabled state
 
         // Filter pump runtime tracking
-        this._filterOnSince   = null;  // Date.now() when filter turned ON, null when OFF
+        this._filterOnSince = null;  // Date.now() when filter turned ON, null when OFF
         this._filterHoursUsed = 0;     // accumulated runtime hours since last reset (persisted)
 
         // UVC lamp runtime tracking
-        this._uvcOnSince            = null;   // Date.now() when UVC turned ON, null when OFF
-        this._uvcHoursUsed          = 0;      // accumulated operating hours (persisted)
-        this._uvcDayStartHours      = 0;      // _uvcHoursUsed snapshot at start of today
-        this._uvcDayStartDate       = '';     // "YYYY-MM-DD" of the day _uvcDayStartHours was set
+        this._uvcOnSince = null;   // Date.now() when UVC turned ON, null when OFF
+        this._uvcHoursUsed = 0;      // accumulated operating hours (persisted)
+        this._uvcDayStartHours = 0;      // _uvcHoursUsed snapshot at start of today
+        this._uvcDayStartDate = '';     // "YYYY-MM-DD" of the day _uvcDayStartHours was set
         // UVC daily minimum ensure
-        this._uvcEnsureActive       = false;  // true while adapter is running UVC to fill daily minimum
-        this._uvcEnsureFilterStart  = false;  // true if the ensure-run also started the filter pump
-        this._uvcEnsureTimer        = null;   // 1-min interval for daily ensure check
-        this._uvcEnsureDate         = '';     // date string of current ensure-run (for midnight reset)
-        this._uvcEnsureSkipToday    = false;  // true = user skipped ensure for today (resets at midnight)
-        this._uvcEnsureSkipDate     = '';     // date when skip was set (for midnight auto-reset)
+        this._uvcEnsureActive = false;  // true while adapter is running UVC to fill daily minimum
+        this._uvcEnsureFilterStart = false;  // true if the ensure-run also started the filter pump
+        this._uvcEnsureTimer = null;   // 1-min interval for daily ensure check
+        this._uvcEnsureDate = '';     // date string of current ensure-run (for midnight reset)
+        this._uvcEnsureSkipToday = false;  // true = user skipped ensure for today (resets at midnight)
+        this._uvcEnsureSkipDate = '';     // date when skip was set (for midnight auto-reset)
 
         // Pending target temperature: stored when heater is not yet running;
         // sent 10 s after the heater is switched on (API only accepts temp while heating)
-        this._pendingTargetTemp     = null;   // desired temperature waiting for heater ON
-        this._pendingTempTimer      = null;   // setTimeout handle for 10 s delay
+        this._pendingTargetTemp = null;   // desired temperature waiting for heater ON
+        this._pendingTempTimer = null;   // setTimeout handle for 10 s delay
 
         // Time window control
-        this._timeTimer             = null;
-        this._timeWindowActive      = [false, false, false]; // state per window (1-3)
+        this._timeTimer = null;
+        this._timeWindowActive = [false, false, false]; // state per window (1-3)
         this._pumpStartedForHeating = false; // pump was started solely because of heating (action_filter=false)
-        this._pumpFollowUpTimers    = [];    // follow-up timers per window index
+        this._pumpFollowUpTimers = [];    // follow-up timers per window index
 
-        this._firstPollDone         = false; // true after first successful poll (used for startup device-state check)
+        this._firstPollDone = false; // true after first successful poll (used for startup device-state check)
 
         // Tracks which apiField-based states have been created for this specific device model.
         // States NOT in this set are not published in publishStatus() to avoid setting
         // non-existent ioBroker objects with zero-padded values.
-        this._dynamicStateIds       = new Set();
+        this._dynamicStateIds = new Set();
 
         // Tracks all "fire-and-forget" setTimeout handles so onUnload can clear
         // them and prevent late callbacks on a destroyed adapter.
-        this._strayTimers           = new Set();
+        this._strayTimers = new Set();
 
-        this.on('ready',        this.onReady.bind(this));
-        this.on('stateChange',  this.onStateChange.bind(this));
-        this.on('unload',       this.onUnload.bind(this));
+        this.on('ready', this.onReady.bind(this));
+        this.on('stateChange', this.onStateChange.bind(this));
+        this.on('unload', this.onUnload.bind(this));
     }
 
     // -------------------------------------------------------------------------
@@ -128,12 +128,12 @@ class MspaAdapter extends utils.Adapter {
 
         await this.createStates();
 
-        const cfg      = this.config;
-        const email    = cfg.email;
+        const cfg = this.config;
+        const email = cfg.email;
         const password = cfg.password
             ? crypto.createHash('md5').update(cfg.password).digest('hex')
             : '';
-        const region   = cfg.region || 'ROW';
+        const region = cfg.region || 'ROW';
 
         this._pollInterval = Math.max(10, (cfg.pollInterval || 60)) * 1000;
 
@@ -173,26 +173,26 @@ class MspaAdapter extends utils.Adapter {
         const wmState = this.getState('control.winter_mode');
         const seState = this.getState('control.season_enabled');
         this._winterModeActive = wmState && wmState.val !== null ? !!wmState.val : false;
-        this._seasonEnabled    = seState && seState.val !== null ? !!seState.val : false;
-        this.setState('control.winter_mode',    this._winterModeActive, true);
-        this.setState('control.season_enabled', this._seasonEnabled,    true);
+        this._seasonEnabled = seState && seState.val !== null ? !!seState.val : false;
+        this.setState('control.winter_mode', this._winterModeActive, true);
+        this.setState('control.season_enabled', this._seasonEnabled, true);
         // manual_override always resets to false on adapter restart
         this._manualOverride = false;
-        this.setState('control.manual_override',         false, true);
-        this.setState('control.manual_override_duration', 0,    true);
+        this.setState('control.manual_override', false, true);
+        this.setState('control.manual_override_duration', 0, true);
         // pv_deactivate_remaining always resets to 0 on adapter restart (no running timer)
         this.setState('computed.pv_deactivate_remaining', 0, true);
         // uvc_ensure_skip_today: restore from state – only valid if the skip date matches today
         {
-            const skipState    = this.getState('control.uvc_ensure_skip_today');
-            const skipDateSt   = this.getState('control.uvc_ensure_skip_date');
+            const skipState = this.getState('control.uvc_ensure_skip_today');
+            const skipDateSt = this.getState('control.uvc_ensure_skip_date');
             const persistedSkip = skipState && skipState.val === true;
             const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
-            const today         = this.todayStr();
+            const today = this.todayStr();
 
             if (persistedSkip && persistedDate === today) {
                 this._uvcEnsureSkipToday = true;
-                this._uvcEnsureSkipDate  = today;
+                this._uvcEnsureSkipDate = today;
                 if (this.config.more_log_enabled) {
                     this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
                 }
@@ -203,7 +203,7 @@ class MspaAdapter extends utils.Adapter {
                     }
                 }
                 this._uvcEnsureSkipToday = false;
-                this._uvcEnsureSkipDate  = '';
+                this._uvcEnsureSkipDate = '';
             }
             this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
         }
@@ -222,7 +222,7 @@ class MspaAdapter extends utils.Adapter {
         const filterCtrlState = this.getState('control.filter');
         if (filterCtrlState && filterCtrlState.val) {
             const lastUpd = this.getState('info.lastUpdate');
-            const lu      = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
+            const lu = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
             // Plausibilitäts-Cutoff: maximal 6 h zurück, sonst Date.now() (konservativ)
             const maxBack = 6 * 3600 * 1000;
             this._filterOnSince = (lu > 0 && (Date.now() - lu) <= maxBack) ? lu : Date.now();
@@ -234,10 +234,10 @@ class MspaAdapter extends utils.Adapter {
         // UVC hours: restore persisted value; if UVC was ON when adapter stopped, we
         // cannot know how long it ran ? we just start tracking from now.
         const uvcHoursState = this.getState('status.uvc_hours_used');
-        this._uvcHoursUsed  = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
+        this._uvcHoursUsed = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
         // Snapshot for today's hours tracking (lazy: _getUvcTodayHours() re-snapshots on date change)
         this._uvcDayStartHours = this._uvcHoursUsed;
-        this._uvcDayStartDate  = this.todayStr();
+        this._uvcDayStartDate = this.todayStr();
         // check current UVC state from last known control state
         const uvcCtrlState = this.getState('control.uvc');
         if (uvcCtrlState && uvcCtrlState.val) {
@@ -263,62 +263,71 @@ class MspaAdapter extends utils.Adapter {
         const t = setTimeout(() => {
             this._strayTimers.delete(t);
             try {
- fn(); 
-} catch (e) {
- this.log.error(`stray timer cb: ${e.message}`); 
-}
+                fn();
+            } catch (e) {
+                this.log.error(`stray timer cb: ${e.message}`);
+            }
         }, ms);
         this._strayTimers.add(t);
         return t;
     }
 
     async onUnload(callback) {
-        if (this._pollTimer)                {
- clearTimeout(this._pollTimer); 
-}
-        if (this._timeTimer)                {
- clearInterval(this._timeTimer); 
-}
-        if (this._pvDeactivateTimer)        {
- clearTimeout(this._pvDeactivateTimer); 
-}
+        if (this._pollTimer) {
+            clearTimeout(this._pollTimer);
+        }
+        if (this._timeTimer) {
+            clearInterval(this._timeTimer);
+        }
+        if (this._pvDeactivateTimer) {
+            clearTimeout(this._pvDeactivateTimer);
+        }
         if (this._pvDeactivateCountdownInt) {
- clearInterval(this._pvDeactivateCountdownInt); 
-}
-        if (this._pvStageTimer)             {
- clearTimeout(this._pvStageTimer); 
-}
-        if (this._uvcEnsureTimer)           {
- clearInterval(this._uvcEnsureTimer); 
-}
-        if (this._pendingTempTimer)         {
- clearTimeout(this._pendingTempTimer); 
-}
-        if (this._manualOverrideTimer)      {
- clearTimeout(this._manualOverrideTimer); 
-}
+            clearInterval(this._pvDeactivateCountdownInt);
+        }
+        if (this._pvStageTimer) {
+            clearTimeout(this._pvStageTimer);
+        }
+        if (this._uvcEnsureTimer) {
+            clearInterval(this._uvcEnsureTimer);
+        }
+        if (this._pendingTempTimer) {
+            clearTimeout(this._pendingTempTimer);
+        }
+        if (this._manualOverrideTimer) {
+            clearTimeout(this._manualOverrideTimer);
+            this._manualOverrideTimer = null;
+        }
+        // Persist manual_override=false so adapter starts clean after restart
+        try {
+            this.setState('control.manual_override', {val: false, ack: true});
+            this.setState('control.manual_override_duration', {val: 0, ack: true});
+        } catch (_) { /* ignore on unload */
+        }
         for (const t of this._pumpFollowUpTimers) {
             if (t) {
- clearTimeout(t); 
-}
+                clearTimeout(t);
+            }
         }
         // Clear any stray fire-and-forget timers registered via _setStray()
         for (const t of this._strayTimers) {
- clearTimeout(t); 
-}
+            clearTimeout(t);
+        }
         this._strayTimers.clear();
         consumptionHelper.cleanup();
         notificationHelper.cleanup();
         // Persist accumulated filter runtime hours (including any currently-running session)
         try {
             const finalFilterH = this.accumulateFilterHours();
-            this.setState('control.filter_running', { val: Math.round(finalFilterH * 100) / 100, ack: true });
-        } catch (_) { /* ignore on unload */ }
+            this.setState('control.filter_running', {val: Math.round(finalFilterH * 100) / 100, ack: true});
+        } catch (_) { /* ignore on unload */
+        }
         // Persist accumulated UVC hours (including any currently-running session)
         try {
             const finalHours = this.accumulateUvcHours();
-            this.setState('status.uvc_hours_used', { val: Math.round(finalHours * 100) / 100, ack: true });
-        } catch (_) { /* ignore on unload */ }
+            this.setState('status.uvc_hours_used', {val: Math.round(finalHours * 100) / 100, ack: true});
+        } catch (_) { /* ignore on unload */
+        }
         callback();
     }
 
@@ -327,9 +336,9 @@ class MspaAdapter extends utils.Adapter {
     // -------------------------------------------------------------------------
     async publishTimeWindowsJson() {
         const windows = this.config.timeWindows;
-        const json    = JSON.stringify(Array.isArray(windows) ? windows : [], null, 2);
+        const json = JSON.stringify(Array.isArray(windows) ? windows : [], null, 2);
         this.log.debug(`Time windows JSON: ${json}`);
-        this.setState('status.time_windows_json', { val: json, ack: true });
+        this.setState('status.time_windows_json', {val: json, ack: true});
     }
 
     // -------------------------------------------------------------------------
@@ -355,7 +364,7 @@ class MspaAdapter extends utils.Adapter {
 
         // run immediately, then every 60 s aligned to next full minute
         this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
-        const now     = new Date();
+        const now = new Date();
         const msToMin = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
         this.setStray(() => {
             this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
@@ -388,15 +397,15 @@ class MspaAdapter extends utils.Adapter {
                         this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
                     }
                     await this.deactivateWindow(windows[i], i);
-                    await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', { window: i + 1 }));
+                    await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', {window: i + 1}));
                 }
             }
             return;
         }
         // --------------------------------------------------------------------
 
-        const now     = new Date();
-        const day     = now.getDay(); // 0=Sun … 6=Sat
+        const now = new Date();
+        const day = now.getDay(); // 0=Sun … 6=Sat
         const dayKeys = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
 
         // ensure tracking array is large enough
@@ -415,11 +424,11 @@ class MspaAdapter extends utils.Adapter {
                 continue;
             }
 
-            const start  = w.start || '00:00';
-            const end    = w.end   || '00:00';
-            const dayOn  = !!w[dayKeys[day]];
-            const inWin  = dayOn && this.isInTimeWindow(start, end);
-            const wasIn  = this._timeWindowActive[i];
+            const start = w.start || '00:00';
+            const end = w.end || '00:00';
+            const dayOn = !!w[dayKeys[day]];
+            const inWin = dayOn && this.isInTimeWindow(start, end);
+            const wasIn = this._timeWindowActive[i];
 
             this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
 
@@ -428,7 +437,11 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
                 }
-                await notificationHelper.send(notificationHelper.format('timeWindowStarted', { window: i + 1, start, end }));
+                await notificationHelper.send(notificationHelper.format('timeWindowStarted', {
+                    window: i + 1,
+                    start,
+                    end
+                }));
                 try {
                     if (w.action_heating) {
                         // heater requires filter pump – start it first even if action_filter is off
@@ -468,7 +481,11 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
                 }
-                await notificationHelper.send(notificationHelper.format('timeWindowEnded', { window: i + 1, start, end }));
+                await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
+                    window: i + 1,
+                    start,
+                    end
+                }));
                 await this.deactivateWindow(w, i);
             }
         }
@@ -482,10 +499,10 @@ class MspaAdapter extends utils.Adapter {
         }
 
         const followUpMin = Number(this.config.pump_follow_up) || 0;
-        const cfg         = this.config;
-        const uvcMinH     = cfg.uvc_daily_min_h ?? 2;
-        const todayH      = this.getUvcTodayHours();
-        const uvcMinMet   = todayH >= uvcMinH;
+        const cfg = this.config;
+        const uvcMinH = cfg.uvc_daily_min_h ?? 2;
+        const todayH = this.getUvcTodayHours();
+        const uvcMinMet = todayH >= uvcMinH;
 
         try {
             // Always turn off heater immediately
@@ -588,27 +605,27 @@ class MspaAdapter extends utils.Adapter {
         // Determine which features any active window would manage
         let anyWindowManagesHeater = false;
         let anyWindowManagesFilter = false;
-        let anyWindowManagesUvc    = false;
+        let anyWindowManagesUvc = false;
 
         for (const w of windows) {
-            if (!w.active)                       {
- continue; 
-}
-            if (w.action_heating)                {
- anyWindowManagesHeater = true; 
-}
-            if (w.action_filter)                 {
- anyWindowManagesFilter = true; 
-}
+            if (!w.active) {
+                continue;
+            }
+            if (w.action_heating) {
+                anyWindowManagesHeater = true;
+            }
+            if (w.action_filter) {
+                anyWindowManagesFilter = true;
+            }
             if (w.action_filter && w.action_uvc) {
- anyWindowManagesUvc    = true; 
-}
+                anyWindowManagesUvc = true;
+            }
         }
 
         // Check if any of those features is currently ON on the device
         const heaterOn = !!data.heater;
         const filterOn = !!data.filter;
-        const uvcOn    = !!data.uvc;
+        const uvcOn = !!data.uvc;
 
         if (!heaterOn && !filterOn && !uvcOn) {
             this.log.debug('Startup check: device is idle – nothing to do');
@@ -635,7 +652,7 @@ class MspaAdapter extends utils.Adapter {
             }
             // UVC before filter (filter may need to stay for UVC daily ensure)
             if (uvcOn && anyWindowManagesUvc) {
-                const todayH  = this.getUvcTodayHours();
+                const todayH = this.getUvcTodayHours();
                 const uvcMinH = this.config.uvc_daily_min_h ?? 2;
                 if (todayH >= uvcMinH) {
                     if (this.config.more_log_enabled) {
@@ -694,21 +711,21 @@ class MspaAdapter extends utils.Adapter {
 
         const parseDate = (ddmm) => {
             const parts = (ddmm || '').split('.');
-            return { day: parseInt(parts[0], 10) || 1, month: parseInt(parts[1], 10) || 1 };
+            return {day: parseInt(parts[0], 10) || 1, month: parseInt(parts[1], 10) || 1};
         };
 
-        const now   = new Date();
+        const now = new Date();
         const today = now.getDate();
         const month = now.getMonth() + 1; // 1-based
 
         const start = parseDate(cfg.season_start || '01.01');
-        const end   = parseDate(cfg.season_end   || '31.12');
+        const end = parseDate(cfg.season_end || '31.12');
 
         // convert to a simple comparable number MMDD
-        const toNum  = (d) => d.month * 100 + d.day;
-        const cur    = month * 100 + today;
-        const s      = toNum(start);
-        const e      = toNum(end);
+        const toNum = (d) => d.month * 100 + d.day;
+        const cur = month * 100 + today;
+        const s = toNum(start);
+        const e = toNum(end);
 
         let inSeason;
         if (s <= e) {
@@ -731,66 +748,76 @@ class MspaAdapter extends utils.Adapter {
      * @param end
      */
     isInTimeWindow(start, end) {
-        const now   = new Date();
+        const now = new Date();
         const toMin = (hhmm) => {
             const [h, m] = hhmm.split(':').map(Number);
             return h * 60 + m;
         };
         const cur = now.getHours() * 60 + now.getMinutes();
-        const s   = toMin(start);
-        const e   = toMin(end);
+        const s = toMin(start);
+        const e = toMin(end);
         if (s === e) {
- return false; 
-}  // empty window
-        if (s < e)   {
- return cur >= s && cur < e; 
-}
+            return false;
+        }  // empty window
+        if (s < e) {
+            return cur >= s && cur < e;
+        }
         return cur >= s || cur < e;     // overnight
     }
 
     // -------------------------------------------------------------------------
     // PV Surplus Control  ?  lib/pv.js
     // -------------------------------------------------------------------------
-    async initPvControl()                                        {
- return pvController.init(this); 
-}
-    async onForeignStateChange(id, state)                        {
- return pvController.onForeignStateChange(this, id, state); 
-}
-    async evaluatePvSurplus()                                    {
- return pvController.evaluateSurplus(this); 
-}
-    async pvCancelAllDeactivationTimers()                        {
- return pvController.cancelAllDeactivationTimers(this); 
-}
-    async pvReactivate(pvWindows, surplus)                       {
- return pvController.reactivate(this, pvWindows, surplus); 
-}
-    async pvStagedDeactivate(pvWindows, immediate = false)       {
- return pvController.stagedDeactivate(this, pvWindows, immediate); 
-}
+    async initPvControl() {
+        return pvController.init(this);
+    }
+
+    async onForeignStateChange(id, state) {
+        return pvController.onForeignStateChange(this, id, state);
+    }
+
+    async evaluatePvSurplus() {
+        return pvController.evaluateSurplus(this);
+    }
+
+    async pvCancelAllDeactivationTimers() {
+        return pvController.cancelAllDeactivationTimers(this);
+    }
+
+    async pvReactivate(pvWindows, surplus) {
+        return pvController.reactivate(this, pvWindows, surplus);
+    }
+
+    async pvStagedDeactivate(pvWindows, immediate = false) {
+        return pvController.stagedDeactivate(this, pvWindows, immediate);
+    }
 
     // -------------------------------------------------------------------------
     // UVC  ?  lib/uvc.js
     // -------------------------------------------------------------------------
-    accumulateUvcHours()       {
- return uvcController.accumulateHours(this); 
-}
-    getUvcTodayHours()         {
- return uvcController.getTodayHours(this); 
-}
-    async computeUvcExpiry()   {
- return uvcController.computeExpiry(this); 
-}
-    initUvcDailyEnsure()       {
- return uvcController.initDailyEnsure(this); 
-}
+    accumulateUvcHours() {
+        return uvcController.accumulateHours(this);
+    }
+
+    getUvcTodayHours() {
+        return uvcController.getTodayHours(this);
+    }
+
+    async computeUvcExpiry() {
+        return uvcController.computeExpiry(this);
+    }
+
+    initUvcDailyEnsure() {
+        return uvcController.initDailyEnsure(this);
+    }
+
     async checkUvcDailyMinimum() {
- return uvcController.checkDailyMinimum(this); 
-}
-    async stopUvcEnsure()      {
- return uvcController.stopEnsure(this); 
-}
+        return uvcController.checkDailyMinimum(this);
+    }
+
+    async stopUvcEnsure() {
+        return uvcController.stopEnsure(this);
+    }
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -827,7 +854,7 @@ class MspaAdapter extends utils.Adapter {
     // Polling
     // -------------------------------------------------------------------------
     schedulePoll() {
-        const isRapid  = Date.now() < this._rapidUntil;
+        const isRapid = Date.now() < this._rapidUntil;
         const interval = isRapid ? 1000 : this._pollInterval;
         this._pollTimer = setTimeout(() => this.doPoll(), interval);
     }
@@ -865,7 +892,7 @@ class MspaAdapter extends utils.Adapter {
                 await this.createDynamicStates(raw);
             }
 
-            const data     = transformStatus(raw);
+            const data = transformStatus(raw);
             this._lastData = data;
 
             await this.publishStatus(data);
@@ -945,7 +972,7 @@ class MspaAdapter extends utils.Adapter {
     // -------------------------------------------------------------------------
     async checkPowerCycle(data) {
         const currentOnline = !!data.is_online;
-        let   powerCycle    = false;
+        let powerCycle = false;
 
         if (this._lastIsOnline !== null) {
             if (this._lastIsOnline && !currentOnline) {
@@ -953,14 +980,14 @@ class MspaAdapter extends utils.Adapter {
                     this.log.info('MSpa power OFF detected – saving state');
                 }
                 this._savedState = {
-                    heater:             data.heater,
+                    heater: data.heater,
                     target_temperature: data.target_temperature,
-                    filter:             data.filter,
-                    temperature_unit:   data.temperature_unit,
-                    ozone:              data.ozone,
-                    uvc:                data.uvc,
-                    bubble:             data.bubble,
-                    bubble_level:       data.bubble_level,
+                    filter: data.filter,
+                    temperature_unit: data.temperature_unit,
+                    ozone: data.ozone,
+                    uvc: data.uvc,
+                    bubble: data.bubble,
+                    bubble_level: data.bubble_level,
                 };
             } else if (!this._lastIsOnline && currentOnline) {
                 powerCycle = true;
@@ -981,10 +1008,10 @@ class MspaAdapter extends utils.Adapter {
             if (this._lastSnapshot.filter === 'on' && data.filter === 'off') {
                 changes.push('filter_off');
             }
-            if (this._lastSnapshot.ozone  === 'on' && data.ozone  === 'off') {
+            if (this._lastSnapshot.ozone === 'on' && data.ozone === 'off') {
                 changes.push('ozone_off');
             }
-            if (this._lastSnapshot.uvc    === 'on' && data.uvc    === 'off') {
+            if (this._lastSnapshot.uvc === 'on' && data.uvc === 'off') {
                 changes.push('uvc_off');
             }
             if (changes.length >= 2) {
@@ -994,11 +1021,11 @@ class MspaAdapter extends utils.Adapter {
         }
 
         this._lastSnapshot = {
-            temperature_unit:   data.temperature_unit,
-            heater:             data.heater,
-            filter:             data.filter,
-            ozone:              data.ozone,
-            uvc:                data.uvc,
+            temperature_unit: data.temperature_unit,
+            heater: data.heater,
+            filter: data.filter,
+            ozone: data.ozone,
+            uvc: data.uvc,
             target_temperature: data.target_temperature,
         };
         this._lastIsOnline = currentOnline;
@@ -1075,8 +1102,8 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug('Winter mode: manual override active – skipping frost protection');
             return;
         }
-        const cfg         = this.config;
-        const winterMode  = this._winterModeActive;
+        const cfg = this.config;
+        const winterMode = this._winterModeActive;
         if (!winterMode) {
             // if frost was active but winter mode got disabled ? switch off
             if (this._winterFrostActive) {
@@ -1094,15 +1121,15 @@ class MspaAdapter extends utils.Adapter {
         const hysteresis = 3;
         const temp = data.water_temperature;
         if (temp === undefined || temp === null) {
- return; 
-}
+            return;
+        }
 
         if (!this._winterFrostActive && temp <= threshold) {
             this._winterFrostActive = true;
             if (this.config.more_log_enabled) {
                 this.log.info(`Winter mode: temp ${temp}°C = ${threshold}°C – switching heater + filter ON`);
             }
-            await notificationHelper.send(notificationHelper.format('frostActive', { temp, threshold }));
+            await notificationHelper.send(notificationHelper.format('frostActive', {temp, threshold}));
             await this.setFeature('filter', true);
             await this.setFeature('heater', true);
             this.enableRapidPolling();
@@ -1111,7 +1138,10 @@ class MspaAdapter extends utils.Adapter {
             if (this.config.more_log_enabled) {
                 this.log.info(`Winter mode: temp ${temp}°C = ${threshold + hysteresis}°C – switching heater + filter OFF`);
             }
-            await notificationHelper.send(notificationHelper.format('frostDeactivated', { temp, hysteresis: threshold + hysteresis }));
+            await notificationHelper.send(notificationHelper.format('frostDeactivated', {
+                temp,
+                hysteresis: threshold + hysteresis
+            }));
             await this.setFeature('heater', false);
             await this.setFeature('filter', false);
             this.enableRapidPolling();
@@ -1155,8 +1185,9 @@ class MspaAdapter extends utils.Adapter {
                 while (Date.now() - start < 15_000) {
                     await new Promise(r => setTimeout(r, 1_000));
                     if (filterRunning()) {
- ok = true; break; 
-}
+                        ok = true;
+                        break;
+                    }
                     try {
                         const raw = await this._api.getHotTubStatus();
                         this._lastData = transformStatus(raw);
@@ -1190,6 +1221,8 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 const result = await this._api.setHeaterState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                // Immediate optimistic ack so UI confirms without waiting for next poll
+                this.setState('control.heater', boolVal, true);
                 if (boolVal && this._pendingTargetTemp !== null) {
                     // Heater just switched ON ? send pending target temperature after 10 s
                     if (this._pendingTempTimer) {
@@ -1223,8 +1256,8 @@ class MspaAdapter extends utils.Adapter {
             case 'filter': {
                 if (!boolVal) {
                     // The API rejects a filter-OFF command while UVC is still running.
-                    // ? Explicitly switch off UVC (and bubble) first, then filter.
-                    const uvcState    = this.getState('control.uvc');
+                    // → Explicitly switch off UVC (and bubble) first, then filter.
+                    const uvcState = this.getState('control.uvc');
                     const bubbleState = this.getState('control.bubble');
                     const heaterState = this.getState('control.heater');
 
@@ -1236,6 +1269,7 @@ class MspaAdapter extends utils.Adapter {
                         await this._api.setUvcState(0);
                         await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                         this._adapterCommanded.uvc = false;
+                        this.setState('control.uvc', false, true);  // immediate ack
                         await this.sleep(500);
                     }
                     if (bubbleState && bubbleState.val) {
@@ -1246,6 +1280,7 @@ class MspaAdapter extends utils.Adapter {
                         await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
                         await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                         this._adapterCommanded.bubble = false;
+                        this.setState('control.bubble', false, true);  // immediate ack
                         await this.sleep(500);
                     }
                     if (heaterState && heaterState.val) {
@@ -1259,12 +1294,33 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 await this._api.setFilterState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                this.setState('control.filter', boolVal, true);  // immediate ack
                 return;
             }
-            case 'bubble': await this.setStatusCheck('send'); await this._api.setBubbleState(state, this._lastData.bubble_level || 1); await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error'); return;
-            case 'jet':    await this.setStatusCheck('send'); await this._api.setJetState(state);                                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error'); return;
-            case 'ozone':  await this.setStatusCheck('send'); await this._api.setOzoneState(state);                                      await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error'); return;
-            case 'uvc':    await this.setStatusCheck('send'); await this._api.setUvcState(state);                                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error'); return;
+            case 'bubble':
+                await this.setStatusCheck('send');
+                await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                this.setState('control.bubble', boolVal, true);
+                return;
+            case 'jet':
+                await this.setStatusCheck('send');
+                await this._api.setJetState(state);
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                this.setState('control.jet', boolVal, true);
+                return;
+            case 'ozone':
+                await this.setStatusCheck('send');
+                await this._api.setOzoneState(state);
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                this.setState('control.ozone', boolVal, true);
+                return;
+            case 'uvc':
+                await this.setStatusCheck('send');
+                await this._api.setUvcState(state);
+                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                this.setState('control.uvc', boolVal, true);
+                return;
         }
     }
 
@@ -1284,9 +1340,9 @@ class MspaAdapter extends utils.Adapter {
         // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
         // when the heater was just switched ON but the poll hasn't confirmed it yet.
         const heaterState = this.getState('control.heater');
-        const heaterOnState     = heaterState && !!heaterState.val;
+        const heaterOnState = heaterState && !!heaterState.val;
         const heaterOnCommanded = this._adapterCommanded.heater === true;
-        const heaterOnLive      = this._lastData && this._lastData.heater === 'on';
+        const heaterOnLive = this._lastData && this._lastData.heater === 'on';
         const heaterOn = heaterOnState || heaterOnCommanded || heaterOnLive;
 
         if (!heaterOn) {
@@ -1295,6 +1351,8 @@ class MspaAdapter extends utils.Adapter {
                 this.log.info(`target_temperature ${t}°C queued – will be sent 10 s after heater is switched ON`);
             }
             await this.setStatusCheck('queued');
+            // Immediate ack so UI shows queued value
+            this.setState('control.target_temperature', t, true);
             return;
         }
         this._pendingTargetTemp = null;
@@ -1313,6 +1371,8 @@ class MspaAdapter extends utils.Adapter {
         await this.setStatusCheck('send');
         const result = await this._api.setTemperatureSetting(temp);
         await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+        // Immediate ack so UI confirms value without waiting for next poll
+        this.setState('control.target_temperature', temp, true);
         return result;
     }
 
@@ -1320,10 +1380,11 @@ class MspaAdapter extends utils.Adapter {
     // Manual override – pausiert alle Automationen (Zeitfenster, PV, Frostschutz)
     // -------------------------------------------------------------------------
     async setManualOverride(enable, durationMin = null) {
-        // cancel any existing auto-reset timer
-        if (this._manualOverrideTimer) {
-            clearTimeout(this._manualOverrideTimer);
-            this._manualOverrideTimer = null;
+        // Atomic cancel BEFORE any await – prevents two concurrent calls from both starting a timer
+        const existingTimer = this._manualOverrideTimer;
+        this._manualOverrideTimer = null;
+        if (existingTimer) {
+            clearTimeout(existingTimer);
         }
 
         this._manualOverride = enable;
@@ -1342,9 +1403,16 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
                 }
-                await notificationHelper.send(notificationHelper.format('overrideOnTimed', { durationMin }));
+                await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}));
+                // Guard: a concurrent call may have already disabled override during the await above
+                if (!this._manualOverride) {
+                    this.log.debug('Manual override: aborted during notification send – skipping timer');
+                    return;
+                }
                 this._manualOverrideTimer = setTimeout(async () => {
                     this._manualOverrideTimer = null;
+                    // Guard: another call may have concurrently disabled override
+                    if (!this._manualOverride) return;
                     if (this.config.more_log_enabled) {
                         this.log.info('Manual override: duration elapsed – automations RESUMED');
                     }
@@ -1353,11 +1421,7 @@ class MspaAdapter extends utils.Adapter {
                     this.setState('control.manual_override', false, true);
                     this.setState('control.manual_override_duration', 0, true);
                     // Re-evaluate all automations now that override is lifted
-                    if (this._lastData && Object.keys(this._lastData).length) {
-                        await this.checkFrostProtection(this._lastData);
-                    }
-                    await this.checkTimeWindows();
-                    await this.evaluatePvSurplus();
+                    await this._resumeAfterOverride();
                 }, durationMin * 60 * 1000);
             } else {
                 if (this.config.more_log_enabled) {
@@ -1372,12 +1436,34 @@ class MspaAdapter extends utils.Adapter {
             await notificationHelper.send(notificationHelper.format('overrideOff'));
             this.setState('control.manual_override_duration', 0, true);
             // immediately re-evaluate automations with latest data
-            if (this._lastData && Object.keys(this._lastData).length) {
-                await this.checkFrostProtection(this._lastData);
-            }
-            await this.checkTimeWindows();
-            await this.evaluatePvSurplus();
+            await this._resumeAfterOverride();
         }
+    }
+
+    /**
+     * Re-evaluates all automations after manual override ends.
+     * Each task runs independently so one failure does not block the others.
+     */
+    async _resumeAfterOverride() {
+        const tasks = [];
+        if (this._lastData && Object.keys(this._lastData).length) {
+            tasks.push(
+                this.checkFrostProtection(this._lastData).catch(e =>
+                    this.log.error(`resumeAfterOverride/checkFrostProtection: ${e.message}`)
+                )
+            );
+        }
+        tasks.push(
+            this.checkTimeWindows().catch(e =>
+                this.log.error(`resumeAfterOverride/checkTimeWindows: ${e.message}`)
+            )
+        );
+        tasks.push(
+            this.evaluatePvSurplus().catch(e =>
+                this.log.error(`resumeAfterOverride/evaluatePvSurplus: ${e.message}`)
+            )
+        );
+        await Promise.all(tasks);
     }
 
     // -------------------------------------------------------------------------
@@ -1435,8 +1521,8 @@ class MspaAdapter extends utils.Adapter {
                 }
                 this.setState('control.winter_mode', this._winterModeActive, true);
                 if (this._lastData) {
- await this.checkFrostProtection(this._lastData); 
-}
+                    await this.checkFrostProtection(this._lastData);
+                }
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
                 if (this.config.more_log_enabled) {
@@ -1446,14 +1532,21 @@ class MspaAdapter extends utils.Adapter {
 
             } else if (key === 'manual_override') {
                 const enable = !!state.val;
-                await this.setManualOverride(enable);
+                try {
+                    await this.setManualOverride(enable);
+                } catch (err) {
+                    this.log.error(`manual_override command failed: ${err.message}`);
+                    // Rollback: write previous value with ack so UI shows correct state
+                    this.setState('control.manual_override', !enable, true);
+                    return;
+                }
 
             } else if (key === 'uvc_ensure_skip_today') {
                 const skip = !!state.val;
                 this._uvcEnsureSkipToday = skip;
-                this._uvcEnsureSkipDate  = skip ? this.todayStr() : '';
+                this._uvcEnsureSkipDate = skip ? this.todayStr() : '';
                 this.setState('control.uvc_ensure_skip_today', skip, true);
-                this.setState('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate, true);
+                this.setState('control.uvc_ensure_skip_date', this._uvcEnsureSkipDate, true);
                 if (skip) {
                     if (this.config.more_log_enabled) {
                         this.log.info('UVC daily ensure: skip requested by user – pausing for today');
@@ -1483,11 +1576,12 @@ class MspaAdapter extends utils.Adapter {
                 }
 
             } else if (key === 'manual_override_duration') {
-                // duration change only relevant while override is active ? restart timer
+                const newDuration = Number(state.val) || 0;
+                // Always persist the new value with ack first
+                this.setState('control.manual_override_duration', newDuration, true);
+                // Only restart override timer if override is currently active
                 if (this._manualOverride) {
-                    await this.setManualOverride(true, Number(state.val) || 0);
-                } else {
-                    this.setState('control.manual_override_duration', Number(state.val) || 0, true);
+                    await this.setManualOverride(true, newDuration);
                 }
 
             } else if (key === 'filter_reset') {
@@ -1496,10 +1590,10 @@ class MspaAdapter extends utils.Adapter {
                     // then reset to 0 and start a fresh session from now if filter is still ON.
                     const wasRunning = this._filterOnSince !== null;
                     this._filterHoursUsed = 0;
-                    this._filterOnSince   = wasRunning ? Date.now() : null;
-                    this.setState('control.filter_running', { val: 0, ack: true });
+                    this._filterOnSince = wasRunning ? Date.now() : null;
+                    this.setState('control.filter_running', {val: 0, ack: true});
                     // Reset button ? always write false back (it's a momentary trigger)
-                    this.setState('control.filter_reset', { val: false, ack: true });
+                    this.setState('control.filter_reset', {val: false, ack: true});
                     if (this.config.more_log_enabled) {
                         this.log.info(`Filter runtime counter reset to 0 (filter was ${wasRunning ? 'running – new session started' : 'off'})`);
                     }
