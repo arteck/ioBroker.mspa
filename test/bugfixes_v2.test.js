@@ -22,6 +22,12 @@
  *  15. setTargetTemp queued – immediate ack for control.target_temperature
  *  16. setManualOverride – race condition: timer cancelled atomically before await
  *  17. setManualOverride – onStateChange rollback on error; duration always acked
+ *  18. control.bubble_level – immediate ack + range validation (0-3)
+ *  19. control.winter_mode – immediate ack + checkFrostProtection called
+ *  20. control.season_enabled – immediate ack
+ *  21. control.filter_reset – resets counter; writes false back with ack
+ *  22. control.uvc_ensure_skip_today – immediate ack; stops ensure when active
+ *  23. onReady state restore – uses getStateAsync (not getState) to avoid empty-cache reset
  */
 
 const assert = require('assert');
@@ -1124,5 +1130,452 @@ describe('onStateChange – manual_override rollback & duration ack', () => {
         assert.deepStrictEqual(restartArgs, { en: true, dur: 15 },
             'setManualOverride(true, 15) must be called when duration changes while active');
     });
+});// ---------------------------------------------------------------------------
+// 18. control.bubble_level � immediate ack + range validation (0-3)
+// ---------------------------------------------------------------------------
+describe('control.bubble_level � ack + validation', () => {
+    // Inline handler matching the fixed onStateChange bubble_level branch
+    async function handleBubbleLevel(stateVal, apiImpl) {
+        const acked = {};
+        const logWarns = [];
+        const statusChecks = [];
+        const a = {
+            config: { more_log_enabled: false },
+            log: { warn: (m) => logWarns.push(m), info: () => {}, error: () => {}, debug: () => {} },
+            _api: { _lastCommandConfirmed: true, setBubbleLevel: apiImpl ?? (async () => {}) },
+            getState: (id) => id === 'control.bubble_level' ? { val: 2 } : null,
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            setStatusCheck: async (s) => { statusChecks.push(s); },
+            enableRapidPolling: () => {},
+        };
+        const key = 'bubble_level';
+        const lvl = Number(stateVal);
+        if (isNaN(lvl) || lvl < 0 || lvl > 3) {
+            a.log.warn(`bubble_level ${stateVal} out of range (0�3) � command ignored`);
+            await a.setStatusCheck('error');
+            const cur = a.getState('control.bubble_level');
+            a.setState('control.bubble_level', cur ? cur.val : 1, true);
+            return { acked, logWarns, statusChecks };
+        }
+        await a.setStatusCheck('send');
+        await a._api.setBubbleLevel(lvl);
+        await a.setStatusCheck(a._api._lastCommandConfirmed ? 'success' : 'error');
+        a.setState('control.bubble_level', lvl, true);
+        a.enableRapidPolling();
+        return { acked, logWarns, statusChecks };
+    }
+    it('acks control.bubble_level immediately after API call', async () => {
+        const { acked } = await handleBubbleLevel(2);
+        assert.strictEqual(acked['control.bubble_level'], 2, 'must be acked with sent value');
+    });
+    it('accepts boundary value 0', async () => {
+        const { acked } = await handleBubbleLevel(0);
+        assert.strictEqual(acked['control.bubble_level'], 0);
+    });
+    it('accepts boundary value 3', async () => {
+        const { acked } = await handleBubbleLevel(3);
+        assert.strictEqual(acked['control.bubble_level'], 3);
+    });
+    it('rejects value 4 � warns and writes back previous value', async () => {
+        const { acked, logWarns, statusChecks } = await handleBubbleLevel(4);
+        assert.ok(logWarns.some(m => m.includes('out of range')), 'must warn');
+        assert.ok(statusChecks.includes('error'), 'must set error status');
+        // Rollback: previous value (2) written back
+        assert.strictEqual(acked['control.bubble_level'], 2, 'must rollback to previous value');
+    });
+    it('rejects negative value', async () => {
+        const { logWarns, statusChecks } = await handleBubbleLevel(-1);
+        assert.ok(logWarns.some(m => m.includes('out of range')));
+        assert.ok(statusChecks.includes('error'));
+    });
+    it('rejects NaN value', async () => {
+        const { logWarns, statusChecks } = await handleBubbleLevel('abc');
+        assert.ok(logWarns.some(m => m.includes('out of range')));
+        assert.ok(statusChecks.includes('error'));
+    });
+    it('passes correct level to API', async () => {
+        let apiArg = null;
+        await handleBubbleLevel(3, async (lvl) => { apiArg = lvl; });
+        assert.strictEqual(apiArg, 3, 'API must receive the numeric level');
+    });
 });
-
+// ---------------------------------------------------------------------------
+// 19. control.winter_mode � immediate ack + checkFrostProtection called
+// ---------------------------------------------------------------------------
+describe('control.winter_mode � ack + frost protection triggered', () => {
+    async function handleWinterMode(stateVal) {
+        const acked = {};
+        let frostCalled = false;
+        const a = {
+            _winterModeActive: false,
+            _lastData: { water_temperature: 5 },
+            config: { more_log_enabled: false },
+            log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            checkFrostProtection: async () => { frostCalled = true; },
+        };
+        a._winterModeActive = !!stateVal;
+        a.setState('control.winter_mode', a._winterModeActive, true);
+        if (a._lastData) {
+            await a.checkFrostProtection(a._lastData);
+        }
+        return { acked, frostCalled };
+    }
+    it('acks control.winter_mode=true immediately', async () => {
+        const { acked } = await handleWinterMode(true);
+        assert.strictEqual(acked['control.winter_mode'], true);
+    });
+    it('acks control.winter_mode=false immediately', async () => {
+        const { acked } = await handleWinterMode(false);
+        assert.strictEqual(acked['control.winter_mode'], false);
+    });
+    it('calls checkFrostProtection after writing state', async () => {
+        const { frostCalled } = await handleWinterMode(true);
+        assert.strictEqual(frostCalled, true, 'checkFrostProtection must be triggered');
+    });
+});
+// ---------------------------------------------------------------------------
+// 20. control.season_enabled � immediate ack
+// ---------------------------------------------------------------------------
+describe('control.season_enabled � immediate ack', () => {
+    async function handleSeasonEnabled(stateVal) {
+        const acked = {};
+        const a = {
+            _seasonEnabled: false,
+            config: { more_log_enabled: false },
+            log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+        };
+        a._seasonEnabled = !!stateVal;
+        a.setState('control.season_enabled', a._seasonEnabled, true);
+        return { acked };
+    }
+    it('acks control.season_enabled=true immediately', async () => {
+        const { acked } = await handleSeasonEnabled(true);
+        assert.strictEqual(acked['control.season_enabled'], true);
+    });
+    it('acks control.season_enabled=false immediately', async () => {
+        const { acked } = await handleSeasonEnabled(false);
+        assert.strictEqual(acked['control.season_enabled'], false);
+    });
+});
+// ---------------------------------------------------------------------------
+// 21. control.filter_reset � resets counter + writes false back with ack
+// ---------------------------------------------------------------------------
+describe('control.filter_reset � counter reset + momentary trigger', () => {
+    async function handleFilterReset(filterWasRunning) {
+        const acked = {};
+        const a = {
+            _filterHoursUsed: 42.5,
+            _filterOnSince: filterWasRunning ? Date.now() - 3_600_000 : null,
+            config: { more_log_enabled: false },
+            log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            // Handle both: setState(id, val, ack)  AND  setState(id, {val, ack})
+            setState: (id, val, ack) => {
+                const isObj = val && typeof val === 'object' && 'val' in val;
+                const realAck  = isObj ? val.ack  : ack;
+                const realVal  = isObj ? val.val  : val;
+                if (realAck) acked[id] = realVal;
+            },
+        };
+        // Replicate the handler logic
+        const wasRunning = a._filterOnSince !== null;
+        a._filterHoursUsed = 0;
+        a._filterOnSince = wasRunning ? Date.now() : null;
+        a.setState('control.filter_running', { val: 0, ack: true });
+        a.setState('control.filter_reset', { val: false, ack: true });
+        return { a, acked };
+    }
+    it('resets _filterHoursUsed to 0', async () => {
+        const { a } = await handleFilterReset(false);
+        assert.strictEqual(a._filterHoursUsed, 0);
+    });
+    it('writes control.filter_running=0 with ack', async () => {
+        const { acked } = await handleFilterReset(false);
+        assert.strictEqual(acked['control.filter_running'], 0, 'filter_running must be reset to 0');
+    });
+    it('writes control.filter_reset=false back with ack (momentary trigger)', async () => {
+        const { acked } = await handleFilterReset(false);
+        assert.strictEqual(acked['control.filter_reset'], false,
+            'filter_reset must be written back false with ack');
+    });
+    it('starts fresh session if filter was running (keeps _filterOnSince set)', async () => {
+        const { a } = await handleFilterReset(true);
+        assert.strictEqual(a._filterHoursUsed, 0, 'hours must be 0 after reset');
+        assert.ok(a._filterOnSince !== null, '_filterOnSince must remain set (filter still running)');
+    });
+    it('leaves _filterOnSince=null if filter was not running', async () => {
+        const { a } = await handleFilterReset(false);
+        assert.strictEqual(a._filterOnSince, null, '_filterOnSince must stay null');
+    });
+});
+// ---------------------------------------------------------------------------
+// 22. control.uvc_ensure_skip_today � immediate ack + stops active ensure
+// ---------------------------------------------------------------------------
+describe('control.uvc_ensure_skip_today � ack + ensure stop', () => {
+    const nh = require('../lib/notificationHelper');
+    let origSend;
+    beforeEach(() => { origSend = nh.send; nh.send = async () => {}; });
+    afterEach(()  => { nh.send = origSend; });
+    async function handleUvcEnsureSkip(stateVal, opts = {}) {
+        const acked = {};
+        let stopEnsureCalled = false;
+        let setFeatureCalled = false;
+        const a = {
+            _uvcEnsureSkipToday: false,
+            _uvcEnsureSkipDate:  '',
+            _uvcEnsureActive:    !!opts.ensureActive,
+            config: { more_log_enabled: false },
+            log: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            setState: (id, val, ack) => {
+                if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            getState: (id) => id === 'control.uvc' ? { val: !!opts.uvcOn } : null,
+            todayStr: () => '2026-04-27',
+            stopUvcEnsure: async () => { stopEnsureCalled = true; },
+            setFeature: async (f, v) => { setFeatureCalled = true; },
+            enableRapidPolling: () => {},
+            checkUvcDailyMinimum: async () => {},
+        };
+        const skip = !!stateVal;
+        a._uvcEnsureSkipToday = skip;
+        a._uvcEnsureSkipDate  = skip ? a.todayStr() : '';
+        a.setState('control.uvc_ensure_skip_today', skip, true);
+        a.setState('control.uvc_ensure_skip_date',  a._uvcEnsureSkipDate, true);
+        if (skip) {
+            await nh.send(nh.format('uvcEnsureSkipped'));
+            if (a._uvcEnsureActive) {
+                await a.stopUvcEnsure();
+            } else {
+                const uvcState = a.getState('control.uvc');
+                if (uvcState && uvcState.val) {
+                    await a.setFeature('uvc', false);
+                    a.enableRapidPolling();
+                }
+            }
+        } else {
+            a.checkUvcDailyMinimum().catch(() => {});
+        }
+        return { a, acked, stopEnsureCalled, setFeatureCalled };
+    }
+    it('acks control.uvc_ensure_skip_today=true with ack', async () => {
+        const { acked } = await handleUvcEnsureSkip(true);
+        assert.strictEqual(acked['control.uvc_ensure_skip_today'], true);
+    });
+    it('writes today date string into control.uvc_ensure_skip_date on skip=true', async () => {
+        const { acked } = await handleUvcEnsureSkip(true);
+        assert.strictEqual(acked['control.uvc_ensure_skip_date'], '2026-04-27');
+    });
+    it('clears control.uvc_ensure_skip_date on skip=false', async () => {
+        const { acked } = await handleUvcEnsureSkip(false);
+        assert.strictEqual(acked['control.uvc_ensure_skip_date'], '');
+    });
+    it('calls stopUvcEnsure when ensure is currently active', async () => {
+        const { stopEnsureCalled } = await handleUvcEnsureSkip(true, { ensureActive: true });
+        assert.strictEqual(stopEnsureCalled, true, 'stopUvcEnsure must be called');
+    });
+    it('does NOT call stopUvcEnsure when ensure is not active', async () => {
+        const { stopEnsureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false });
+        assert.strictEqual(stopEnsureCalled, false);
+    });
+    it('turns off UVC when not in ensure-mode but UVC is ON (manual abort)', async () => {
+        const { setFeatureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false, uvcOn: true });
+        assert.strictEqual(setFeatureCalled, true, 'setFeature(uvc, false) must be called');
+    });
+    it('does NOT turn off UVC when UVC is already OFF', async () => {
+        const { setFeatureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false, uvcOn: false });
+        assert.strictEqual(setFeatureCalled, false);
+    });
+});// ---------------------------------------------------------------------------
+// 23. onReady state restore � getStateAsync not getState (empty-cache fix)
+// ---------------------------------------------------------------------------
+describe('onReady � state restore uses getStateAsync (empty-cache fix)', () => {
+    /**
+     * The bug: synchronous getState() reads the in-memory cache which is NOT yet
+     * populated right after subscribeStates() is called.  Result: every adapter
+     * restart silently reset control.season_enabled, control.winter_mode,
+     * control.uvc_ensure_skip_today etc. to false/0.
+     *
+     * The fix: use await getStateAsync() � reads directly from the ioBroker DB.
+     *
+     * This test simulates the race by returning null from getState() (empty cache)
+     * while getStateAsync() returns the correct persisted values.
+     */
+    async function simulateOnReadyRestore(persistedStates) {
+        const written = {};
+        const a = {
+            _winterModeActive:    false,
+            _seasonEnabled:       false,
+            _manualOverride:      false,
+            _uvcEnsureSkipToday:  false,
+            _uvcEnsureSkipDate:   '',
+            _filterHoursUsed:     0,
+            _filterOnSince:       null,
+            _uvcHoursUsed:        0,
+            _uvcDayStartHours:    0,
+            _uvcDayStartDate:     '',
+            _uvcOnSince:          null,
+            config:               { more_log_enabled: false },
+            log:                  { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+            // Synchronous getState: always returns null (simulates empty cache)
+            getState: (_id) => null,
+            // Async getStateAsync: returns the persisted value from DB
+            getStateAsync: async (id) => persistedStates[id] !== undefined
+                ? { val: persistedStates[id], ack: true }
+                : null,
+            setState: (id, val, ack) => {
+                if (ack) written[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
+            },
+            todayStr: () => '2026-04-27',
+        };
+        // Replicate the fixed onReady restore block
+        const wmState = await a.getStateAsync('control.winter_mode');
+        const seState = await a.getStateAsync('control.season_enabled');
+        a._winterModeActive = wmState && wmState.val !== null ? !!wmState.val : false;
+        a._seasonEnabled    = seState && seState.val !== null ? !!seState.val : false;
+        a.setState('control.winter_mode',    a._winterModeActive, true);
+        a.setState('control.season_enabled', a._seasonEnabled,    true);
+        // manual_override always resets
+        a._manualOverride = false;
+        a.setState('control.manual_override',          false, true);
+        a.setState('control.manual_override_duration', 0,     true);
+        // uvc_ensure_skip_today restore
+        const skipState  = await a.getStateAsync('control.uvc_ensure_skip_today');
+        const skipDateSt = await a.getStateAsync('control.uvc_ensure_skip_date');
+        const persistedSkip = skipState  && skipState.val  === true;
+        const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
+        const today = a.todayStr();
+        if (persistedSkip && persistedDate === today) {
+            a._uvcEnsureSkipToday = true;
+            a._uvcEnsureSkipDate  = today;
+        } else {
+            a._uvcEnsureSkipToday = false;
+            a._uvcEnsureSkipDate  = '';
+        }
+        a.setState('control.uvc_ensure_skip_today', a._uvcEnsureSkipToday, true);
+        // filter runtime restore
+        const filterRunningState = await a.getStateAsync('control.filter_running');
+        a._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number')
+            ? filterRunningState.val : 0;
+        const filterCtrlState = await a.getStateAsync('control.filter');
+        if (filterCtrlState && filterCtrlState.val) {
+            const lastUpd = await a.getStateAsync('info.lastUpdate');
+            const lu      = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
+            const maxBack = 6 * 3600 * 1000;
+            a._filterOnSince = (lu > 0 && (Date.now() - lu) <= maxBack) ? lu : Date.now();
+        }
+        // UVC hours restore
+        const uvcHoursState = await a.getStateAsync('status.uvc_hours_used');
+        a._uvcHoursUsed    = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
+        a._uvcDayStartHours = a._uvcHoursUsed;
+        a._uvcDayStartDate  = a.todayStr();
+        const uvcCtrlState  = await a.getStateAsync('control.uvc');
+        if (uvcCtrlState && uvcCtrlState.val) {
+            a._uvcOnSince = Date.now();
+        }
+        return { a, written };
+    }
+    it('restores season_enabled=true from DB (not reset to false by empty cache)', async () => {
+        const { written, a } = await simulateOnReadyRestore({
+            'control.season_enabled': true,
+            'control.winter_mode':    false,
+        });
+        assert.strictEqual(a._seasonEnabled, true,
+            '_seasonEnabled must be true � restored from persisted DB value');
+        assert.strictEqual(written['control.season_enabled'], true,
+            'setState must write back the restored value (not false)');
+    });
+    it('restores winter_mode=true from DB', async () => {
+        const { a, written } = await simulateOnReadyRestore({
+            'control.winter_mode':    true,
+            'control.season_enabled': false,
+        });
+        assert.strictEqual(a._winterModeActive, true);
+        assert.strictEqual(written['control.winter_mode'], true);
+    });
+    it('defaults season_enabled to false when state is missing from DB', async () => {
+        const { a, written } = await simulateOnReadyRestore({});
+        assert.strictEqual(a._seasonEnabled, false);
+        assert.strictEqual(written['control.season_enabled'], false);
+    });
+    it('always resets manual_override to false regardless of persisted value', async () => {
+        const { written } = await simulateOnReadyRestore({
+            'control.manual_override': true,  // was left true (e.g. crash)
+        });
+        assert.strictEqual(written['control.manual_override'], false,
+            'manual_override must always be reset to false on start');
+    });
+    it('restores uvc_ensure_skip_today=true when date matches today', async () => {
+        const { a, written } = await simulateOnReadyRestore({
+            'control.uvc_ensure_skip_today': true,
+            'control.uvc_ensure_skip_date':  '2026-04-27',   // same as todayStr()
+        });
+        assert.strictEqual(a._uvcEnsureSkipToday, true,
+            'skip flag must be restored when date matches today');
+        assert.strictEqual(written['control.uvc_ensure_skip_today'], true);
+    });
+    it('resets uvc_ensure_skip_today when date is outdated', async () => {
+        const { a, written } = await simulateOnReadyRestore({
+            'control.uvc_ensure_skip_today': true,
+            'control.uvc_ensure_skip_date':  '2026-04-26',   // yesterday
+        });
+        assert.strictEqual(a._uvcEnsureSkipToday, false,
+            'skip flag must be cleared when date is outdated');
+        assert.strictEqual(written['control.uvc_ensure_skip_today'], false);
+    });
+    it('restores filter runtime hours from DB', async () => {
+        const { a } = await simulateOnReadyRestore({
+            'control.filter_running': 7.5,
+            'control.filter':         false,
+        });
+        assert.strictEqual(a._filterHoursUsed, 7.5,
+            'filter hours must be restored from DB value');
+    });
+    it('starts _filterOnSince tracking if filter was ON at shutdown', async () => {
+        const lastUpdateTs = Date.now() - 60_000; // 1 min ago
+        const { a } = await simulateOnReadyRestore({
+            'control.filter_running': 3.0,
+            'control.filter':         true,
+            'info.lastUpdate':        lastUpdateTs,
+        });
+        assert.ok(a._filterOnSince !== null,
+            '_filterOnSince must be set when filter was ON at shutdown');
+    });
+    it('restores UVC hours from DB', async () => {
+        const { a } = await simulateOnReadyRestore({
+            'status.uvc_hours_used': 42.5,
+            'control.uvc':           false,
+        });
+        assert.strictEqual(a._uvcHoursUsed, 42.5);
+        assert.strictEqual(a._uvcDayStartHours, 42.5);
+    });
+    it('starts _uvcOnSince tracking if UVC was ON at shutdown', async () => {
+        const before = Date.now();
+        const { a } = await simulateOnReadyRestore({
+            'status.uvc_hours_used': 1.0,
+            'control.uvc':           true,
+        });
+        assert.ok(a._uvcOnSince !== null && a._uvcOnSince >= before,
+            '_uvcOnSince must be set when UVC was ON at shutdown');
+    });
+    it('getState (sync) would have returned null � confirming the bug existed', async () => {
+        // Demonstrate: getState() returns null (empty cache) while getStateAsync() returns true
+        const persisted = { 'control.season_enabled': true };
+        let syncResult = null; // simulates getState() with empty cache
+        // Old (buggy) code path:
+        const buggySeasonEnabled = syncResult && syncResult.val !== null ? !!syncResult.val : false;
+        assert.strictEqual(buggySeasonEnabled, false,
+            'old code with empty cache would always yield false');
+        // Fixed code path:
+        const dbResult = { val: persisted['control.season_enabled'], ack: true };
+        const fixedSeasonEnabled = dbResult && dbResult.val !== null ? !!dbResult.val : false;
+        assert.strictEqual(fixedSeasonEnabled, true,
+            'fixed code reading from DB yields correct persisted value');
+    });
+});

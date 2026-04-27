@@ -169,85 +169,107 @@ class MspaAdapter extends utils.Adapter {
 
         this.subscribeStates('control.*');
 
-        // restore runtime overrides from persisted control states (both controlled exclusively via control state)
-        const wmState = this.getState('control.winter_mode');
-        const seState = this.getState('control.season_enabled');
-        this._winterModeActive = wmState && wmState.val !== null ? !!wmState.val : false;
-        this._seasonEnabled = seState && seState.val !== null ? !!seState.val : false;
-        this.setState('control.winter_mode', this._winterModeActive, true);
-        this.setState('control.season_enabled', this._seasonEnabled, true);
-        // manual_override always resets to false on adapter restart
-        this._manualOverride = false;
-        this.setState('control.manual_override', false, true);
-        this.setState('control.manual_override_duration', 0, true);
-        // pv_deactivate_remaining always resets to 0 on adapter restart (no running timer)
-        this.setState('computed.pv_deactivate_remaining', 0, true);
-        // uvc_ensure_skip_today: restore from state – only valid if the skip date matches today
-        {
-            const skipState = this.getState('control.uvc_ensure_skip_today');
-            const skipDateSt = this.getState('control.uvc_ensure_skip_date');
-            const persistedSkip = skipState && skipState.val === true;
-            const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
-            const today = this.todayStr();
+        await this._restorePersistedStates();
 
-            if (persistedSkip && persistedDate === today) {
-                this._uvcEnsureSkipToday = true;
-                this._uvcEnsureSkipDate = today;
-                if (this.config.more_log_enabled) {
-                    this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
-                }
-            } else {
-                if (persistedSkip) {
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
-                    }
-                }
-                this._uvcEnsureSkipToday = false;
-                this._uvcEnsureSkipDate = '';
-            }
-            this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
-        }
         await this.initPvControl();
         this.initTimeControl();
         await this.publishTimeWindowsJson();
         await consumptionHelper.init(this);
         notificationHelper.init(this);
 
-        // Filter runtime: restore persisted value; if filter was ON when adapter
-        // stopped, use the timestamp of the last successful poll (`info.lastUpdate`)
-        // as a conservative session start so we don't lose the runtime gap between
-        // the unload-write and the restart.
-        const filterRunningState = this.getState('control.filter_running');
-        this._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number') ? filterRunningState.val : 0;
-        const filterCtrlState = this.getState('control.filter');
+
+        this.computeUvcExpiry().catch(e => this.log.error(`computeUvcExpiry: ${e.message}`));
+        this.initUvcDailyEnsure();
+        this.doPoll();
+    }
+
+    /**
+     * Reads all persisted control states from the ioBroker DB and restores the
+     * corresponding in-memory variables.
+     *
+     * MUST use getStateAsync() – NOT getState() – because the in-memory cache is
+     * not yet populated at adapter start (subscribeStates() fills it asynchronously).
+     *
+     * Why in-memory variables and not direct state reads everywhere?
+     * ──────────────────────────────────────────────────────────────
+     *  1. _manualOverride: used as an *atomic guard* inside setManualOverride()
+     *     between two awaits.  A getStateAsync() there would NOT be atomic and
+     *     would re-introduce the race condition we just fixed.
+     *  2. _seasonEnabled / _winterModeActive: read by the synchronous isInSeason()
+     *     and checkFrostProtection() helpers that are called from the 60-s poll
+     *     loop.  Making them async would cascade to >20 call sites.
+     *  3. _winterFrostActive: hysteresis flag set *and* checked within the same
+     *     synchronous checkFrostProtection() evaluation.  A state round-trip would
+     *     break the hysteresis logic.
+     *
+     * The single startup read via getStateAsync() is therefore the correct pattern:
+     *  – one async DB read on start, then synchronous in-memory access at runtime.
+     *  – every write goes to both the in-memory variable AND the state (ack:true).
+     */
+    async _restorePersistedStates() {
+        // ── season / winter mode ─────────────────────────────────────────────
+        const wmState = await this.getStateAsync('control.winter_mode');
+        const seState = await this.getStateAsync('control.season_enabled');
+        this._winterModeActive = wmState && wmState.val !== null ? !!wmState.val : false;
+        this._seasonEnabled    = seState && seState.val !== null ? !!seState.val : false;
+        this.setState('control.winter_mode',    this._winterModeActive, true);
+        this.setState('control.season_enabled', this._seasonEnabled,    true);
+
+        // ── manual override – always reset to false on restart ───────────────
+        this._manualOverride = false;
+        this.setState('control.manual_override',          false, true);
+        this.setState('control.manual_override_duration', 0,     true);
+
+        // ── counters that reset on restart ───────────────────────────────────
+        this.setState('computed.pv_deactivate_remaining', 0, true);
+
+        // ── UVC daily ensure skip – only valid if date matches today ─────────
+        const skipState  = await this.getStateAsync('control.uvc_ensure_skip_today');
+        const skipDateSt = await this.getStateAsync('control.uvc_ensure_skip_date');
+        const persistedSkip = skipState  && skipState.val  === true;
+        const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
+        const today = this.todayStr();
+        if (persistedSkip && persistedDate === today) {
+            this._uvcEnsureSkipToday = true;
+            this._uvcEnsureSkipDate  = today;
+            if (this.config.more_log_enabled) {
+                this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
+            }
+        } else {
+            if (persistedSkip && this.config.more_log_enabled) {
+                this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
+            }
+            this._uvcEnsureSkipToday = false;
+            this._uvcEnsureSkipDate  = '';
+        }
+        this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
+
+        // ── filter runtime ────────────────────────────────────────────────────
+        const filterRunningState = await this.getStateAsync('control.filter_running');
+        this._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number')
+            ? filterRunningState.val : 0;
+        const filterCtrlState = await this.getStateAsync('control.filter');
         if (filterCtrlState && filterCtrlState.val) {
-            const lastUpd = this.getState('info.lastUpdate');
-            const lu = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
-            // Plausibilitäts-Cutoff: maximal 6 h zurück, sonst Date.now() (konservativ)
-            const maxBack = 6 * 3600 * 1000;
+            const lastUpd = await this.getStateAsync('info.lastUpdate');
+            const lu      = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
+            const maxBack = 6 * 3_600_000; // 6 h plausibility cutoff
             this._filterOnSince = (lu > 0 && (Date.now() - lu) <= maxBack) ? lu : Date.now();
             if (this.config.more_log_enabled) {
                 this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
             }
         }
 
-        // UVC hours: restore persisted value; if UVC was ON when adapter stopped, we
-        // cannot know how long it ran ? we just start tracking from now.
-        const uvcHoursState = this.getState('status.uvc_hours_used');
-        this._uvcHoursUsed = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
-        // Snapshot for today's hours tracking (lazy: _getUvcTodayHours() re-snapshots on date change)
-        this._uvcDayStartHours = this._uvcHoursUsed;
-        this._uvcDayStartDate = this.todayStr();
-        // check current UVC state from last known control state
-        const uvcCtrlState = this.getState('control.uvc');
+        // ── UVC operating hours ───────────────────────────────────────────────
+        const uvcHoursState = await this.getStateAsync('status.uvc_hours_used');
+        this._uvcHoursUsed      = (uvcHoursState && typeof uvcHoursState.val === 'number')
+            ? uvcHoursState.val : 0;
+        this._uvcDayStartHours  = this._uvcHoursUsed;
+        this._uvcDayStartDate   = today;
+        const uvcCtrlState = await this.getStateAsync('control.uvc');
         if (uvcCtrlState && uvcCtrlState.val) {
-            // UVC is currently ON ? start tracking from now (conservative: don't guess past runtime)
+            // UVC was ON at shutdown → start tracking from now (conservative)
             this._uvcOnSince = Date.now();
         }
-
-        this.computeUvcExpiry().catch(e => this.log.error(`computeUvcExpiry: ${e.message}`));
-        this.initUvcDailyEnsure();
-        this.doPoll();
     }
 
     /**
@@ -1507,12 +1529,23 @@ class MspaAdapter extends utils.Adapter {
                 await this.setTargetTemp(state.val);
                 this.enableRapidPolling();
             } else if (key === 'bubble_level') {
+                const lvl = Number(state.val);
+                if (isNaN(lvl) || lvl < 0 || lvl > 3) {
+                    this.log.warn(`bubble_level ${state.val} out of range (0–3) – command ignored`);
+                    await this.setStatusCheck('error');
+                    // Ack with previous valid value from state store
+                    const cur = this.getState('control.bubble_level');
+                    this.setState('control.bubble_level', cur ? cur.val : 1, true);
+                    return;
+                }
                 if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa command: bubble level ? ${state.val}`);
+                    this.log.info(`MSpa command: bubble level → ${lvl}`);
                 }
                 await this.setStatusCheck('send');
-                await this._api.setBubbleLevel(state.val);
+                await this._api.setBubbleLevel(lvl);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                // Immediate ack so UI confirms without waiting for next poll
+                this.setState('control.bubble_level', lvl, true);
                 this.enableRapidPolling();
             } else if (key === 'winter_mode') {
                 this._winterModeActive = !!state.val;
