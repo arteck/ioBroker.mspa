@@ -1680,15 +1680,10 @@ return;
                     if (this._uvcEnsureActive) {
                         await this.stopUvcEnsure();
                     } else {
-                        // ensure was not active, but UVC may still be ON (e.g. started by time window
-                        // or manually) – if so, turn it off as an explicit manual abort
-                        const uvcState = this.getState('control.uvc');
-                        if (uvcState && uvcState.val) {
-                            if (this.config.more_log_enabled) {
-                                this.log.info('UVC daily ensure: UVC is ON – switching OFF (manual abort via skip)');
-                            }
-                            await this.setFeature('uvc', false);
-                            this.enableRapidPolling();
+                        // ensure was not active – skip only affects the daily ensure scheduler,
+                        // NOT a UVC that runs via time window or manually.
+                        if (this.config.more_log_enabled) {
+                            this.log.info('UVC daily ensure: skip set – ensure scheduler paused for today (UVC not affected if running via window/manual)');
                         }
                     }
                 } else {

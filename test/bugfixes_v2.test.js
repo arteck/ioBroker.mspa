@@ -1336,7 +1336,6 @@ describe('control.uvc_ensure_skip_today ï¿½ ack + ensure stop', () => {
             setState: (id, val, ack) => {
                 if (ack) acked[id] = (val && typeof val === 'object' && 'val' in val) ? val.val : val;
             },
-            getState: (id) => id === 'control.uvc' ? { val: !!opts.uvcOn } : null,
             todayStr: () => '2026-04-27',
             stopUvcEnsure: async () => { stopEnsureCalled = true; },
             setFeature: async (f, v) => { setFeatureCalled = true; },
@@ -1352,13 +1351,9 @@ describe('control.uvc_ensure_skip_today ï¿½ ack + ensure stop', () => {
             await nh.send(nh.format('uvcEnsureSkipped'));
             if (a._uvcEnsureActive) {
                 await a.stopUvcEnsure();
-            } else {
-                const uvcState = a.getState('control.uvc');
-                if (uvcState && uvcState.val) {
-                    await a.setFeature('uvc', false);
-                    a.enableRapidPolling();
-                }
             }
+            // skip only pauses the ensure scheduler â€“ UVC running via time window
+            // or manually is NOT touched (no synchronous getState call needed)
         } else {
             a.checkUvcDailyMinimum().catch(() => {});
         }
@@ -1384,11 +1379,12 @@ describe('control.uvc_ensure_skip_today ï¿½ ack + ensure stop', () => {
         const { stopEnsureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false });
         assert.strictEqual(stopEnsureCalled, false);
     });
-    it('turns off UVC when not in ensure-mode but UVC is ON (manual abort)', async () => {
+    it('does NOT turn off UVC via skip when UVC runs via time window (no synchronous getState)', async () => {
+        // skip_today only stops ensure-scheduler; UVC from time window/manual must NOT be turned off
         const { setFeatureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false, uvcOn: true });
-        assert.strictEqual(setFeatureCalled, true, 'setFeature(uvc, false) must be called');
+        assert.strictEqual(setFeatureCalled, false, 'setFeature must NOT be called â€“ skip only affects ensure scheduler');
     });
-    it('does NOT turn off UVC when UVC is already OFF', async () => {
+    it('does NOT turn off UVC when UVC is OFF and ensure not active', async () => {
         const { setFeatureCalled } = await handleUvcEnsureSkip(true, { ensureActive: false, uvcOn: false });
         assert.strictEqual(setFeatureCalled, false);
     });
@@ -1816,9 +1812,9 @@ describe('heat_rate / cool_rate ï¿½ isHeating flag', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 27. TimeControl – ALL-OFF window (action_filter=false + action_heating=false)
+// 27. TimeControl ï¿½ ALL-OFF window (action_filter=false + action_heating=false)
 // ---------------------------------------------------------------------------
-describe('TimeControl – ALL-OFF window (action_filter=false + action_heating=false)', () => {
+describe('TimeControl ï¿½ ALL-OFF window (action_filter=false + action_heating=false)', () => {
     function makeAdapter(opts = {}) {
         const calls = [];
         const logs  = [];
@@ -1846,7 +1842,7 @@ describe('TimeControl – ALL-OFF window (action_filter=false + action_heating=fal
                 a._timeWindowActive[i] = true;
                 try {
                     if (!w.action_filter && !w.action_heating) {
-                        a.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
+                        a.log.info(`Time control [${i + 1}]: ALL-OFF window ï¿½ shutting down heater, UVC, filter`);
                         await a.setFeature('heater', false).catch(() => {});
                         await a.setFeature('uvc',    false).catch(() => {});
                         await a.setFeature('filter', false).catch(() => {});

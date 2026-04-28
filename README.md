@@ -161,8 +161,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ---
 
 ## Changelog
-### **WORK IN PROGRESS**
-* (arteck) fix heatrate 
+### 0.3.3 (2026-04-28)
+* (arteck) fix heatrate
+* (arteck) fix uvc stop
 
 ### 0.3.2 (2026-04-27)
 * (arteck) `computed.pv_active` – fixed: only `true` when a PV time window is currently open (day + time check); was previously activated outside configured windows
@@ -188,9 +189,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 * (arteck) removed `mspa.0.status.uvc_expiry_date`
 * (arteck) `status.heat_target_temp_reached` new format `hh:mm`
 * (arteck) fix set temp after enough PV
-
-### 0.2.19 (2026-04-26)
-* (arteck) typo fix
 
 ## License
 

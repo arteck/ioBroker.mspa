@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "news": {
+      "0.3.3": {
+        "en": "fix heatrate\nfix uvc stop",
+        "de": "hitzebeständigkeit festsetzen\nfix uvc stop",
+        "ru": "фиксировать тепло\nустановить uvc stop",
+        "pt": "fixar o calorato\ncorrigir o uvc stop",
+        "nl": "fix heat rate\nfix uvc stop",
+        "fr": "fixer le taux de chaleur\nfixer uvc arrêt",
+        "it": "correzione della temperatura\nfix uvre stop",
+        "es": "calentador\nparada uvc",
+        "pl": "hejtrat\nfix uvc stop",
+        "uk": "фіксувати тепловіддачу\nкріплення uvc зупинки",
+        "zh-cn": "固定热率\n固定 uc 站点"
+      },
       "0.3.2": {
         "en": "see Readme",
         "de": "Siehe Readme",
@@ -80,45 +93,6 @@
         "pl": "dodaj status.heat _ target _ temporary _ reaced - ETA (hours) aż do osiągnięcia temperatury docelowej, obliczonej na podstawie wartości _ rate _ per _ hour",
         "uk": "add Status.heat target temp reached - ETA (години) до досягнення температури цілі, комп'ютерних від тепла rate per годину",
         "zh-cn": "添加状态. heat target temp reached – ETA(小时)直至达到目标温度,从热率 每小时计算"
-      },
-      "0.2.17": {
-        "en": "log information can be customized (more or less information)",
-        "de": "log-informationen können angepasst werden (mehr oder weniger informationen)",
-        "ru": "информация журнала может быть настроена (больше или меньше информации)",
-        "pt": "informações de log podem ser personalizadas (mais ou menos informações)",
-        "nl": "log informatie kan worden aangepast (min of meer informatie)",
-        "fr": "les informations du journal peuvent être personnalisées (plus ou moins d'informations)",
-        "it": "informazioni di registro possono essere personalizzate (più o meno informazioni)",
-        "es": "información de registro se puede personalizar (más o menos información)",
-        "pl": "informacje dziennika można dostosować (mniej więcej)",
-        "uk": "інформація про журнал можна налаштувати (більше або менше інформації)",
-        "zh-cn": "日志信息可以定制(或多或少的信息)"
-      },
-      "0.2.16": {
-        "en": "add manuall filter counter and reset button",
-        "de": "manuell filterzähler und reset-taste hinzufügen",
-        "ru": "добавить ручной счетчик фильтра и кнопку сброса",
-        "pt": "adicionar contador de filtro manual e botão de reset",
-        "nl": "handmatige filterteller toevoegen en reset knop",
-        "fr": "ajouter le compteur de filtre manuel et le bouton de réinitialisation",
-        "it": "aggiungere il contatore del filtro manuale e il pulsante di reset",
-        "es": "añadir el contador de filtro manual y el botón de reset",
-        "pl": "dodaj licznik filtra manualla i zresetuj",
-        "uk": "додати ручний фільтр лічильник і кнопка скидання",
-        "zh-cn": "添加手动过滤器计数器并重置按钮"
-      },
-      "0.2.15": {
-        "en": "create only model states",
-        "de": "nur modellzustände erstellen",
-        "ru": "создавать только модельные государства",
-        "pt": "criar apenas estados de modelo",
-        "nl": "alleen modelstaten aanmaken",
-        "fr": "créer uniquement des états modèles",
-        "it": "creare solo stati modello",
-        "es": "crear sólo estados modelo",
-        "pl": "tworzyć tylko państwa modelowe",
-        "uk": "створити тільки стан моделі",
-        "zh-cn": "只创建模式状态"
       }
     },
     "titleLang": {
