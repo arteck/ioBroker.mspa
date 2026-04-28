@@ -253,6 +253,7 @@ class MspaAdapter extends utils.Adapter {
             this._uvcEnsureSkipDate = '';
         }
         this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
+        this.setState('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate,  true);
 
         // ── filter runtime ────────────────────────────────────────────────────
         const filterRunningState = await this.getStateAsync('control.filter_running');
