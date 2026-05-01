@@ -161,6 +161,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ---
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (copilot) Adapter requires node.js >= 22 now
+
 ### 0.3.3 (2026-04-28)
 * (arteck) fix heatrate
 * (arteck) fix uvc stop
