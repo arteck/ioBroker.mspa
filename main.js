@@ -1263,13 +1263,34 @@ class MspaAdapter extends utils.Adapter {
         return stateMgr.setStatusCheck(this, status);
     }
 
-    async setFeature(feature, boolVal) {
+    /**
+     * Resets _adapterCommanded[feature] back to null after delayMs.
+     * Guard: only resets if value hasn't changed in the meantime.
+     */
+    _scheduleCommandedReset(feature, val, delayMs = 30_000) {
+        setTimeout(() => {
+            if (this._adapterCommanded[feature] === val) {
+                this._adapterCommanded[feature] = null;
+                this.log.debug(`_adapterCommanded.${feature} reset to null after ${delayMs} ms`);
+            }
+        }, delayMs);
+    }
+
+    /**
+     * @param {string} feature
+     * @param {boolean} boolVal
+     * @param {{ fromUser?: boolean }} [opts]
+     */
+    async setFeature(feature, boolVal, { fromUser = false } = {}) {
         const state = boolVal ? 1 : 0;
         if (feature in this._adapterCommanded) {
             this._adapterCommanded[feature] = boolVal;
         }
         // Mark command time – app-change detection will be suppressed for 30 s
-        this._lastCommandTime = Date.now();
+        // Only set when a real user command triggered this (not automations like PV / time windows / frost).
+        if (fromUser) {
+            this._lastCommandTime = Date.now();
+        }
 
         // UVC can only be switched on when the filter pump is already running.
         // Auto-start filter if needed, then wait up to 15 s for the device to confirm it.
@@ -1325,7 +1346,13 @@ class MspaAdapter extends utils.Adapter {
                 }
                 await this.setStatusCheck('send');
                 const result = await this._api.setHeaterState(state);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
+                    this._scheduleCommandedReset('heater', boolVal);
+                } else {
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.heater = null;
+                }
                 // Immediate optimistic ack so UI confirms without waiting for next poll
                 this.setState('control.heater', boolVal, true);
                 if (boolVal && this._pendingTargetTemp !== null) {
@@ -1398,7 +1425,13 @@ class MspaAdapter extends utils.Adapter {
                 }
                 await this.setStatusCheck('send');
                 await this._api.setFilterState(state);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
+                    this._scheduleCommandedReset('filter', boolVal);
+                } else {
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.filter = null;
+                }
                 this.setState('control.filter', boolVal, true);  // immediate ack
                 return;
             }
@@ -1406,6 +1439,8 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                if (this._api._lastCommandConfirmed) this._scheduleCommandedReset('bubble', boolVal);
+                else this._adapterCommanded.bubble = null;
                 this.setState('control.bubble', boolVal, true);
                 return;
             case 'jet':
@@ -1424,6 +1459,8 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 await this._api.setUvcState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                if (this._api._lastCommandConfirmed) this._scheduleCommandedReset('uvc', boolVal);
+                else this._adapterCommanded.uvc = null;
                 this.setState('control.uvc', boolVal, true);
                 return;
         }
@@ -1498,7 +1535,8 @@ class MspaAdapter extends utils.Adapter {
         if (enable) {
             // read duration from state if not explicitly passed
             if (durationMin === null) {
-                const ds = this.getState('control.manual_override_duration');
+                // FIX: getStateAsync statt getState – funktioniert auch beim Adapter-Start
+                const ds = await this.getStateAsync('control.manual_override_duration');
                 durationMin = ds && ds.val !== null ? Number(ds.val) : 0;
             } else {
                 this.setState('control.manual_override_duration', durationMin, true);
@@ -1508,39 +1546,52 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
                 }
-                await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}));
-                // Guard: a concurrent call may have already disabled override during the await above
-                if (!this._manualOverride) {
-                    this.log.debug('Manual override: aborted during notification send – skipping timer');
-                    return;
-                }
-                this._manualOverrideTimer = setTimeout(async () => {
+
+                // FIX: Timer ZUERST setup (synchron), DANN notification awaiten.
+                // So kann ein concurrent disable-Aufruf den Timer noch korrekt canceln.
+                const timerId = setTimeout(async () => {
                     this._manualOverrideTimer = null;
                     // Guard: another call may have concurrently disabled override
                     if (!this._manualOverride) {
-return;
-}
+                        return;
+                    }
                     if (this.config.more_log_enabled) {
                         this.log.info('Manual override: duration elapsed – automations RESUMED');
                     }
-                    await notificationHelper.send(notificationHelper.format('overrideEnded'));
                     this._manualOverride = false;
                     this.setState('control.manual_override', false, true);
                     this.setState('control.manual_override_duration', 0, true);
+                    await notificationHelper.send(notificationHelper.format('overrideEnded'))
+                        .catch(e => this.log.error(`overrideEnded notification: ${e.message}`));
                     // Re-evaluate all automations now that override is lifted
                     await this._resumeAfterOverride();
                 }, durationMin * 60 * 1000);
+
+                this._manualOverrideTimer = timerId;
+
+                await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}))
+                    .catch(e => this.log.error(`overrideOnTimed notification: ${e.message}`));
+
+                // Guard: a concurrent call may have already disabled override during the await above
+                if (!this._manualOverride) {
+                    this.log.debug('Manual override: aborted during notification send – cancelling timer');
+                    clearTimeout(timerId);
+                    this._manualOverrideTimer = null;
+                    return;
+                }
             } else {
                 if (this.config.more_log_enabled) {
                     this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
                 }
-                await notificationHelper.send(notificationHelper.format('overrideOnIndefinite'));
+                await notificationHelper.send(notificationHelper.format('overrideOnIndefinite'))
+                    .catch(e => this.log.error(`overrideOnIndefinite notification: ${e.message}`));
             }
         } else {
             if (this.config.more_log_enabled) {
                 this.log.info('Manual override: DISABLED – all automations RESUMED');
             }
-            await notificationHelper.send(notificationHelper.format('overrideOff'));
+            await notificationHelper.send(notificationHelper.format('overrideOff'))
+                .catch(e => this.log.error(`overrideOff notification: ${e.message}`));
             this.setState('control.manual_override_duration', 0, true);
             // immediately re-evaluate automations with latest data
             await this._resumeAfterOverride();
@@ -1611,7 +1662,8 @@ return;
                 if (this.config.more_log_enabled) {
                     this.log.info(`MSpa command: ${key} ? ${state.val}`);
                 }
-                await this.setFeature(key, !!state.val);
+                // fromUser=true: setzt _lastCommandTime für App-Change-Detection-Suppression
+                await this.setFeature(key, !!state.val, { fromUser: true });
                 this.enableRapidPolling();
             } else if (key === 'target_temperature') {
                 if (this.config.more_log_enabled) {
@@ -1653,6 +1705,10 @@ return;
                     this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
                 }
                 this.setState('control.season_enabled', this._seasonEnabled, true);
+                // FIX: sofort Zeitfenster neu auswerten statt bis zum nächsten 60s-Tick zu warten
+                this.checkTimeWindows().catch(e =>
+                    this.log.error(`checkTimeWindows after season_enabled change: ${e.message}`)
+                );
 
             } else if (key === 'manual_override') {
                 const enable = !!state.val;

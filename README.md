@@ -158,9 +158,11 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 ---
 
----
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) fix manual override
+
 ### 0.3.3 (2026-04-28)
 * (arteck) fix heatrate
 * (arteck) fix uvc stop
