@@ -1266,6 +1266,10 @@ class MspaAdapter extends utils.Adapter {
     /**
      * Resets _adapterCommanded[feature] back to null after delayMs.
      * Guard: only resets if value hasn't changed in the meantime.
+     *
+     * @param feature
+     * @param val
+     * @param delayMs
      */
     _scheduleCommandedReset(feature, val, delayMs = 30_000) {
         setTimeout(() => {
@@ -1439,8 +1443,11 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                if (this._api._lastCommandConfirmed) this._scheduleCommandedReset('bubble', boolVal);
-                else this._adapterCommanded.bubble = null;
+                if (this._api._lastCommandConfirmed) {
+this._scheduleCommandedReset('bubble', boolVal);
+} else {
+this._adapterCommanded.bubble = null;
+}
                 this.setState('control.bubble', boolVal, true);
                 return;
             case 'jet':
@@ -1459,8 +1466,11 @@ class MspaAdapter extends utils.Adapter {
                 await this.setStatusCheck('send');
                 await this._api.setUvcState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                if (this._api._lastCommandConfirmed) this._scheduleCommandedReset('uvc', boolVal);
-                else this._adapterCommanded.uvc = null;
+                if (this._api._lastCommandConfirmed) {
+this._scheduleCommandedReset('uvc', boolVal);
+} else {
+this._adapterCommanded.uvc = null;
+}
                 this.setState('control.uvc', boolVal, true);
                 return;
         }
