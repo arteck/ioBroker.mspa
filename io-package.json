@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "news": {
+      "0.3.4": {
+        "en": "fix manual override\nfix manual override",
+        "de": "manuelles override reparieren\nmanuelles override reparieren",
+        "ru": "исправить ручное отключение\nисправить ручное отключение",
+        "pt": "corrigir sobreposição manual\ncorrigir sobreposição manual",
+        "nl": "fix handmatige override\nfix handmatige override",
+        "fr": "correction du dépassement manuel\ncorrection du dépassement manuel",
+        "it": "correzione manuale override\ncorrezione manuale override",
+        "es": "corrección manual\ncorrección manual",
+        "pl": "naprawić ręczne sterowanie\nnaprawić ręczne sterowanie",
+        "uk": "ручна накладна\nручна накладна",
+        "zh-cn": "修补手动覆盖\n修补手动覆盖"
+      },
       "0.3.3": {
         "en": "fix heatrate\nfix uvc stop",
         "de": "hitzebeständigkeit festsetzen\nfix uvc stop",
@@ -80,19 +93,6 @@
         "pl": "typo",
         "uk": "типо",
         "zh-cn": "类型"
-      },
-      "0.2.18": {
-        "en": "add status.heat_target_temp_reached – ETA (hours) until target temperature is reached, computed from heat_rate_per_hour",
-        "de": "status.heat target temp reached – ETA (Stunden) bis die Zieltemperatur erreicht ist, berechnet aus heat rate per hour",
-        "ru": "добавить status.heat target temp reached - ETA (часы) до достижения целевой температуры, вычисляемой из тепловой скорости per hour",
-        "pt": "adicionar status.heat target temp ached – ETA (horas) até atingir a temperatura alvo, calculada a partir de calor rate per hour",
-        "nl": "status.heat target temp reached ETA (uren) toevoegen totdat de doeltemperatuur is bereikt, berekend vanuit heat rate per hour",
-        "fr": "ajouter status.heat target temp reached – ETA (heures) jusqu'à ce que la température cible soit atteinte, calculée à partir de heating rate per heure",
-        "it": "aggiungere status.heat target temp reached – ETA (ore) fino a raggiungere la temperatura di destinazione, calcolato da heat rate per hour",
-        "es": "añadir status.heat target temp reached – ETA (horas) hasta que se alcanza la temperatura objetivo, computado desde heat rate per hour",
-        "pl": "dodaj status.heat _ target _ temporary _ reaced - ETA (hours) aż do osiągnięcia temperatury docelowej, obliczonej na podstawie wartości _ rate _ per _ hour",
-        "uk": "add Status.heat target temp reached - ETA (години) до досягнення температури цілі, комп'ютерних від тепла rate per годину",
-        "zh-cn": "添加状态. heat target temp reached – ETA(小时)直至达到目标温度,从热率 每小时计算"
       }
     },
     "titleLang": {

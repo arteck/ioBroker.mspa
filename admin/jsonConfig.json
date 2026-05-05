@@ -603,7 +603,7 @@
               "max": 42,
               "step": 0.5,
               "width": "8%",
-              "hidden": "!data.action_filter"
+              "hidden": "!data.action_heating || !data.action_filter"
             },
             {
               "type": "checkbox",

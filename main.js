@@ -253,7 +253,7 @@ class MspaAdapter extends utils.Adapter {
             this._uvcEnsureSkipDate = '';
         }
         this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
-        this.setState('control.uvc_ensure_skip_date',  this._uvcEnsureSkipDate,  true);
+        this.setState('control.uvc_ensure_skip_date', this._uvcEnsureSkipDate, true);
 
         // ── filter runtime ────────────────────────────────────────────────────
         const filterRunningState = await this.getStateAsync('control.filter_running');
@@ -481,6 +481,16 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug('Time control: manual override active – skipping time window control');
             return;
         }
+        // --- PV guard -------------------------------------------------------
+        // PV surplus control has priority – but ONLY if at least one time window
+        // has PV surplus control enabled (pv_steu=true). If no window uses PV,
+        // _pvActive can only be a stale persisted state → do not block time windows.
+        const anyPvWindow = Array.isArray(windows) &&
+            windows.some(w => w.active && w.pv_steu);
+        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
+            this.log.debug('Time control: PV control active – skipping time window control');
+            return;
+        }
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
             this.log.debug('Time control: outside season – skipping time window control (polling continues)');
@@ -511,11 +521,9 @@ class MspaAdapter extends utils.Adapter {
         for (let i = 0; i < windows.length; i++) {
             const w = windows[i];
             if (!w.active) {
-                // if it was active before, deactivate cleanly
-                if (this._timeWindowActive[i]) {
-                    this._timeWindowActive[i] = false;
-                    await this.deactivateWindow(w, i);
-                }
+                // active=false means the window is disabled entirely – skip without any action.
+                // Features that may be running are NOT touched; the user disabled the window
+                // intentionally and must manage the device manually.
                 continue;
             }
 
@@ -542,17 +550,27 @@ class MspaAdapter extends utils.Adapter {
                     // → actively shut down everything that is currently running
                     if (!w.action_filter && !w.action_heating) {
                         this.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
-                        await this.setFeature('heater', false).catch(() => {});
-                        await this.setFeature('uvc',    false).catch(() => {});
-                        await this.setFeature('filter', false).catch(() => {});
+                        await this.setFeature('heater', false).catch(() => {
+                        });
+                        await this.setFeature('uvc', false).catch(() => {
+                        });
+                        await this.setFeature('filter', false).catch(() => {
+                        });
                         this.enableRapidPolling();
                     } else {
                         if (w.action_heating) {
-                            // heater requires filter pump – start it first even if action_filter is off
+                            // heater requires filter pump – start it first
+                            // Case 1: action_filter=false → start filter as heating prerequisite
+                            // Case 2: action_filter=true  → filter will be started below, but
+                            //         we need it running BEFORE the heater command → start it now
                             if (!w.action_filter) {
                                 this.log.debug(`Time control [${i + 1}]: filter ON (required for heating)`);
                                 await this.setFeature('filter', true);
                                 this._pumpStartedForHeating = true;
+                            } else {
+                                // action_filter=true: start filter first so heater has pump running
+                                this.log.debug(`Time control [${i + 1}]: filter ON (before heater, action_filter=true)`);
+                                await this.setFeature('filter', true);
                             }
                             this.log.debug(`Time control [${i + 1}]: heater ON`);
                             await this.setFeature('heater', true);
@@ -597,6 +615,18 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async deactivateWindow(w, i) {
+        // If PV is currently active, it manages the features – don't touch them.
+        // Guard only applies when at least one window has PV surplus control enabled;
+        // otherwise _pvActive can only be a stale persisted value.
+        const anyPvWindow = Array.isArray(this.config.timeWindows) &&
+            this.config.timeWindows.some(win => win.active && win.pv_steu);
+        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
+            if (this.config.more_log_enabled) {
+                this.log.info(`Time control [${i + 1}]: window END – PV control active, skipping deactivation`);
+            }
+            return;
+        }
+
         // Cancel any existing follow-up timer for this window
         if (this._pumpFollowUpTimers[i]) {
             clearTimeout(this._pumpFollowUpTimers[i]);
@@ -1285,7 +1315,7 @@ class MspaAdapter extends utils.Adapter {
      * @param {boolean} boolVal
      * @param {{ fromUser?: boolean }} [opts]
      */
-    async setFeature(feature, boolVal, { fromUser = false } = {}) {
+    async setFeature(feature, boolVal, {fromUser = false} = {}) {
         const state = boolVal ? 1 : 0;
         if (feature in this._adapterCommanded) {
             this._adapterCommanded[feature] = boolVal;
@@ -1302,7 +1332,8 @@ class MspaAdapter extends utils.Adapter {
             const filterRunning = () =>
                 (this._lastData && this._lastData.filter === 'on') ||
                 (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1) ||
-                (this._adapterCommanded.filter === true);
+                (this._adapterCommanded.filter === true) ||
+                (this._pvManagedFeatures && this._pvManagedFeatures.filter === true);
 
             if (!filterRunning()) {
                 if (this.config.more_log_enabled) {
@@ -1444,10 +1475,10 @@ class MspaAdapter extends utils.Adapter {
                 await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 if (this._api._lastCommandConfirmed) {
-this._scheduleCommandedReset('bubble', boolVal);
-} else {
-this._adapterCommanded.bubble = null;
-}
+                    this._scheduleCommandedReset('bubble', boolVal);
+                } else {
+                    this._adapterCommanded.bubble = null;
+                }
                 this.setState('control.bubble', boolVal, true);
                 return;
             case 'jet':
@@ -1467,10 +1498,10 @@ this._adapterCommanded.bubble = null;
                 await this._api.setUvcState(state);
                 await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
                 if (this._api._lastCommandConfirmed) {
-this._scheduleCommandedReset('uvc', boolVal);
-} else {
-this._adapterCommanded.uvc = null;
-}
+                    this._scheduleCommandedReset('uvc', boolVal);
+                } else {
+                    this._adapterCommanded.uvc = null;
+                }
                 this.setState('control.uvc', boolVal, true);
                 return;
         }
@@ -1673,7 +1704,7 @@ this._adapterCommanded.uvc = null;
                     this.log.info(`MSpa command: ${key} ? ${state.val}`);
                 }
                 // fromUser=true: setzt _lastCommandTime für App-Change-Detection-Suppression
-                await this.setFeature(key, !!state.val, { fromUser: true });
+                await this.setFeature(key, !!state.val, {fromUser: true});
                 this.enableRapidPolling();
             } else if (key === 'target_temperature') {
                 if (this.config.more_log_enabled) {

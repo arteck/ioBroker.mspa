@@ -160,7 +160,8 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.3.4 (2026-05-05)
+* (arteck) fix manual override
 * (arteck) fix manual override
 
 ### 0.3.3 (2026-04-28)
@@ -186,11 +187,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 ### 0.3.0 (2026-04-26)
 * (arteck) removed deprecated setStateAsync
-
-### 0.2.20 (2026-04-26)
-* (arteck) removed `mspa.0.status.uvc_expiry_date`
-* (arteck) `status.heat_target_temp_reached` new format `hh:mm`
-* (arteck) fix set temp after enough PV
 
 ## License
 
