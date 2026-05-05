@@ -306,62 +306,69 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async onUnload(callback) {
-        if (this._pollTimer) {
-            clearTimeout(this._pollTimer);
-        }
-        if (this._timeTimer) {
-            clearInterval(this._timeTimer);
-        }
-        if (this._pvDeactivateTimer) {
-            clearTimeout(this._pvDeactivateTimer);
-        }
-        if (this._pvDeactivateCountdownInt) {
-            clearInterval(this._pvDeactivateCountdownInt);
-        }
-        if (this._pvStageTimer) {
-            clearTimeout(this._pvStageTimer);
-        }
-        if (this._uvcEnsureTimer) {
-            clearInterval(this._uvcEnsureTimer);
-        }
-        if (this._pendingTempTimer) {
-            clearTimeout(this._pendingTempTimer);
-        }
-        if (this._manualOverrideTimer) {
-            clearTimeout(this._manualOverrideTimer);
-            this._manualOverrideTimer = null;
-        }
-        // Persist manual_override=false so adapter starts clean after restart
         try {
-            this.setState('control.manual_override', {val: false, ack: true});
-            this.setState('control.manual_override_duration', {val: 0, ack: true});
-        } catch (_) { /* ignore on unload */
-        }
-        for (const t of this._pumpFollowUpTimers) {
-            if (t) {
+            if (this._pollTimer) {
+                clearTimeout(this._pollTimer);
+            }
+            if (this._timeTimer) {
+                clearInterval(this._timeTimer);
+            }
+            if (this._pvDeactivateTimer) {
+                clearTimeout(this._pvDeactivateTimer);
+            }
+            if (this._pvDeactivateCountdownInt) {
+                clearInterval(this._pvDeactivateCountdownInt);
+            }
+            if (this._pvStageTimer) {
+                clearTimeout(this._pvStageTimer);
+            }
+            if (this._uvcEnsureTimer) {
+                clearInterval(this._uvcEnsureTimer);
+            }
+            if (this._pendingTempTimer) {
+                clearTimeout(this._pendingTempTimer);
+            }
+            if (this._manualOverrideTimer) {
+                clearTimeout(this._manualOverrideTimer);
+                this._manualOverrideTimer = null;
+            }
+            // Persist manual_override=false so adapter starts clean after restart
+            try {
+                await this.setStateAsync('control.manual_override', {val: false, ack: true});
+                await this.setStateAsync('control.manual_override_duration', {val: 0, ack: true});
+                this._manualOverride = false;
+            } catch (e) {
+                this.log.error(`onUnload: failed to persist manual_override state: ${e.message}`);
+            }
+            for (const t of this._pumpFollowUpTimers) {
+                if (t) {
+                    clearTimeout(t);
+                }
+            }
+            // Clear any stray fire-and-forget timers registered via _setStray()
+            for (const t of this._strayTimers) {
                 clearTimeout(t);
             }
+            this._strayTimers.clear();
+            consumptionHelper.cleanup();
+            notificationHelper.cleanup();
+            // Persist accumulated filter runtime hours (including any currently-running session)
+            try {
+                const finalFilterH = this.accumulateFilterHours();
+                this.setState('control.filter_running', {val: Math.round(finalFilterH * 100) / 100, ack: true});
+            } catch (_) { /* ignore on unload */
+            }
+            // Persist accumulated UVC hours (including any currently-running session)
+            try {
+                const finalHours = this.accumulateUvcHours();
+                this.setState('status.uvc_hours_used', {val: Math.round(finalHours * 100) / 100, ack: true});
+            } catch (_) { /* ignore on unload */
+            }
+        } catch (e) {
+            this.log.error(`onUnload unexpected error: ${e.message}`);
+        } finally {
+            callback();
         }
-        // Clear any stray fire-and-forget timers registered via _setStray()
-        for (const t of this._strayTimers) {
-            clearTimeout(t);
-        }
-        this._strayTimers.clear();
-        consumptionHelper.cleanup();
-        notificationHelper.cleanup();
-        // Persist accumulated filter runtime hours (including any currently-running session)
-        try {
-            const finalFilterH = this.accumulateFilterHours();
-            this.setState('control.filter_running', {val: Math.round(finalFilterH * 100) / 100, ack: true});
-        } catch (_) { /* ignore on unload */
-        }
-        // Persist accumulated UVC hours (including any currently-running session)
-        try {
-            const finalHours = this.accumulateUvcHours();
-            this.setState('status.uvc_hours_used', {val: Math.round(finalHours * 100) / 100, ack: true});
-        } catch (_) { /* ignore on unload */
-        }
-        callback();
     }
 
     // -------------------------------------------------------------------------
@@ -1651,6 +1658,14 @@ class MspaAdapter extends utils.Adapter {
                     this.log.error(`resumeAfterOverride/checkFrostProtection: ${e.message}`)
                 )
             );
+        } else if (this._winterModeActive) {
+            // No poll data yet but winter mode is active – trigger immediate poll
+            this.log.warn('resumeAfterOverride: no poll data yet but winter mode active – triggering immediate poll');
+            if (this._pollTimer) {
+                clearTimeout(this._pollTimer);
+                this._pollTimer = null;
+            }
+            this._pollTimer = setTimeout(() => this.doPoll(), 500);
         }
         tasks.push(
             this.checkTimeWindows().catch(e =>
@@ -1737,8 +1752,16 @@ class MspaAdapter extends utils.Adapter {
                     this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
                 }
                 this.setState('control.winter_mode', this._winterModeActive, true);
-                if (this._lastData) {
+                if (this._lastData && Object.keys(this._lastData).length) {
                     await this.checkFrostProtection(this._lastData);
+                } else if (this._winterModeActive) {
+                    // No poll data yet – trigger immediate poll so frost protection is evaluated
+                    this.log.warn('winter_mode enabled but no poll data yet – triggering immediate poll');
+                    if (this._pollTimer) {
+                        clearTimeout(this._pollTimer);
+                        this._pollTimer = null;
+                    }
+                    this._pollTimer = setTimeout(() => this.doPoll(), 500);
                 }
             } else if (key === 'season_enabled') {
                 this._seasonEnabled = !!state.val;
@@ -1792,7 +1815,13 @@ class MspaAdapter extends utils.Adapter {
                 }
 
             } else if (key === 'manual_override_duration') {
-                const newDuration = Number(state.val) || 0;
+                const rawDuration = parseFloat(state.val);
+                if (isNaN(rawDuration) || rawDuration < 0) {
+                    this.log.warn(`manual_override_duration: invalid value "${state.val}" – resetting to 0`);
+                    this.setState('control.manual_override_duration', 0, true);
+                    return;
+                }
+                const newDuration = Math.floor(rawDuration); // nur ganze Minuten
                 // Always persist the new value with ack first
                 this.setState('control.manual_override_duration', newDuration, true);
                 // Only restart override timer if override is currently active
