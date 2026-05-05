@@ -114,6 +114,7 @@ class MspaAdapter extends utils.Adapter {
         this._pumpFollowUpTimers = [];    // follow-up timers per window index
 
         this._firstPollDone = false; // true after first successful poll (used for startup device-state check)
+        this._rawApiLogged = false;  // true after the raw API response has been logged once
 
         // Tracks which apiField-based states have been created for this specific device model.
         // States NOT in this set are not published in publishStatus() to avoid setting
@@ -170,7 +171,7 @@ class MspaAdapter extends utils.Adapter {
             }
             // FIX: Bei Netz-/API-Fehlern alle 30 s erneut versuchen, bis ein onUnload kommt
             this.log.error(`MSpa init failed: ${err.message} – retry in 30 s`);
-            this._initRetryTimer = this.setStray(() => {
+            this.setStray(() => {
                 this.onReady().catch(e => this.log.error(`MSpa init retry failed: ${e.message}`));
             }, 30_000);
             return;
@@ -1040,7 +1041,10 @@ class MspaAdapter extends utils.Adapter {
             await this.publishStatus(data);
             await this.checkFrostProtection(data);
             await this.checkPowerCycle(data);
-            await this.checkAdaptivePolling(data);
+            // Adaptive polling: rapid mode during active heating cycle
+            if (data.heat_state === 2 && data.heater === 'on') {
+                this._rapidUntil = Date.now() + 15_000;
+            }
             this.setState('info.connection', true, true);
             this.setState('info.lastUpdate', Date.now(), true);
             this._consecutiveErrors = 0;
@@ -1090,13 +1094,8 @@ class MspaAdapter extends utils.Adapter {
     }
 
     // -------------------------------------------------------------------------
-    // Adaptive polling
+    // Adaptive polling + rapid polling
     // -------------------------------------------------------------------------
-    async checkAdaptivePolling(data) {
-        if (data.heat_state === 2 && data.heater === 'on') {
-            this._rapidUntil = Date.now() + 15_000;
-        }
-    }
 
     enableRapidPolling() {
         this._rapidUntil = Date.now() + 15_000;
