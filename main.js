@@ -544,6 +544,14 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
 
             if (inWin && !wasIn) {
+                // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
+                // PV-Controller die Aktivierung – der Zeit-Scheduler darf NICHT
+                // direkt einschalten, wenn kein ausreichender Überschuss vorliegt.
+                if (w.pv_steu) {
+                    this._timeWindowActive[i] = true; // Zeitfenster als "aktiv" markieren
+                    this.log.debug(`Time control [${i + 1}]: window START (${start}–${end}) – pv_steu=true, skipping direct activation (PV controller handles this)`);
+                    continue; // kein Hardware-Befehl – PV evaluateSurplus entscheidet
+                }
                 this._timeWindowActive[i] = true;
                 if (this.config.more_log_enabled) {
                     this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
