@@ -28,7 +28,7 @@
     "@iobroker/adapter-core": "^3.3.2",
     "@iobroker/dm-utils": "^3.0.3",
     "humanize-duration": "^3.33.2",
-    "axios": "^1.15.0",
+    "axios": "^1.15.2",
     "crypto-js": "^4.2.0"
   },
   "devDependencies": {
