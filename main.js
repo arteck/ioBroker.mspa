@@ -307,6 +307,8 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async onUnload(callback) {
+        // Set flag FIRST so any concurrently-running timer callbacks abort immediately
+        this._unloading = true;
         try {
             if (this._pollTimer) {
                 clearTimeout(this._pollTimer);
@@ -529,9 +531,19 @@ class MspaAdapter extends utils.Adapter {
         for (let i = 0; i < windows.length; i++) {
             const w = windows[i];
             if (!w.active) {
-                // active=false means the window is disabled entirely – skip without any action.
-                // Features that may be running are NOT touched; the user disabled the window
-                // intentionally and must manage the device manually.
+                // active=false means the window is disabled entirely.
+                // If it was running when disabled, deactivate hardware now.
+                if (this._timeWindowActive[i]) {
+                    this.log.info(`Time control [${i + 1}]: window disabled while active – deactivating`);
+                    await this.deactivateWindow(w, i);
+                    if (!this._timeWindowActive[i]) {
+                        await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
+                            window: i + 1,
+                            start: w.start || '00:00',
+                            end: w.end || '00:00'
+                        })).catch(e => this.log.error(`timeWindowEnded notification: ${e.message}`));
+                    }
+                }
                 continue;
             }
 
@@ -552,15 +564,6 @@ class MspaAdapter extends utils.Adapter {
                     this.log.debug(`Time control [${i + 1}]: window START (${start}–${end}) – pv_steu=true, skipping direct activation (PV controller handles this)`);
                     continue; // kein Hardware-Befehl – PV evaluateSurplus entscheidet
                 }
-                this._timeWindowActive[i] = true;
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
-                }
-                await notificationHelper.send(notificationHelper.format('timeWindowStarted', {
-                    window: i + 1,
-                    start,
-                    end
-                }));
                 try {
                     // ── "All OFF" window: action_filter=false + action_heating=false
                     // → actively shut down everything that is currently running
@@ -609,23 +612,35 @@ class MspaAdapter extends utils.Adapter {
                         }
                         this.enableRapidPolling();
                     }
+                    // Notification NUR nach erfolgreicher Aktivierung
+                    this._timeWindowActive[i] = true;
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
+                    }
+                    await notificationHelper.send(notificationHelper.format('timeWindowStarted', {
+                        window: i + 1,
+                        start,
+                        end
+                    })).catch(e => this.log.error(`timeWindowStarted notification: ${e.message}`));
                 } catch (err) {
-                    this._timeWindowActive[i] = false; // rollback – retry next minute
+                    // _timeWindowActive[i] bleibt false – retry next minute
                     this.log.error(`Time control [${i + 1}]: activation FAILED – ${err.message}`);
                     this.log.debug(`Time control [${i + 1}]: ${err.stack}`);
                 }
 
             } else if (!inWin && wasIn) {
-                this._timeWindowActive[i] = false;
                 if (this.config.more_log_enabled) {
                     this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
                 }
-                await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
-                    window: i + 1,
-                    start,
-                    end
-                }));
                 await this.deactivateWindow(w, i);
+                // Notification NUR nach erfolgreicher Deaktivierung (deactivateWindow rollt _timeWindowActive[i] im Fehlerfall zurück)
+                if (!this._timeWindowActive[i]) {
+                    await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
+                        window: i + 1,
+                        start,
+                        end
+                    })).catch(e => this.log.error(`timeWindowEnded notification: ${e.message}`));
+                }
             }
         }
     }
@@ -643,6 +658,27 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
 
+        // ── Overlap guard ───────────────────────────────────────────────────
+        // Before turning off any feature, check whether ANOTHER window that is
+        // still active (index != i, _timeWindowActive[j]=true) also uses that
+        // feature. If so, do NOT turn it off – it must keep running for that window.
+        const windows = this.config.timeWindows;
+        const otherNeedsFilter = Array.isArray(windows) && windows.some((win, j) =>
+            j !== i && this._timeWindowActive[j] && win.active &&
+            (win.action_filter || win.action_heating)
+        );
+        const otherNeedsHeater = Array.isArray(windows) && windows.some((win, j) =>
+            j !== i && this._timeWindowActive[j] && win.active && win.action_heating
+        );
+        const otherNeedsUvc = Array.isArray(windows) && windows.some((win, j) =>
+            j !== i && this._timeWindowActive[j] && win.active && win.action_uvc
+        );
+
+        if (otherNeedsFilter || otherNeedsHeater || otherNeedsUvc) {
+            this.log.debug(`Time control [${i + 1}]: window END – overlapping window still active, skipping feature shutdown (filter=${otherNeedsFilter}, heater=${otherNeedsHeater}, uvc=${otherNeedsUvc})`);
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         // Cancel any existing follow-up timer for this window
         if (this._pumpFollowUpTimers[i]) {
             clearTimeout(this._pumpFollowUpTimers[i]);
@@ -656,27 +692,38 @@ class MspaAdapter extends utils.Adapter {
         const uvcMinMet = todayH >= uvcMinH;
 
         try {
-            // Always turn off heater immediately
-            if (w.action_heating) {
+            // Always turn off heater immediately – unless another window still needs it
+            if (w.action_heating && !otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater OFF`);
                 await this.setFeature('heater', false);
+            } else if (w.action_heating && otherNeedsHeater) {
+                this.log.debug(`Time control [${i + 1}]: heater kept ON – required by overlapping window`);
             }
 
-            // UVC off – but only if daily minimum is already reached.
-            // If not met, the daily ensure scheduler will keep UVC (and filter) running
-            // until the minimum is fulfilled. No need to stop and restart.
-            if (w.action_filter && w.action_uvc) {
+            // UVC off – but only if daily minimum is already reached AND no other window needs it.
+            if (w.action_filter && w.action_uvc && !otherNeedsUvc) {
                 if (uvcMinMet) {
-                    this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h = ${uvcMinH} h)`);
+                    this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h >= ${uvcMinH} h)`);
                     await this.setFeature('uvc', false);
                 } else {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
                     }
                     // Filter must also stay ON for UVC – skip filter shutdown below
+                    this._timeWindowActive[i] = false;
                     this.enableRapidPolling();
                     return;
                 }
+            } else if (w.action_filter && w.action_uvc && otherNeedsUvc) {
+                this.log.debug(`Time control [${i + 1}]: UVC kept ON – required by overlapping window`);
+            }
+
+            // Filter pump: only stop if no other window needs it
+            if (otherNeedsFilter) {
+                this.log.debug(`Time control [${i + 1}]: filter kept ON – required by overlapping window`);
+                this._timeWindowActive[i] = false;
+                this.enableRapidPolling();
+                return;
             }
 
             // Filter pump: immediate or delayed?
@@ -698,24 +745,36 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
                 }
-                this._pumpFollowUpTimers[i] = setTimeout(async () => {
+                this._pumpFollowUpTimers[i] = setTimeout(() => {
+                    if (this._unloading) return;
                     this._pumpFollowUpTimers[i] = null;
-                    try {
-                        if (this.config.more_log_enabled) {
-                            this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
-                        }
-                        await this.setFeature('filter', false);
-                        this._pumpStartedForHeating = false;
-                        this.enableRapidPolling();
-                    } catch (err) {
-                        this.log.error(`Time control [${i + 1}]: follow-up filter OFF FAILED – ${err.message}`);
+                    // Re-check overlap at the time the follow-up fires
+                    const stillNeeded = Array.isArray(this.config.timeWindows) &&
+                        this.config.timeWindows.some((win, j) =>
+                            j !== i && this._timeWindowActive[j] && win.active &&
+                            (win.action_filter || win.action_heating)
+                        );
+                    if (stillNeeded) {
+                        this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed by another window – skipping filter OFF`);
+                        return;
                     }
-                }, followUpMin * 60 * 1000);
+                    if (this.config.more_log_enabled) {
+                        this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
+                    }
+                    this.setFeature('filter', false)
+                        .then(() => {
+                            this._pumpStartedForHeating = false;
+                            this.enableRapidPolling();
+                        })
+                        .catch(err => this.log.error(`Time control [${i + 1}]: follow-up filter OFF FAILED – ${err.message}`));
+                }, Math.round(followUpMin * 60 * 1000));
             }
 
+            // Deactivation completed successfully – mark window as inactive
+            this._timeWindowActive[i] = false;
             this.enableRapidPolling();
         } catch (err) {
-            this._timeWindowActive[i] = true; // rollback – retry next minute
+            // _timeWindowActive[i] remains true – retry next minute
             this.log.error(`Time control [${i + 1}]: deactivation FAILED – ${err.message}`);
             this.log.debug(`Time control [${i + 1}]: ${err.stack}`);
         }
@@ -1604,23 +1663,23 @@ class MspaAdapter extends utils.Adapter {
 
                 // FIX: Timer ZUERST setup (synchron), DANN notification awaiten.
                 // So kann ein concurrent disable-Aufruf den Timer noch korrekt canceln.
-                const timerId = setTimeout(async () => {
+                const timerId = setTimeout(() => {
+                    // Guard: adapter is already shutting down
+                    if (this._unloading) return;
                     this._manualOverrideTimer = null;
                     // Guard: another call may have concurrently disabled override
-                    if (!this._manualOverride) {
-                        return;
-                    }
+                    if (!this._manualOverride) return;
                     if (this.config.more_log_enabled) {
                         this.log.info('Manual override: duration elapsed – automations RESUMED');
                     }
                     this._manualOverride = false;
                     this.setState('control.manual_override', false, true);
                     this.setState('control.manual_override_duration', 0, true);
-                    await notificationHelper.send(notificationHelper.format('overrideEnded'))
-                        .catch(e => this.log.error(`overrideEnded notification: ${e.message}`));
-                    // Re-evaluate all automations now that override is lifted
-                    await this._resumeAfterOverride();
-                }, durationMin * 60 * 1000);
+                    Promise.resolve()
+                        .then(() => notificationHelper.send(notificationHelper.format('overrideEnded')))
+                        .then(() => this._resumeAfterOverride())
+                        .catch(e => this.log.error(`manualOverride auto-disable failed: ${e.message}`));
+                }, Math.round(durationMin * 60 * 1000));
 
                 this._manualOverrideTimer = timerId;
 
@@ -1628,7 +1687,7 @@ class MspaAdapter extends utils.Adapter {
                     .catch(e => this.log.error(`overrideOnTimed notification: ${e.message}`));
 
                 // Guard: a concurrent call may have already disabled override during the await above
-                if (!this._manualOverride) {
+                if (!this._manualOverride || this._unloading || this._manualOverrideTimer !== timerId) {
                     this.log.debug('Manual override: aborted during notification send – cancelling timer');
                     clearTimeout(timerId);
                     this._manualOverrideTimer = null;
@@ -1658,6 +1717,11 @@ class MspaAdapter extends utils.Adapter {
      * Each task runs independently so one failure does not block the others.
      */
     async _resumeAfterOverride() {
+        // Guard: adapter is shutting down – do not start new automations
+        if (this._unloading) {
+            this.log.debug('_resumeAfterOverride: adapter unloading – skipped');
+            return;
+        }
         const tasks = [];
         if (this._lastData && Object.keys(this._lastData).length) {
             tasks.push(
