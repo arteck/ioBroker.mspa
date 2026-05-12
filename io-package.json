@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.6",
+    "version": "0.3.7",
     "news": {
+      "0.3.7": {
+        "en": "add warning as text",
+        "de": "warnung hinzufügen als text",
+        "ru": "добавить предупреждение в текст",
+        "pt": "adicionar aviso como texto",
+        "nl": "waarschuwing toevoegen als tekst",
+        "fr": "ajouter un avertissement comme texte",
+        "it": "aggiungere avviso come testo",
+        "es": "añadir advertencia como texto",
+        "pl": "dodaj ostrzeżenie jako tekst",
+        "uk": "додати попередження як текст",
+        "zh-cn": "添加警告为文本"
+      },
       "0.3.6": {
         "en": "fix daily uvc timer after adapter restart",
         "de": "täglich uvc timer nach dem adapter neustart",
@@ -80,19 +93,6 @@
         "pl": "zobacz Readme",
         "uk": "див. файл Readme",
         "zh-cn": "请参阅自述文件"
-      },
-      "0.3.0": {
-        "en": "del deprectated setStateAsync",
-        "de": "del deprected setStateAsync",
-        "ru": "обсуждение StateAsync",
-        "pt": "del deprectated setStateAsync",
-        "nl": "del deprectated setStateAsync",
-        "fr": "set dépréciéStateAsync",
-        "it": "del set deprettatoStateAsync",
-        "es": "del deprectated setStateAsync",
-        "pl": "del deprectated setStateAsync",
-        "uk": "deprectated setStateAsync",
-        "zh-cn": "已贬值的设置"
       }
     },
     "titleLang": {

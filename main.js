@@ -285,11 +285,11 @@ class MspaAdapter extends utils.Adapter {
             : '';
         if (tsToday === today && uvcTodayState && typeof uvcTodayState.val === 'number' && uvcTodayState.val > 0) {
             this._uvcDayStartHours = Math.max(0, this._uvcHoursUsed - uvcTodayState.val);
-            this._uvcDayStartDate  = today;
+            this._uvcDayStartDate = today;
             this.log.debug(`UVC: restored uvc_today_hours from last run: ${uvcTodayState.val.toFixed(2)} h (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
         } else {
             this._uvcDayStartHours = this._uvcHoursUsed;
-            this._uvcDayStartDate  = today;
+            this._uvcDayStartDate = today;
             this.log.debug(`UVC: new day or no prior data – uvc_today_hours starts at 0`);
         }
         const uvcCtrlState = await this.getStateAsync('control.uvc');
@@ -574,11 +574,11 @@ class MspaAdapter extends utils.Adapter {
                 // ── Reset uvc_today_hours once on the first window-start of the day ──
                 const today = this.todayStr();
                 if (this._uvcTodayResetDate !== today && !this._timeWindowActive.some(v => v)) {
-                    this._uvcTodayResetDate  = today;
-                    this._uvcDayStartHours   = this.accumulateUvcHours();
-                    this._uvcDayStartDate    = today;
+                    this._uvcTodayResetDate = today;
+                    this._uvcDayStartHours = this.accumulateUvcHours();
+                    this._uvcDayStartDate = today;
                     this.setState('status.uvc_day_start_hours', Math.round(this._uvcDayStartHours * 100) / 100, true);
-                    this.setState('status.uvc_day_start_date',  today, true);
+                    this.setState('status.uvc_day_start_date', today, true);
                     this.log.debug(`UVC: first time-window start of day – uvc_today_hours reset to 0 (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
                 }
                 // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
@@ -772,8 +772,8 @@ class MspaAdapter extends utils.Adapter {
                 }
                 this._pumpFollowUpTimers[i] = setTimeout(() => {
                     if (this._unloading) {
-return;
-}
+                        return;
+                    }
                     this._pumpFollowUpTimers[i] = null;
                     // Re-check overlap at the time the follow-up fires
                     const stillNeeded = Array.isArray(this.config.timeWindows) &&
@@ -1693,13 +1693,13 @@ return;
                 const timerId = setTimeout(() => {
                     // Guard: adapter is already shutting down
                     if (this._unloading) {
-return;
-}
+                        return;
+                    }
                     this._manualOverrideTimer = null;
                     // Guard: another call may have concurrently disabled override
                     if (!this._manualOverride) {
-return;
-}
+                        return;
+                    }
                     if (this.config.more_log_enabled) {
                         this.log.info('Manual override: duration elapsed – automations RESUMED');
                     }

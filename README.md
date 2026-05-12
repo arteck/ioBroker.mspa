@@ -160,6 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
+### 0.3.7 (2026-05-12)
+* (arteck) add warning as text
+
 ### 0.3.6 (2026-05-12)
 * (arteck) fix daily uvc timer after adapter restart
 
@@ -173,16 +176,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ### 0.3.3 (2026-04-28)
 * (arteck) fix heatrate
 * (arteck) fix uvc stop
-
-### 0.3.2 (2026-04-27)
-* (arteck) `computed.pv_active` – fixed: only `true` when a PV time window is currently open (day + time check); was previously activated outside configured windows
-* (arteck) Time window ALL-OFF: `action_filter=false` + `action_heating=false` now actively shuts down heater, UVC and filter when the window starts
-* (arteck) `status.uvc_hours_remaining` – now updated every poll while UVC is ON (previously only on UVC-OFF)
-* (arteck) `status.uvc_hours_used` – now writable for manual correction after data loss or lamp replacement
-* (arteck) `status.time_windows_json` – now writable; changes saved back to adapter config, schedulers restart immediately without adapter restart
-* (arteck) `heat_rate_per_hour` / `cool_rate_per_hour` – fixed: `heat_state=2` was treated as inactive, rate was never computed; added `heater=on` fallback
-* (arteck) `computed.pv_active` – new state showing whether PV surplus control is currently active
-* (arteck) Startup restore: all persisted states now read via `getStateAsync()` – fixes silent reset of `season_enabled`, `winter_mode`, `uvc_ensure_skip_today` etc. on every adapter restart
 
 ## License
 
