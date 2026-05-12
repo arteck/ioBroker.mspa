@@ -47,6 +47,13 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.3.1 (2026-04-26)
+* (arteck) heater ON now auto-starts filter pump if not already running (device requirement)
+* (arteck) UVC ON now auto-starts filter pump if not already running (device requirement)
+* (arteck) target_temperature: added range validation (20–42 °C), invalid values rejected with log warning
+* (arteck) target_temperature: uses `_adapterCommanded.heater` + live API data as fallback so temperature is sent directly when heater was just switched ON
+* (arteck) enableRapidPolling: running 60-second poll timer cancelled immediately, ACK arrives within ~2 s
+
 ## 0.3.0 (2026-04-26)
 * (arteck) removed deprecated setStateAsync
 

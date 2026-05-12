@@ -160,6 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
+### 0.3.6 (2026-05-12)
+* (arteck) fix daily uvc timer after adapter restart
+
 ### 0.3.5 (2026-05-12)
 * (arteck) clean code
 * (arteck) less notification
@@ -180,13 +183,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 * (arteck) `heat_rate_per_hour` / `cool_rate_per_hour` – fixed: `heat_state=2` was treated as inactive, rate was never computed; added `heater=on` fallback
 * (arteck) `computed.pv_active` – new state showing whether PV surplus control is currently active
 * (arteck) Startup restore: all persisted states now read via `getStateAsync()` – fixes silent reset of `season_enabled`, `winter_mode`, `uvc_ensure_skip_today` etc. on every adapter restart
-
-### 0.3.1 (2026-04-26)
-* (arteck) heater ON now auto-starts filter pump if not already running (device requirement)
-* (arteck) UVC ON now auto-starts filter pump if not already running (device requirement)
-* (arteck) target_temperature: added range validation (20–42 °C), invalid values rejected with log warning
-* (arteck) target_temperature: uses `_adapterCommanded.heater` + live API data as fallback so temperature is sent directly when heater was just switched ON
-* (arteck) enableRapidPolling: running 60-second poll timer cancelled immediately, ACK arrives within ~2 s
 
 ## License
 

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.5",
+    "version": "0.3.6",
     "news": {
+      "0.3.6": {
+        "en": "fix daily uvc timer after adapter restart",
+        "de": "täglich uvc timer nach dem adapter neustart",
+        "ru": "uvc таймер после перезапуска адаптера",
+        "pt": "corrigir o temporizador uvc diário após o reinício do adaptador",
+        "nl": "fix dagelijkse uvc timer na herstart van de adapter",
+        "fr": "correction quotidienne du minuteur uvc après redémarrage de l'adaptateur",
+        "it": "correggere il timer giornaliero uvc dopo il riavvio dell'adattatore",
+        "es": "fijar el temporizador uvc diario después del reinicio del adaptador",
+        "pl": "naprawiać codziennie uvc timer po ponownym uruchomieniu adaptera",
+        "uk": "фіксувати щоденний uvc таймер після перезавантаження адаптера",
+        "zh-cn": "适配器重新启动后, 每日修正 uvc 计时器"
+      },
       "0.3.5": {
         "en": "clean code\nless notification",
         "de": "reiner code\nweniger benachrichtigung",
@@ -80,19 +93,6 @@
         "pl": "del deprectated setStateAsync",
         "uk": "deprectated setStateAsync",
         "zh-cn": "已贬值的设置"
-      },
-      "0.2.20": {
-        "en": "del mspa.0.status.uvc_expiry_date\nstatus.heat_target_temp_reached new format hh:mm\nfix set temp after enough PV",
-        "de": "das ist der grund\nstatus.heat target temp reached new format hh:mm\nfix set temp nach genug PV",
-        "ru": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached новый формат hh:mm\nустановить температуру после достаточного количества PV",
-        "pt": "del mspa.0.status.uvc expiry date\nstatus.heat target temp alcançado novo formato hh:mm\ncorrigir a temperatura definida após PV suficiente",
-        "nl": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached new format hh:mm\nfix set temp na voldoende PV",
-        "fr": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached nouveau format hh:mm\nfixer la température de réglage après assez de PV",
-        "it": "del mspa.0.status.uvc expiry date\nstato.heat target temp reached nuovo formato hh:mm\nfix set temp dopo abbastanza PV",
-        "es": "del mspa.0.status.uvc expiry date\nstatus.heat target temp reached nuevo formato hh:mm\nfijar la temperatura set después de suficiente PV",
-        "pl": "del mspa.0.status.uvc _ expire _ date\nstatus.heat _ target _ temporary _ reached new format hh: mm\nustawiona temperatura po wystarczającej ilości PV",
-        "uk": "english, українська, français..\nстатус.heat target temp reached новий формат hh:mm\nфіксувати час встановлення після достатнього PV",
-        "zh-cn": "del mspa.0.status.uvc  expiry date (中文(简体) )\n状态. heat target temp reached 新的格式 hh:mm\n足够光电后固定设置临时值"
       }
     },
     "titleLang": {

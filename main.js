@@ -94,6 +94,7 @@ class MspaAdapter extends utils.Adapter {
         this._uvcHoursUsed = 0;      // accumulated operating hours (persisted)
         this._uvcDayStartHours = 0;      // _uvcHoursUsed snapshot at start of today
         this._uvcDayStartDate = '';     // "YYYY-MM-DD" of the day _uvcDayStartHours was set
+        this._uvcTodayResetDate = '';   // "YYYY-MM-DD" of the last first-window reset (once per day)
         // UVC daily minimum ensure
         this._uvcEnsureActive = false;  // true while adapter is running UVC to fill daily minimum
         this._uvcEnsureFilterStart = false;  // true if the ensure-run also started the filter pump
@@ -275,8 +276,22 @@ class MspaAdapter extends utils.Adapter {
         const uvcHoursState = await this.getStateAsync('status.uvc_hours_used');
         this._uvcHoursUsed = (uvcHoursState && typeof uvcHoursState.val === 'number')
             ? uvcHoursState.val : 0;
-        this._uvcDayStartHours = this._uvcHoursUsed;
-        this._uvcDayStartDate = today;
+
+        // Restore today's hours from persisted uvc_today_hours so a restart does not reset to 0.
+        // Check the state's timestamp – if it was written today, subtract its value from the total.
+        const uvcTodayState = await this.getStateAsync('status.uvc_today_hours');
+        const tsToday = uvcTodayState && uvcTodayState.ts
+            ? new Date(uvcTodayState.ts).toISOString().slice(0, 10)
+            : '';
+        if (tsToday === today && uvcTodayState && typeof uvcTodayState.val === 'number' && uvcTodayState.val > 0) {
+            this._uvcDayStartHours = Math.max(0, this._uvcHoursUsed - uvcTodayState.val);
+            this._uvcDayStartDate  = today;
+            this.log.debug(`UVC: restored uvc_today_hours from last run: ${uvcTodayState.val.toFixed(2)} h (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
+        } else {
+            this._uvcDayStartHours = this._uvcHoursUsed;
+            this._uvcDayStartDate  = today;
+            this.log.debug(`UVC: new day or no prior data – uvc_today_hours starts at 0`);
+        }
         const uvcCtrlState = await this.getStateAsync('control.uvc');
         if (uvcCtrlState && uvcCtrlState.val) {
             // UVC was ON at shutdown → start tracking from now (conservative)
@@ -556,6 +571,16 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
 
             if (inWin && !wasIn) {
+                // ── Reset uvc_today_hours once on the first window-start of the day ──
+                const today = this.todayStr();
+                if (this._uvcTodayResetDate !== today && !this._timeWindowActive.some(v => v)) {
+                    this._uvcTodayResetDate  = today;
+                    this._uvcDayStartHours   = this.accumulateUvcHours();
+                    this._uvcDayStartDate    = today;
+                    this.setState('status.uvc_day_start_hours', Math.round(this._uvcDayStartHours * 100) / 100, true);
+                    this.setState('status.uvc_day_start_date',  today, true);
+                    this.log.debug(`UVC: first time-window start of day – uvc_today_hours reset to 0 (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
+                }
                 // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
                 // PV-Controller die Aktivierung – der Zeit-Scheduler darf NICHT
                 // direkt einschalten, wenn kein ausreichender Überschuss vorliegt.
@@ -1847,11 +1872,18 @@ return;
                     this._pollTimer = setTimeout(() => this.doPoll(), 500);
                 }
             } else if (key === 'season_enabled') {
+                const wasEnabled = this._seasonEnabled;
                 this._seasonEnabled = !!state.val;
                 if (this.config.more_log_enabled) {
                     this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
                 }
                 this.setState('control.season_enabled', this._seasonEnabled, true);
+
+                // Season just started (false → true) → allow first time-window of the day to reset uvc_today_hours
+                if (!wasEnabled && this._seasonEnabled) {
+                    this._uvcTodayResetDate = ''; // force reset on next window start
+                    this.log.debug('UVC: season enabled – uvc_today_hours will reset on first time-window start today');
+                }
                 // FIX: sofort Zeitfenster neu auswerten statt bis zum nächsten 60s-Tick zu warten
                 this.checkTimeWindows().catch(e =>
                     this.log.error(`checkTimeWindows after season_enabled change: ${e.message}`)
