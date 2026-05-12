@@ -160,8 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.3.5 (2026-05-12)
 * (arteck) clean code
+* (arteck) less notification
 
 ### 0.3.4 (2026-05-05)
 * (arteck) fix manual override
@@ -186,9 +187,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 * (arteck) target_temperature: added range validation (20–42 °C), invalid values rejected with log warning
 * (arteck) target_temperature: uses `_adapterCommanded.heater` + live API data as fallback so temperature is sent directly when heater was just switched ON
 * (arteck) enableRapidPolling: running 60-second poll timer cancelled immediately, ACK arrives within ~2 s
-
-### 0.3.0 (2026-04-26)
-* (arteck) removed deprecated setStateAsync
 
 ## License
 

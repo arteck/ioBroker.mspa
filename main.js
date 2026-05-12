@@ -746,7 +746,9 @@ class MspaAdapter extends utils.Adapter {
                     this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
                 }
                 this._pumpFollowUpTimers[i] = setTimeout(() => {
-                    if (this._unloading) return;
+                    if (this._unloading) {
+return;
+}
                     this._pumpFollowUpTimers[i] = null;
                     // Re-check overlap at the time the follow-up fires
                     const stillNeeded = Array.isArray(this.config.timeWindows) &&
@@ -1665,26 +1667,36 @@ class MspaAdapter extends utils.Adapter {
                 // So kann ein concurrent disable-Aufruf den Timer noch korrekt canceln.
                 const timerId = setTimeout(() => {
                     // Guard: adapter is already shutting down
-                    if (this._unloading) return;
+                    if (this._unloading) {
+return;
+}
                     this._manualOverrideTimer = null;
                     // Guard: another call may have concurrently disabled override
-                    if (!this._manualOverride) return;
+                    if (!this._manualOverride) {
+return;
+}
                     if (this.config.more_log_enabled) {
                         this.log.info('Manual override: duration elapsed – automations RESUMED');
                     }
                     this._manualOverride = false;
                     this.setState('control.manual_override', false, true);
                     this.setState('control.manual_override_duration', 0, true);
-                    Promise.resolve()
-                        .then(() => notificationHelper.send(notificationHelper.format('overrideEnded')))
-                        .then(() => this._resumeAfterOverride())
+
+                    if (this.config.more_log_enabled) {
+                        notificationHelper.send(notificationHelper.format('overrideEnded'))
+                            .catch(e => this.log.error(`manualOverride auto-disable failed: ${e.message}`));
+                    }
+
+                    this._resumeAfterOverride()
                         .catch(e => this.log.error(`manualOverride auto-disable failed: ${e.message}`));
                 }, Math.round(durationMin * 60 * 1000));
 
                 this._manualOverrideTimer = timerId;
 
-                await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}))
-                    .catch(e => this.log.error(`overrideOnTimed notification: ${e.message}`));
+                if (this.config.more_log_enabled) {
+                    await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}))
+                        .catch(e => this.log.error(`overrideOnTimed notification: ${e.message}`));
+                }
 
                 // Guard: a concurrent call may have already disabled override during the await above
                 if (!this._manualOverride || this._unloading || this._manualOverrideTimer !== timerId) {

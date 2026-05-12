@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.3.0 (2026-04-26)
+* (arteck) removed deprecated setStateAsync
+
 ## 0.2.20 (2026-04-26)
 * (arteck) removed `mspa.0.status.uvc_expiry_date`
 * (arteck) `status.heat_target_temp_reached` new format `hh:mm`

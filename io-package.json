@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.4",
+    "version": "0.3.5",
     "news": {
+      "0.3.5": {
+        "en": "clean code\nless notification",
+        "de": "reiner code\nweniger benachrichtigung",
+        "ru": "чистый код\nменьшее уведомление",
+        "pt": "código limpo\nmenos notificação",
+        "nl": "schone code\nminder kennisgeving",
+        "fr": "code propre\nmoins notification",
+        "it": "codice pulito\nmeno notifica",
+        "es": "código limpio\nmenos notificación",
+        "pl": "kod czysty\nmniej powiadomień",
+        "uk": "чистий код\nменше повідомлення",
+        "zh-cn": "清洁代码\n减去通知"
+      },
       "0.3.4": {
         "en": "fix manual override\nfix manual override",
         "de": "manuelles override reparieren\nmanuelles override reparieren",
@@ -80,19 +93,6 @@
         "pl": "del mspa.0.status.uvc _ expire _ date\nstatus.heat _ target _ temporary _ reached new format hh: mm\nustawiona temperatura po wystarczającej ilości PV",
         "uk": "english, українська, français..\nстатус.heat target temp reached новий формат hh:mm\nфіксувати час встановлення після достатнього PV",
         "zh-cn": "del mspa.0.status.uvc  expiry date (中文(简体) )\n状态. heat target temp reached 新的格式 hh:mm\n足够光电后固定设置临时值"
-      },
-      "0.2.19": {
-        "en": "typo",
-        "de": "typo",
-        "ru": "опечатка",
-        "pt": "erro de digitação",
-        "nl": "type",
-        "fr": "typo",
-        "it": "tipo",
-        "es": "typo",
-        "pl": "typo",
-        "uk": "типо",
-        "zh-cn": "类型"
       }
     },
     "titleLang": {
