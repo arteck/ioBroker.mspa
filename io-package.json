@@ -141,7 +141,7 @@
     "tier": 2,
     "loglevel": "info",
     "mode": "daemon",
-    "type": "hardware",
+    "type": "climate-control",
     "compact": true,
     "connectionType": "cloud",
     "dataSource": "poll",
