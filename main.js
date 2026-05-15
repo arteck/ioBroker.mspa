@@ -577,8 +577,6 @@ class MspaAdapter extends utils.Adapter {
                     this._uvcTodayResetDate = today;
                     this._uvcDayStartHours = this.accumulateUvcHours();
                     this._uvcDayStartDate = today;
-                    this.setState('status.uvc_day_start_hours', Math.round(this._uvcDayStartHours * 100) / 100, true);
-                    this.setState('status.uvc_day_start_date', today, true);
                     this.log.debug(`UVC: first time-window start of day – uvc_today_hours reset to 0 (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
                 }
                 // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
