@@ -42,6 +42,8 @@ class MspaAdapter extends utils.Adapter {
             filter: null,
             bubble: null,
             uvc: null,
+            ozone: null,
+            jet: null,
             target_temperature: null,
         };
 
@@ -1400,7 +1402,10 @@ class MspaAdapter extends utils.Adapter {
      * @param delayMs
      */
     _scheduleCommandedReset(feature, val, delayMs = 30_000) {
-        setTimeout(() => {
+        this.setStray(() => {
+            if (this._unloading) {
+return;
+}
             if (this._adapterCommanded[feature] === val) {
                 this._adapterCommanded[feature] = null;
                 this.log.debug(`_adapterCommanded.${feature} reset to null after ${delayMs} ms`);
@@ -1637,18 +1642,21 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
         this._pendingTargetTemp = null;
-        return this.sendTargetTempDirect(t);
+        return this.sendTargetTempDirect(t, { fromUser: true });
     }
 
     /**
      * Sends the target temperature directly to the API (no heater-state check).
      * Use this in automations that have just called setFeature('heater', true).
      *
-     * @param temp
+     * @param {number} temp
+     * @param {{ fromUser?: boolean }} [opts] – set fromUser=true only for direct user commands (updates _lastCommandTime for app-change detection grace period)
      */
-    async sendTargetTempDirect(temp) {
+    async sendTargetTempDirect(temp, { fromUser = false } = {}) {
         this._adapterCommanded.target_temperature = temp;
-        this._lastCommandTime = Date.now();
+        if (fromUser) {
+            this._lastCommandTime = Date.now();
+        }
         await this.setStatusCheck('send');
         const result = await this._api.setTemperatureSetting(temp);
         await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
