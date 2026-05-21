@@ -594,11 +594,11 @@ class MspaAdapter extends utils.Adapter {
                     // → actively shut down everything that is currently running
                     if (!w.action_filter && !w.action_heating) {
                         this.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
-                        await this.setFeature('heater', false).catch(() => {
+                        await this.setFeature('heater', false, {fromAutomation: true}).catch(() => {
                         });
-                        await this.setFeature('uvc', false).catch(() => {
+                        await this.setFeature('uvc', false, {fromAutomation: true}).catch(() => {
                         });
-                        await this.setFeature('filter', false).catch(() => {
+                        await this.setFeature('filter', false, {fromAutomation: true}).catch(() => {
                         });
                         this.enableRapidPolling();
                     } else {
@@ -609,19 +609,19 @@ class MspaAdapter extends utils.Adapter {
                             //         we need it running BEFORE the heater command → start it now
                             if (!w.action_filter) {
                                 this.log.debug(`Time control [${i + 1}]: filter ON (required for heating)`);
-                                await this.setFeature('filter', true);
+                                await this.setFeature('filter', true, {fromAutomation: true});
                                 this._pumpStartedForHeating = true;
                             } else {
                                 // action_filter=true: start filter first so heater has pump running
                                 this.log.debug(`Time control [${i + 1}]: filter ON (before heater, action_filter=true)`);
-                                await this.setFeature('filter', true);
+                                await this.setFeature('filter', true, {fromAutomation: true});
                             }
                             this.log.debug(`Time control [${i + 1}]: heater ON`);
-                            await this.setFeature('heater', true);
+                            await this.setFeature('heater', true, {fromAutomation: true});
                             if (w.target_temp) {
                                 this.log.debug(`Time control [${i + 1}]: target temperature → ${w.target_temp}°C – sending in 10 s`);
                                 this.setStray(() => {
-                                    this.sendTargetTempDirect(w.target_temp).catch(e =>
+                                    this.sendTargetTempDirect(w.target_temp, {fromAutomation: true}).catch(e =>
                                         this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
                                     );
                                 }, 10_000);
@@ -629,10 +629,10 @@ class MspaAdapter extends utils.Adapter {
                         }
                         if (w.action_filter) {
                             this.log.debug(`Time control [${i + 1}]: filter ON`);
-                            await this.setFeature('filter', true);
+                            await this.setFeature('filter', true, {fromAutomation: true});
                             if (w.action_uvc) {
                                 this.log.debug(`Time control [${i + 1}]: UVC ON`);
-                                await this.setFeature('uvc', true);
+                                await this.setFeature('uvc', true, {fromAutomation: true});
                             }
                         }
                         this.enableRapidPolling();
@@ -720,7 +720,7 @@ class MspaAdapter extends utils.Adapter {
             // Always turn off heater immediately – unless another window still needs it
             if (w.action_heating && !otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater OFF`);
-                await this.setFeature('heater', false);
+                await this.setFeature('heater', false, {fromAutomation: true});
             } else if (w.action_heating && otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater kept ON – required by overlapping window`);
             }
@@ -729,7 +729,7 @@ class MspaAdapter extends utils.Adapter {
             if (w.action_filter && w.action_uvc && !otherNeedsUvc) {
                 if (uvcMinMet) {
                     this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h >= ${uvcMinH} h)`);
-                    await this.setFeature('uvc', false);
+                    await this.setFeature('uvc', false, {fromAutomation: true});
                 } else {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
@@ -758,11 +758,11 @@ class MspaAdapter extends utils.Adapter {
                 // No follow-up – stop filter immediately
                 if (w.action_filter) {
                     this.log.debug(`Time control [${i + 1}]: filter OFF`);
-                    await this.setFeature('filter', false);
+                    await this.setFeature('filter', false, {fromAutomation: true});
                 }
                 if (w.action_heating && !w.action_filter) {
                     this.log.debug(`Time control [${i + 1}]: filter OFF (was started for heating only)`);
-                    await this.setFeature('filter', false);
+                    await this.setFeature('filter', false, {fromAutomation: true});
                     this._pumpStartedForHeating = false;
                 }
             } else {
@@ -788,7 +788,7 @@ class MspaAdapter extends utils.Adapter {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
                     }
-                    this.setFeature('filter', false)
+                    this.setFeature('filter', false, {fromAutomation: true})
                         .then(() => {
                             this._pumpStartedForHeating = false;
                             this.enableRapidPolling();
@@ -885,7 +885,7 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info('Startup check: heater ON but no active window ? switching OFF');
                 }
-                await this.setFeature('heater', false);
+                await this.setFeature('heater', false, {fromAutomation: true});
             }
             // UVC before filter (filter may need to stay for UVC daily ensure)
             if (uvcOn && anyWindowManagesUvc) {
@@ -895,7 +895,7 @@ class MspaAdapter extends utils.Adapter {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Startup check: UVC ON but no active window (daily min met: ${todayH.toFixed(2)} h) ? switching OFF`);
                     }
-                    await this.setFeature('uvc', false);
+                    await this.setFeature('uvc', false, {fromAutomation: true});
                 } else {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Startup check: UVC ON, daily min not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h) – keeping ON for daily ensure`);
@@ -908,7 +908,7 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info('Startup check: filter ON but no active window ? switching OFF');
                 }
-                await this.setFeature('filter', false);
+                await this.setFeature('filter', false, {fromAutomation: true});
             }
             this.enableRapidPolling();
         } catch (err) {
@@ -1301,7 +1301,7 @@ class MspaAdapter extends utils.Adapter {
         }
         for (const feature of ['heater', 'filter', 'ozone', 'uvc', 'bubble']) {
             if (this._savedState[feature] === 'on') {
-                await this.safeCmd(() => this.setFeature(feature, true), feature);
+                await this.safeCmd(() => this.setFeature(feature, true, {fromAutomation: true}), feature);
                 await this.sleep(500);
             }
         }
@@ -1346,8 +1346,8 @@ class MspaAdapter extends utils.Adapter {
                 if (this.config.more_log_enabled) {
                     this.log.info('Winter mode: disabled – switching heater + filter OFF');
                 }
-                await this.setFeature('heater', false);
-                await this.setFeature('filter', false);
+                await this.setFeature('heater', false, {fromAutomation: true});
+                await this.setFeature('filter', false, {fromAutomation: true});
             }
             return;
         }
@@ -1365,8 +1365,8 @@ class MspaAdapter extends utils.Adapter {
                 this.log.info(`Winter mode: temp ${temp}°C = ${threshold}°C – switching heater + filter ON`);
             }
             await notificationHelper.send(notificationHelper.format('frostActive', {temp, threshold}));
-            await this.setFeature('filter', true);
-            await this.setFeature('heater', true);
+            await this.setFeature('filter', true, {fromAutomation: true});
+            await this.setFeature('heater', true, {fromAutomation: true});
             this.enableRapidPolling();
         } else if (this._winterFrostActive && temp >= threshold + hysteresis) {
             this._winterFrostActive = false;
@@ -1377,8 +1377,8 @@ class MspaAdapter extends utils.Adapter {
                 temp,
                 hysteresis: threshold + hysteresis
             }));
-            await this.setFeature('heater', false);
-            await this.setFeature('filter', false);
+            await this.setFeature('heater', false, {fromAutomation: true});
+            await this.setFeature('filter', false, {fromAutomation: true});
             this.enableRapidPolling();
             // Frost cycle ended ? immediately re-evaluate UVC daily minimum
             // (was deferred while frost was active)
@@ -1418,14 +1418,14 @@ return;
      * @param {boolean} boolVal
      * @param {{ fromUser?: boolean }} [opts]
      */
-    async setFeature(feature, boolVal, {fromUser = false} = {}) {
+    async setFeature(feature, boolVal, {fromUser = false, fromAutomation = false} = {}) {
         const state = boolVal ? 1 : 0;
         if (feature in this._adapterCommanded) {
             this._adapterCommanded[feature] = boolVal;
         }
         // Mark command time – app-change detection will be suppressed for 30 s
-        // Only set when a real user command triggered this (not automations like PV / time windows / frost).
-        if (fromUser) {
+        // Set for user commands AND automations (PV / time windows / frost) to avoid false-positive app-change detection.
+        if (fromUser || fromAutomation) {
             this._lastCommandTime = Date.now();
         }
 
@@ -1442,7 +1442,7 @@ return;
                 if (this.config.more_log_enabled) {
                     this.log.info('UVC ON – filter not running, auto-starting filter pump first');
                 }
-                await this.setFeature('filter', true);
+                await this.setFeature('filter', true, {fromUser, fromAutomation});
                 // Poll up to 15 s until filter is confirmed ON by the device
                 const start = Date.now();
                 let ok = false;
@@ -1478,7 +1478,7 @@ return;
                         if (this.config.more_log_enabled) {
                             this.log.info('heater ON – auto-starting filter pump first (required by device)');
                         }
-                        await this.setFeature('filter', true);
+                        await this.setFeature('filter', true, {fromUser, fromAutomation});
                         await this.sleep(1_500); // give the pump time to spin up
                     }
                 }
@@ -1557,7 +1557,7 @@ return;
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling heater first');
                         }
-                        await this.setFeature('heater', false);
+                        await this.setFeature('heater', false, {fromUser, fromAutomation});
                         await this.sleep(500);
                     }
                 }
@@ -1650,11 +1650,11 @@ return;
      * Use this in automations that have just called setFeature('heater', true).
      *
      * @param {number} temp
-     * @param {{ fromUser?: boolean }} [opts] – set fromUser=true only for direct user commands (updates _lastCommandTime for app-change detection grace period)
+     * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts] – set fromUser=true for direct user commands, fromAutomation=true for automations (both update _lastCommandTime for app-change detection grace period)
      */
-    async sendTargetTempDirect(temp, { fromUser = false } = {}) {
+    async sendTargetTempDirect(temp, { fromUser = false, fromAutomation = false } = {}) {
         this._adapterCommanded.target_temperature = temp;
-        if (fromUser) {
+        if (fromUser || fromAutomation) {
             this._lastCommandTime = Date.now();
         }
         await this.setStatusCheck('send');
