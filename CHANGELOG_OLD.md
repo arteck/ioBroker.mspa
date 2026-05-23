@@ -47,6 +47,12 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.3.3 (2026-04-28)
+* (arteck) fix heatrate
+* (arteck) fix uvc stop
+
+[Older changelogs can be found there](CHANGELOG_OLD.md)
+
 ## 0.3.2 (2026-04-27)
 * (arteck) `computed.pv_active` – fixed: only `true` when a PV time window is currently open (day + time check); was previously activated outside configured windows
 * (arteck) Time window ALL-OFF: `action_filter=false` + `action_heating=false` now actively shuts down heater, UVC and filter when the window starts

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.7",
+    "version": "0.3.8",
     "news": {
+      "0.3.8": {
+        "en": "Adapter requires node.js >= 22 now\noptimization, automatic detection\nfix uvc start",
+        "de": "Adapter benötigt node.js >= 22 jetzt\noptimierung, automatische erkennung\nuvc start",
+        "ru": "Адаптер требует node.js >= 22 сейчас\nоптимизация, автоматическое обнаружение\nскачать uvc start",
+        "pt": "Adaptador requer nod.js >= 22 agora\notimização, detecção automática\ncorrigir o início do uvc",
+        "nl": "Voor de adapter zijn node.js < 22 nu nodig\noptimalisatie, automatische detectie\nfix uvc start",
+        "fr": "Adaptateur nécessite node.js >= 22 maintenant\noptimisation, détection automatique\nfixer uvc début",
+        "it": "Adattatore richiede node.js >= 22 ora\nottimizzazione, rilevamento automatico\nfix uvs start",
+        "es": "Adaptador requiere node.js ю= 22 ahora\noptimización, detección automática\narranque uvc",
+        "pl": "Adapter wymaga node.js > = 22\noptymalizacja, automatyczne wykrywanie\nfix uvc start",
+        "uk": "Адаптер вимагає node.js >= 22 тепер\nоптимізація, автоматичне виявлення\nзафіксувати uvc старт",
+        "zh-cn": "适配器需要节点.js 现在22\n优化、自动检测\n修复 uvc 启动"
+      },
       "0.3.7": {
         "en": "add warning as text",
         "de": "warnung hinzufügen als text",
@@ -69,19 +82,6 @@
         "zh-cn": "固定热率\n固定 uc 站点"
       },
       "0.3.2": {
-        "en": "see Readme",
-        "de": "Siehe Readme",
-        "ru": "см. файл Readme",
-        "pt": "Consulte o arquivo Leia-me.",
-        "nl": "zie Readme",
-        "fr": "Voir le fichier Lisez-moi",
-        "it": "vedi il file Readme",
-        "es": "ver Léame",
-        "pl": "zobacz Readme",
-        "uk": "див. файл Readme",
-        "zh-cn": "请参阅自述文件"
-      },
-      "0.3.1": {
         "en": "see Readme",
         "de": "Siehe Readme",
         "ru": "см. файл Readme",

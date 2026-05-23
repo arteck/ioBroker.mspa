@@ -182,6 +182,7 @@ class MspaAdapter extends utils.Adapter {
 
         this.subscribeStates('control.*');
         this.subscribeStates('status.time_windows_json'); // writable – changes written back to adapter config
+        this.subscribeStates('status.uvc_hours_used');   // writable – allows manual correction after lamp replacement
 
         await this._restorePersistedStates();
 
@@ -573,14 +574,6 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
 
             if (inWin && !wasIn) {
-                // ── Reset uvc_today_hours once on the first window-start of the day ──
-                const today = this.todayStr();
-                if (this._uvcTodayResetDate !== today && !this._timeWindowActive.some(v => v)) {
-                    this._uvcTodayResetDate = today;
-                    this._uvcDayStartHours = this.accumulateUvcHours();
-                    this._uvcDayStartDate = today;
-                    this.log.debug(`UVC: first time-window start of day – uvc_today_hours reset to 0 (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
-                }
                 // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
                 // PV-Controller die Aktivierung – der Zeit-Scheduler darf NICHT
                 // direkt einschalten, wenn kein ausreichender Überschuss vorliegt.
@@ -1824,6 +1817,28 @@ return;
         // ── status.time_windows_json – write back to adapter jsonConfig ─────
         if (key === 'time_windows_json') {
             await this._applyTimeWindowsJson(state.val);
+            return;
+        }
+
+        // ── status.uvc_hours_used – manual correction after lamp replacement ──
+        if (key === 'uvc_hours_used') {
+            const newVal = parseFloat(state.val);
+            if (isNaN(newVal) || newVal < 0) {
+                this.log.warn(`uvc_hours_used: invalid value "${state.val}" – ignoring`);
+                this.setState('status.uvc_hours_used', Math.round(this._uvcHoursUsed * 100) / 100, true);
+                return;
+            }
+            const wasRunning = this._uvcOnSince !== null;
+            this._uvcHoursUsed = newVal;
+            this._uvcOnSince = wasRunning ? Date.now() : null; // restart session to avoid adding old delta
+            const today = this.todayStr();
+            this._uvcDayStartHours = newVal;
+            this._uvcDayStartDate = today;
+            this._uvcTodayResetDate = today;
+            this.setState('status.uvc_hours_used', Math.round(newVal * 100) / 100, true);
+            this.setState('status.uvc_today_hours', 0, true);
+            this.computeUvcExpiry().catch(e => this.log.error(`computeUvcExpiry after manual reset: ${e.message}`));
+            this.log.info(`UVC hours manually set to ${newVal.toFixed(2)} h (UVC was ${wasRunning ? 'running – session restarted' : 'off'})`);
             return;
         }
 
