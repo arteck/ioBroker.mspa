@@ -1684,6 +1684,17 @@ return;
         this.setState('control.manual_override', enable, true);
 
         if (enable) {
+            // PV may currently be active – cancel all deactivation timers and
+            // mark PV inactive so no stale _pvActive=true remains while automations are paused.
+            // _resumeAfterOverride() will re-evaluate surplus when override ends.
+            if (this._pvActive || this._pvDeactivateTimer || this._pvStageTimer) {
+                await this.pvCancelAllDeactivationTimers();
+                if (this._pvActive) {
+                    this._pvActive = false;
+                    this.setState('computed.pv_active', false, true);
+                    this.log.debug('Manual override: PV deactivated (will re-evaluate on override end)');
+                }
+            }
             // read duration from state if not explicitly passed
             if (durationMin === null) {
                 // FIX: getStateAsync statt getState – funktioniert auch beim Adapter-Start
