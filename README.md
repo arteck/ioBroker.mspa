@@ -160,6 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) fix heater start
+
 ### 0.3.8 (2026-05-23)
 * (copilot) Adapter requires node.js >= 22 now
 * (arteck) optimization, automatic detection
