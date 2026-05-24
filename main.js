@@ -510,15 +510,12 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
         // --- PV guard -------------------------------------------------------
-        // PV surplus control has priority – but ONLY if at least one time window
-        // has PV surplus control enabled (pv_steu=true). If no window uses PV,
-        // _pvActive can only be a stale persisted state → do not block time windows.
-        const anyPvWindow = Array.isArray(windows) &&
-            windows.some(w => w.active && w.pv_steu);
-        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
-            this.log.debug('Time control: PV control active – skipping time window control');
-            return;
-        }
+        // PV surplus control is handled per window (pv_steu flag).
+        // Windows with pv_steu=true: time scheduler marks them active but does NOT
+        // send hardware commands – evaluateSurplus() in pv.js activates them when
+        // there is enough surplus.
+        // Windows with pv_steu=false: always activate/deactivate independently,
+        // regardless of whether PV is running or not.
         // --- Season guard ---------------------------------------------------
         if (!this.isInSeason()) {
             this.log.debug('Time control: outside season – skipping time window control (polling continues)');
@@ -612,12 +609,27 @@ class MspaAdapter extends utils.Adapter {
                             this.log.debug(`Time control [${i + 1}]: heater ON`);
                             await this.setFeature('heater', true, {fromAutomation: true});
                             if (w.target_temp) {
-                                this.log.debug(`Time control [${i + 1}]: target temperature → ${w.target_temp}°C – sending in 10 s`);
-                                this.setStray(() => {
-                                    this.sendTargetTempDirect(w.target_temp, {fromAutomation: true}).catch(e =>
-                                        this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
-                                    );
-                                }, 10_000);
+                                // Prefer current user-set temperature over window config
+                                // (consistent with PV getEffectiveTargetTemp logic)
+                                this.getStateAsync('control.target_temperature').then(st => {
+                                    const effectiveTemp = (st && st.val != null && Number(st.val) > 0)
+                                        ? Number(st.val)
+                                        : w.target_temp;
+                                    if (this.config.more_log_enabled) {
+                                        this.log.info(`Time control [${i + 1}]: target temperature → ${effectiveTemp}°C${effectiveTemp !== w.target_temp ? ` (user-set, window=${w.target_temp}°C)` : ''} – sending in 10 s`);
+                                    }
+                                    this.setStray(() => {
+                                        this.sendTargetTempDirect(effectiveTemp, {fromAutomation: true}).catch(e =>
+                                            this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
+                                        );
+                                    }, 10_000);
+                                }).catch(() => {
+                                    this.setStray(() => {
+                                        this.sendTargetTempDirect(w.target_temp, {fromAutomation: true}).catch(e =>
+                                            this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`)
+                                        );
+                                    }, 10_000);
+                                });
                             }
                         }
                         if (w.action_filter) {
@@ -664,15 +676,14 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async deactivateWindow(w, i) {
-        // If PV is currently active, it manages the features – don't touch them.
-        // Guard only applies when at least one window has PV surplus control enabled;
-        // otherwise _pvActive can only be a stale persisted value.
-        const anyPvWindow = Array.isArray(this.config.timeWindows) &&
-            this.config.timeWindows.some(win => win.active && win.pv_steu);
-        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
+        // If PV is currently active AND this window uses PV surplus control,
+        // PV manages the features – don't touch them here.
+        // Non-PV windows deactivate independently regardless of PV state.
+        if (w.pv_steu && (this._pvActive || this._pvStageTimer !== null)) {
             if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – PV control active, skipping deactivation`);
+                this.log.info(`Time control [${i + 1}]: window END – pv_steu window, PV control active, skipping deactivation`);
             }
+            this._timeWindowActive[i] = false; // mark inactive so PV re-evaluates
             return;
         }
 
