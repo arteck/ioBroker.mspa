@@ -114,6 +114,7 @@ class MspaAdapter extends utils.Adapter {
         this._timeTimer = null;
         this._timeWindowActive = [false, false, false]; // state per window (1-3)
         this._pumpStartedForHeating = false; // pump was started solely because of heating (action_filter=false)
+        this._filterStartedForUvc = [];  // per-window: true if filter was started as UVC prerequisite (action_filter=false, action_uvc=true)
         this._pumpFollowUpTimers = [];    // follow-up timers per window index
 
         this._firstPollDone = false; // true after first successful poll (used for startup device-state check)
@@ -635,10 +636,16 @@ class MspaAdapter extends utils.Adapter {
                         if (w.action_filter) {
                             this.log.debug(`Time control [${i + 1}]: filter ON`);
                             await this.setFeature('filter', true, {fromAutomation: true});
-                            if (w.action_uvc) {
-                                this.log.debug(`Time control [${i + 1}]: UVC ON`);
-                                await this.setFeature('uvc', true, {fromAutomation: true});
+                        }
+                        if (w.action_uvc) {
+                            // UVC requires filter pump – start filter if not already running
+                            if (!w.action_filter && !w.action_heating) {
+                                this.log.debug(`Time control [${i + 1}]: filter ON (required for UVC)`);
+                                await this.setFeature('filter', true, {fromAutomation: true});
+                                this._filterStartedForUvc[i] = true;
                             }
+                            this.log.debug(`Time control [${i + 1}]: UVC ON`);
+                            await this.setFeature('uvc', true, {fromAutomation: true});
                         }
                         this.enableRapidPolling();
                     }
@@ -681,9 +688,12 @@ class MspaAdapter extends utils.Adapter {
         // Non-PV windows deactivate independently regardless of PV state.
         if (w.pv_steu && (this._pvActive || this._pvStageTimer !== null)) {
             if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – pv_steu window, PV control active, skipping deactivation`);
+                this.log.info(`Time control [${i + 1}]: window END – pv_steu window, PV control active – triggering PV re-evaluation`);
             }
-            this._timeWindowActive[i] = false; // mark inactive so PV re-evaluates
+            this._timeWindowActive[i] = false; // mark inactive so _pvWindows() returns [] → evaluateSurplus deactivates
+            this.evaluatePvSurplus().catch(e =>
+                this.log.error(`Time control [${i + 1}]: evaluatePvSurplus after window end failed – ${e.message}`)
+            );
             return;
         }
 
@@ -704,7 +714,7 @@ class MspaAdapter extends utils.Adapter {
         );
 
         if (otherNeedsFilter || otherNeedsHeater || otherNeedsUvc) {
-            this.log.debug(`Time control [${i + 1}]: window END – overlapping window still active, skipping feature shutdown (filter=${otherNeedsFilter}, heater=${otherNeedsHeater}, uvc=${otherNeedsUvc})`);
+            this.log.debug(`Time control [${i + 1}]: window END – overlapping window active (filter=${otherNeedsFilter}, heater=${otherNeedsHeater}, uvc=${otherNeedsUvc}) – individual feature guards apply`);
         }
         // ────────────────────────────────────────────────────────────────────
 
@@ -730,7 +740,7 @@ class MspaAdapter extends utils.Adapter {
             }
 
             // UVC off – but only if daily minimum is already reached AND no other window needs it.
-            if (w.action_filter && w.action_uvc && !otherNeedsUvc) {
+            if (w.action_uvc && !otherNeedsUvc) {
                 if (uvcMinMet) {
                     this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h >= ${uvcMinH} h)`);
                     await this.setFeature('uvc', false, {fromAutomation: true});
@@ -738,12 +748,13 @@ class MspaAdapter extends utils.Adapter {
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
                     }
-                    // Filter must also stay ON for UVC – skip filter shutdown below
+                    // Filter stays ON for UVC – daily ensure takes ownership (checks _timeWindowActive next minute)
                     this._timeWindowActive[i] = false;
+                    this._filterStartedForUvc[i] = false; // ensure takes over ownership
                     this.enableRapidPolling();
                     return;
                 }
-            } else if (w.action_filter && w.action_uvc && otherNeedsUvc) {
+            } else if (w.action_uvc && otherNeedsUvc) {
                 this.log.debug(`Time control [${i + 1}]: UVC kept ON – required by overlapping window`);
             }
 
@@ -751,54 +762,61 @@ class MspaAdapter extends utils.Adapter {
             if (otherNeedsFilter) {
                 this.log.debug(`Time control [${i + 1}]: filter kept ON – required by overlapping window`);
                 this._timeWindowActive[i] = false;
+                this._filterStartedForUvc[i] = false;
                 this.enableRapidPolling();
                 return;
             }
+
+            // Determine if filter needs to be stopped:
+            //   a) window explicitly manages filter (action_filter=true)
+            //   b) window started filter for heating (action_heating=true, action_filter=false)
+            //   c) window started filter as UVC prerequisite (action_uvc=true, action_filter=false, action_heating=false)
+            const filterStartedForUvc = !!this._filterStartedForUvc[i];
+            const needsFilterStop = w.action_filter || (w.action_heating && !w.action_filter) || filterStartedForUvc;
 
             // Filter pump: immediate or delayed?
             const stopPumpNow = !followUpMin || followUpMin <= 0;
 
             if (stopPumpNow) {
-                // No follow-up – stop filter immediately
-                if (w.action_filter) {
-                    this.log.debug(`Time control [${i + 1}]: filter OFF`);
-                    await this.setFeature('filter', false, {fromAutomation: true});
-                }
-                if (w.action_heating && !w.action_filter) {
-                    this.log.debug(`Time control [${i + 1}]: filter OFF (was started for heating only)`);
+                if (needsFilterStop) {
+                    this.log.debug(`Time control [${i + 1}]: filter OFF${filterStartedForUvc ? ' (was started as UVC prerequisite)' : w.action_heating && !w.action_filter ? ' (was started for heating only)' : ''}`);
                     await this.setFeature('filter', false, {fromAutomation: true});
                     this._pumpStartedForHeating = false;
+                    this._filterStartedForUvc[i] = false;
                 }
             } else {
-                // Follow-up active – pump keeps running for followUpMin minutes
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
-                }
-                this._pumpFollowUpTimers[i] = setTimeout(() => {
-                    if (this._unloading) {
-                        return;
-                    }
-                    this._pumpFollowUpTimers[i] = null;
-                    // Re-check overlap at the time the follow-up fires
-                    const stillNeeded = Array.isArray(this.config.timeWindows) &&
-                        this.config.timeWindows.some((win, j) =>
-                            j !== i && this._timeWindowActive[j] && win.active &&
-                            (win.action_filter || win.action_heating)
-                        );
-                    if (stillNeeded) {
-                        this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed by another window – skipping filter OFF`);
-                        return;
-                    }
+                if (needsFilterStop) {
+                    // Follow-up active – pump keeps running for followUpMin minutes
                     if (this.config.more_log_enabled) {
-                        this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
+                        this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
                     }
-                    this.setFeature('filter', false, {fromAutomation: true})
-                        .then(() => {
-                            this._pumpStartedForHeating = false;
-                            this.enableRapidPolling();
-                        })
-                        .catch(err => this.log.error(`Time control [${i + 1}]: follow-up filter OFF FAILED – ${err.message}`));
-                }, Math.round(followUpMin * 60 * 1000));
+                    this._pumpFollowUpTimers[i] = setTimeout(() => {
+                        if (this._unloading) {
+                            return;
+                        }
+                        this._pumpFollowUpTimers[i] = null;
+                        // Re-check overlap at the time the follow-up fires
+                        const stillNeeded = Array.isArray(this.config.timeWindows) &&
+                            this.config.timeWindows.some((win, j) =>
+                                j !== i && this._timeWindowActive[j] && win.active &&
+                                (win.action_filter || win.action_heating || win.action_uvc)
+                            );
+                        if (stillNeeded) {
+                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed by another window – skipping filter OFF`);
+                            return;
+                        }
+                        if (this.config.more_log_enabled) {
+                            this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
+                        }
+                        this.setFeature('filter', false, {fromAutomation: true})
+                            .then(() => {
+                                this._pumpStartedForHeating = false;
+                                this._filterStartedForUvc[i] = false;
+                                this.enableRapidPolling();
+                            })
+                            .catch(err => this.log.error(`Time control [${i + 1}]: follow-up filter OFF FAILED – ${err.message}`));
+                    }, Math.round(followUpMin * 60 * 1000));
+                }
             }
 
             // Deactivation completed successfully – mark window as inactive
@@ -858,7 +876,7 @@ class MspaAdapter extends utils.Adapter {
             if (w.action_filter) {
                 anyWindowManagesFilter = true;
             }
-            if (w.action_filter && w.action_uvc) {
+            if (w.action_uvc) {
                 anyWindowManagesUvc = true;
             }
         }
