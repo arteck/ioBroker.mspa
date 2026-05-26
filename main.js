@@ -1255,25 +1255,34 @@ class MspaAdapter extends utils.Adapter {
         }
 
         if (!powerCycle && Object.keys(this._lastSnapshot).length) {
-            const changes = [];
-            if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
-                changes.push('temp_unit_reset');
-            }
-            if (this._lastSnapshot.heater === 'on' && data.heater === 'off') {
-                changes.push('heater_off');
-            }
-            if (this._lastSnapshot.filter === 'on' && data.filter === 'off') {
-                changes.push('filter_off');
-            }
-            if (this._lastSnapshot.ozone === 'on' && data.ozone === 'off') {
-                changes.push('ozone_off');
-            }
-            if (this._lastSnapshot.uvc === 'on' && data.uvc === 'off') {
-                changes.push('uvc_off');
-            }
-            if (changes.length >= 2) {
-                powerCycle = true;
-                this.log.warn(`MSpa possible power cycle (${changes.join(', ')})`);
+            // Suppress power-cycle detection for 60 s after the adapter sent any command.
+            // Two features going off simultaneously (e.g. UVC + filter after stopEnsure)
+            // would otherwise be misinterpreted as a power cycle.
+            const cmdAgeMs = Date.now() - this._lastCommandTime;
+            const suppressPowerCycleDetection = this._lastCommandTime > 0 && cmdAgeMs < 60_000;
+            if (suppressPowerCycleDetection) {
+                this.log.debug(`checkPowerCycle: snapshot detection suppressed (last command ${Math.round(cmdAgeMs / 1000)} s ago)`);
+            } else {
+                const changes = [];
+                if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
+                    changes.push('temp_unit_reset');
+                }
+                if (this._lastSnapshot.heater === 'on' && data.heater === 'off') {
+                    changes.push('heater_off');
+                }
+                if (this._lastSnapshot.filter === 'on' && data.filter === 'off') {
+                    changes.push('filter_off');
+                }
+                if (this._lastSnapshot.ozone === 'on' && data.ozone === 'off') {
+                    changes.push('ozone_off');
+                }
+                if (this._lastSnapshot.uvc === 'on' && data.uvc === 'off') {
+                    changes.push('uvc_off');
+                }
+                if (changes.length >= 2) {
+                    powerCycle = true;
+                    this.log.warn(`MSpa possible power cycle (${changes.join(', ')})`);
+                }
             }
         }
 
