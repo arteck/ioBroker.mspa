@@ -591,7 +591,10 @@ class MspaAdapter extends utils.Adapter {
             // Overnight windows (e.g. 22:00–06:00): the "after-midnight" portion
             // belongs to the day the window STARTED (yesterday). So if cur < end
             // we must check yesterday's day flag, not today's.
-            const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+            const toMin = (hhmm) => {
+                const [h, m] = hhmm.split(':').map(Number);
+                return h * 60 + m;
+            };
             const sMin = toMin(start);
             const eMin = toMin(end);
             const curMin = now.getHours() * 60 + now.getMinutes();
@@ -830,9 +833,9 @@ class MspaAdapter extends utils.Adapter {
                                 j !== i && this._timeWindowActive[j] && win.active &&
                                 (win.action_filter || win.action_heating || win.action_uvc)
                             );
-                        const stillNeededByEnsure  = this._uvcEnsureActive && this._uvcEnsureFilterStart;
-                        const stillNeededByPv      = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
-                        const stillNeededByFrost   = this._winterFrostActive;
+                        const stillNeededByEnsure = this._uvcEnsureActive && this._uvcEnsureFilterStart;
+                        const stillNeededByPv = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
+                        const stillNeededByFrost = this._winterFrostActive;
                         const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByPv || stillNeededByFrost;
                         if (stillNeeded) {
                             this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed (window=${stillNeededByWindow}, ensure=${stillNeededByEnsure}, pv=${stillNeededByPv}, frost=${stillNeededByFrost}) – skipping filter OFF`);
@@ -1746,7 +1749,7 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
         this._pendingTargetTemp = null;
-        return this.sendTargetTempDirect(t, { fromUser: true });
+        return this.sendTargetTempDirect(t, {fromUser: true});
     }
 
     /**
@@ -1756,7 +1759,7 @@ class MspaAdapter extends utils.Adapter {
      * @param {number} temp
      * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts] – set fromUser=true for direct user commands, fromAutomation=true for automations (both update _lastCommandTime for app-change detection grace period)
      */
-    async sendTargetTempDirect(temp, { fromUser = false, fromAutomation = false } = {}) {
+    async sendTargetTempDirect(temp, {fromUser = false, fromAutomation = false} = {}) {
         this._adapterCommanded.target_temperature = temp;
         if (fromUser || fromAutomation) {
             this._lastCommandTime = Date.now();

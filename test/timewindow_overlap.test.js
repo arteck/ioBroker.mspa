@@ -739,6 +739,64 @@ describe('L. Overnight-Fenster Überlappung', () => {
             'leeres Fenster darf nie aktiv sein');
     });
 
+    it('M.1 Overnight Tagesgrenze: Fenster 22:00–06:00 nur Montag – Di 03:00 muss noch aktiv sein', () => {
+        // Reproduziert den Bug: day=Dienstag, dayOn=day_tue=false → inWin=false → Fenster endet falsch
+        const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+        const dayKeys = ['day_sun','day_mon','day_tue','day_wed','day_thu','day_fri','day_sat'];
+
+        function computeInWin(w, fakeDay, fakeHour, fakeMin) {
+            const start = w.start; const end = w.end;
+            const sMin = toMin(start); const eMin = toMin(end);
+            const curMin = fakeHour * 60 + fakeMin;
+            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
+            const effectiveDay = isOvernightAfterMidnight ? (fakeDay + 6) % 7 : fakeDay;
+            const dayOn = !!w[dayKeys[effectiveDay]];
+            // isInTimeWindow
+            const s = sMin; const e = eMin; const cur = curMin;
+            let inWindow;
+            if (s === e) inWindow = false;
+            else if (s < e) inWindow = cur >= s && cur < e;
+            else inWindow = cur >= s || cur < e;
+            return dayOn && inWindow;
+        }
+
+        const w = { start: '22:00', end: '06:00', day_mon: true,
+            day_tue: false, day_wed: false, day_thu: false, day_fri: false, day_sat: false, day_sun: false };
+
+        assert.strictEqual(computeInWin(w, 1, 22, 30), true,  'Mo 22:30 → aktiv');
+        assert.strictEqual(computeInWin(w, 1, 23, 59), true,  'Mo 23:59 → aktiv');
+        assert.strictEqual(computeInWin(w, 2, 0,  0),  true,  'Di 00:00 → noch aktiv (overnight Mo)');
+        assert.strictEqual(computeInWin(w, 2, 3,  0),  true,  'Di 03:00 → noch aktiv (overnight Mo)');
+        assert.strictEqual(computeInWin(w, 2, 5, 59),  true,  'Di 05:59 → noch aktiv');
+        assert.strictEqual(computeInWin(w, 2, 6,  0),  false, 'Di 06:00 → Fenster-Ende');
+        assert.strictEqual(computeInWin(w, 2, 10, 0),  false, 'Di 10:00 → tagsüber, inaktiv');
+        assert.strictEqual(computeInWin(w, 2, 22, 0),  false, 'Di 22:00 → day_tue=false, inaktiv');
+    });
+
+    it('M.2 Overnight Tagesgrenze: So–Mo-Grenze (So=6, Mo=0)', () => {
+        const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+        const dayKeys = ['day_sun','day_mon','day_tue','day_wed','day_thu','day_fri','day_sat'];
+
+        function computeInWin(w, fakeDay, fakeHour, fakeMin) {
+            const sMin = toMin(w.start); const eMin = toMin(w.end); const curMin = fakeHour * 60 + fakeMin;
+            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
+            const effectiveDay = isOvernightAfterMidnight ? (fakeDay + 6) % 7 : fakeDay;
+            const dayOn = !!w[dayKeys[effectiveDay]];
+            const s = sMin; const e = eMin; const cur = curMin;
+            let inW; if (s===e) inW=false; else if(s<e) inW=cur>=s&&cur<e; else inW=cur>=s||cur<e;
+            return dayOn && inW;
+        }
+
+        // Samstag-Nacht-Fenster: nur Samstag aktiv (index 6)
+        const w = { start: '23:00', end: '04:00',
+            day_sun: false, day_mon: false, day_tue: false, day_wed: false,
+            day_thu: false, day_fri: false, day_sat: true };
+
+        assert.strictEqual(computeInWin(w, 6, 23, 30), true,  'Sa 23:30 → aktiv');
+        assert.strictEqual(computeInWin(w, 0, 1,  0),  true,  'So 01:00 → noch aktiv (overnight Sa→So)');
+        assert.strictEqual(computeInWin(w, 0, 4,  0),  false, 'So 04:00 → Fenster-Ende');
+    });
+
     it('deactivateWindow ignoriert filter-OFF wenn overnight-Fenster noch läuft', async () => {
         const adapter = createAdapter();
         // Overnight-Fenster (i=0) läuft noch, normales (i=1) endet

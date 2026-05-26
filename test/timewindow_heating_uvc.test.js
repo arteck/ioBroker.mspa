@@ -51,6 +51,10 @@ function createAdapter(overrides = {}) {
         _filterStartedForUvc: [],       // NEU: per-window Flag
         _seasonEnabled: true,
         _pvSurplusEvaluated: false,
+        _uvcEnsureActive: false,        // UVC Daily Ensure
+        _uvcEnsureFilterStart: false,
+        _pvManagedFeatures: { filter: false, heater: false, uvc: false },
+        _winterFrostActive: false,
         config: {
             timeWindows: [],
             more_log_enabled: false,
@@ -159,15 +163,18 @@ function createAdapter(overrides = {}) {
                     this._pumpFollowUpTimers[i] = setTimeout(() => {
                         if (this._unloading) return;
                         this._pumpFollowUpTimers[i] = null;
-                        const stillNeeded = Array.isArray(this.config.timeWindows) &&
+                        const stillNeededByWindow = Array.isArray(this.config.timeWindows) &&
                             this.config.timeWindows.some((win, j) =>
                                 j !== i && this._timeWindowActive[j] && win.active &&
                                 (win.action_filter || win.action_heating || win.action_uvc)
                             );
+                        const stillNeededByEnsure = this._uvcEnsureActive && this._uvcEnsureFilterStart;
+                        const stillNeededByPv     = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
+                        const stillNeededByFrost  = this._winterFrostActive;
+                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByPv || stillNeededByFrost;
                         if (stillNeeded) return;
                         this.setFeature('filter', false)
                             .then(() => {
-                                this._pumpStartedForHeating = false;
                                 this._filterStartedForUvc[i] = false;
                                 this.enableRapidPolling();
                             })
@@ -885,3 +892,107 @@ describe('EDGE: _unloading – follow-up Timer feuert nicht nach Adapter-Stop', 
         }).catch(done);
     });
 });
+
+// ---------------------------------------------------------------------------
+// FOLLOW-UP + UVC ENSURE INTERAKTION
+// ---------------------------------------------------------------------------
+describe('FOLLOW-UP: Filter-OFF wird blockiert wenn UVC Daily Ensure aktiv ist', () => {
+    it('follow-up schaltet Filter NICHT ab wenn _uvcEnsureActive=true und _uvcEnsureFilterStart=true', (done) => {
+        const adapter = createAdapter();
+        adapter.config.pump_follow_up = 0.001; // ~60 ms
+        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter._timeWindowActive = [false];
+
+        adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            // Ensure übernimmt während follow-up läuft
+            adapter._uvcEnsureActive      = true;
+            adapter._uvcEnsureFilterStart = true;
+
+            setTimeout(() => {
+                const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+                assert.strictEqual(filterOff.length, 0,
+                    'filter darf NICHT abgeschaltet werden – Ensure hat Ownership');
+                done();
+            }, 200);
+        }).catch(done);
+    });
+
+    it('follow-up schaltet Filter AB wenn _uvcEnsureActive=true aber _uvcEnsureFilterStart=false', (done) => {
+        const adapter = createAdapter();
+        adapter.config.pump_follow_up = 0.001;
+        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter._timeWindowActive = [false];
+
+        adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            // Ensure läuft, aber hat Filter NICHT selbst gestartet (Filter gehört uns)
+            adapter._uvcEnsureActive      = true;
+            adapter._uvcEnsureFilterStart = false;
+
+            setTimeout(() => {
+                const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+                assert.strictEqual(filterOff.length, 1,
+                    'filter MUSS abgeschaltet werden – Ensure hat kein Filter-Ownership');
+                done();
+            }, 200);
+        }).catch(done);
+    });
+
+    it('follow-up schaltet Filter NICHT ab wenn _pvActive=true und PV Filter steuert', (done) => {
+        const adapter = createAdapter();
+        adapter.config.pump_follow_up = 0.001;
+        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter._timeWindowActive = [false];
+
+        adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            adapter._pvActive = true;
+            adapter._pvManagedFeatures.filter = true;
+
+            setTimeout(() => {
+                const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+                assert.strictEqual(filterOff.length, 0,
+                    'filter darf NICHT abgeschaltet werden – PV steuert Filter');
+                done();
+            }, 200);
+        }).catch(done);
+    });
+
+    it('follow-up schaltet Filter NICHT ab wenn _winterFrostActive=true', (done) => {
+        const adapter = createAdapter();
+        adapter.config.pump_follow_up = 0.001;
+        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter._timeWindowActive = [false];
+
+        adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            adapter._winterFrostActive = true;
+
+            setTimeout(() => {
+                const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+                assert.strictEqual(filterOff.length, 0,
+                    'filter darf NICHT abgeschaltet werden – Frost-Schutz aktiv');
+                done();
+            }, 200);
+        }).catch(done);
+    });
+
+    it('follow-up schaltet Filter AB wenn keine Automation mehr aktiv ist', (done) => {
+        const adapter = createAdapter();
+        adapter.config.pump_follow_up = 0.001;
+        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter._timeWindowActive = [false];
+        // alle Automationen inaktiv
+        adapter._uvcEnsureActive   = false;
+        adapter._pvActive          = false;
+        adapter._winterFrostActive = false;
+
+        adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            setTimeout(() => {
+                const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+                assert.strictEqual(filterOff.length, 1,
+                    'filter MUSS abgeschaltet werden – keine Automation aktiv');
+                done();
+            }, 200);
+        }).catch(done);
+    });
+});
+
+
