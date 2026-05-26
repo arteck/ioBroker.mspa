@@ -112,8 +112,8 @@ class MspaAdapter extends utils.Adapter {
 
         // Time window control
         this._timeTimer = null;
+        this._timeAlignTimer = null;  // setTimeout handle for minute-alignment before interval starts
         this._timeWindowActive = [false, false, false]; // state per window (1-3)
-        this._pumpStartedForHeating = false; // pump was started solely because of heating (action_filter=false)
         this._filterStartedForUvc = [];  // per-window: true if filter was started as UVC prerequisite (action_filter=false, action_uvc=true)
         this._pumpFollowUpTimers = [];    // follow-up timers per window index
 
@@ -335,6 +335,10 @@ class MspaAdapter extends utils.Adapter {
             if (this._timeTimer) {
                 clearInterval(this._timeTimer);
             }
+            if (this._timeAlignTimer) {
+                clearTimeout(this._timeAlignTimer);
+                this._timeAlignTimer = null;
+            }
             if (this._pvDeactivateTimer) {
                 clearTimeout(this._pvDeactivateTimer);
             }
@@ -456,6 +460,10 @@ class MspaAdapter extends utils.Adapter {
             clearInterval(this._timeTimer);
             this._timeTimer = null;
         }
+        if (this._timeAlignTimer) {
+            clearTimeout(this._timeAlignTimer);
+            this._timeAlignTimer = null;
+        }
         this._timeWindowActive = [];
         // Cancel any running PV deactivation
         await this.pvCancelAllDeactivationTimers();
@@ -490,7 +498,16 @@ class MspaAdapter extends utils.Adapter {
         this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
         const now = new Date();
         const msToMin = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-        this.setStray(() => {
+        if (this._timeAlignTimer) {
+            clearTimeout(this._timeAlignTimer);
+        }
+        this._timeAlignTimer = setTimeout(() => {
+            this._timeAlignTimer = null;
+            // Guard: clear any stale interval that may exist (defensive)
+            if (this._timeTimer) {
+                clearInterval(this._timeTimer);
+                this._timeTimer = null;
+            }
             this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
             this._timeTimer = setInterval(
                 () => this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`)),
@@ -523,12 +540,17 @@ class MspaAdapter extends utils.Adapter {
             // deactivate any windows that were still active
             for (let i = 0; i < windows.length; i++) {
                 if (this._timeWindowActive[i]) {
-                    this._timeWindowActive[i] = false;
                     if (this.config.more_log_enabled) {
                         this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
                     }
+                    // Do NOT pre-set _timeWindowActive[i]=false here –
+                    // deactivateWindow sets it at the end. If it fails (API error),
+                    // _timeWindowActive[i] stays true so next minute triggers a retry.
                     await this.deactivateWindow(windows[i], i);
-                    await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', {window: i + 1}));
+                    if (!this._timeWindowActive[i]) {
+                        // deactivation succeeded
+                        await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', {window: i + 1}));
+                    }
                 }
             }
             return;
@@ -601,7 +623,6 @@ class MspaAdapter extends utils.Adapter {
                             if (!w.action_filter) {
                                 this.log.debug(`Time control [${i + 1}]: filter ON (required for heating)`);
                                 await this.setFeature('filter', true, {fromAutomation: true});
-                                this._pumpStartedForHeating = true;
                             } else {
                                 // action_filter=true: start filter first so heater has pump running
                                 this.log.debug(`Time control [${i + 1}]: filter ON (before heater, action_filter=true)`);
@@ -781,7 +802,6 @@ class MspaAdapter extends utils.Adapter {
                 if (needsFilterStop) {
                     this.log.debug(`Time control [${i + 1}]: filter OFF${filterStartedForUvc ? ' (was started as UVC prerequisite)' : w.action_heating && !w.action_filter ? ' (was started for heating only)' : ''}`);
                     await this.setFeature('filter', false, {fromAutomation: true});
-                    this._pumpStartedForHeating = false;
                     this._filterStartedForUvc[i] = false;
                 }
             } else {
@@ -810,7 +830,6 @@ class MspaAdapter extends utils.Adapter {
                         }
                         this.setFeature('filter', false, {fromAutomation: true})
                             .then(() => {
-                                this._pumpStartedForHeating = false;
                                 this._filterStartedForUvc[i] = false;
                                 this.enableRapidPolling();
                             })
