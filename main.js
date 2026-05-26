@@ -603,9 +603,9 @@ class MspaAdapter extends utils.Adapter {
                     continue; // kein Hardware-Befehl – PV evaluateSurplus entscheidet
                 }
                 try {
-                    // ── "All OFF" window: action_filter=false + action_heating=false
+                    // ── "All OFF" window: action_filter=false + action_heating=false + action_uvc=false
                     // → actively shut down everything that is currently running
-                    if (!w.action_filter && !w.action_heating) {
+                    if (!w.action_filter && !w.action_heating && !w.action_uvc) {
                         this.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
                         await this.setFeature('heater', false, {fromAutomation: true}).catch(() => {
                         });
@@ -616,18 +616,16 @@ class MspaAdapter extends utils.Adapter {
                         this.enableRapidPolling();
                     } else {
                         if (w.action_heating) {
-                            // heater requires filter pump – start it first
-                            // Case 1: action_filter=false → start filter as heating prerequisite
-                            // Case 2: action_filter=true  → filter will be started below, but
-                            //         we need it running BEFORE the heater command → start it now
+                            // heater requires filter pump – start it first (both cases).
+                            // If action_filter=true the explicit block below would also start it,
+                            // but the heater needs the pump running BEFORE the heater command,
+                            // so we always pre-start it here. The second call is idempotent.
                             if (!w.action_filter) {
                                 this.log.debug(`Time control [${i + 1}]: filter ON (required for heating)`);
-                                await this.setFeature('filter', true, {fromAutomation: true});
                             } else {
-                                // action_filter=true: start filter first so heater has pump running
-                                this.log.debug(`Time control [${i + 1}]: filter ON (before heater, action_filter=true)`);
-                                await this.setFeature('filter', true, {fromAutomation: true});
+                                this.log.debug(`Time control [${i + 1}]: filter ON (before heater, also managed by action_filter)`);
                             }
+                            await this.setFeature('filter', true, {fromAutomation: true});
                             this.log.debug(`Time control [${i + 1}]: heater ON`);
                             await this.setFeature('heater', true, {fromAutomation: true});
                             if (w.target_temp) {
@@ -725,7 +723,7 @@ class MspaAdapter extends utils.Adapter {
         const windows = this.config.timeWindows;
         const otherNeedsFilter = Array.isArray(windows) && windows.some((win, j) =>
             j !== i && this._timeWindowActive[j] && win.active &&
-            (win.action_filter || win.action_heating)
+            (win.action_filter || win.action_heating || (win.action_uvc && !!this._filterStartedForUvc[j]))
         );
         const otherNeedsHeater = Array.isArray(windows) && windows.some((win, j) =>
             j !== i && this._timeWindowActive[j] && win.active && win.action_heating
