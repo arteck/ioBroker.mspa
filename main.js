@@ -1318,11 +1318,39 @@ class MspaAdapter extends utils.Adapter {
         }
         await this.sleep(2000);
 
-        if (this._savedState.target_temperature) {
+        // ── Guard: heater must not be restored outside an active automation ──────
+        // If time windows or PV are configured, only restore the heater when at
+        // least one window with action_heating is CURRENTLY active (in-window AND
+        // tracked as active) or PV is currently active with a heating window.
+        // Without this guard the heater would be restored e.g. at 19:00 even if
+        // the window ended at 18:00 – and checkTimeWindows() would never shut it
+        // down because _timeWindowActive[i] is false (new adapter session, wasIn=false).
+        let allowHeaterRestore = true;
+        const windows = this.config.timeWindows;
+        const hasHeatingWindows = Array.isArray(windows) && windows.some(w => w.active && w.action_heating);
+        if (hasHeatingWindows && !this._pvActive) {
+            const heatingWindowActiveNow = Array.isArray(windows) && windows.some((w, i) =>
+                w.active && w.action_heating && this._timeWindowActive[i]
+            );
+            if (!heatingWindowActiveNow) {
+                allowHeaterRestore = false;
+                this.log.info('Power cycle restore: heater NOT restored – no heating time window is currently active');
+            }
+        }
+        if (!this._seasonEnabled && !this._winterModeActive) {
+            allowHeaterRestore = false;
+            this.log.info('Power cycle restore: heater NOT restored – season disabled and winter mode inactive');
+        }
+        // ─────────────────────────────────────────────────────────────────────────
+
+        if (this._savedState.target_temperature && allowHeaterRestore) {
             await this.safeCmd(() => this.setTargetTemp(this._savedState.target_temperature), 'temperature');
         }
         for (const feature of ['heater', 'filter', 'ozone', 'uvc', 'bubble']) {
             if (this._savedState[feature] === 'on') {
+                if (feature === 'heater' && !allowHeaterRestore) {
+                    continue;
+                }
                 await this.safeCmd(() => this.setFeature(feature, true, {fromAutomation: true}), feature);
                 await this.sleep(500);
             }
@@ -1333,6 +1361,13 @@ class MspaAdapter extends utils.Adapter {
                 'bubble_level',
             );
         }
+
+        // After restore: reconcile automation state with actual device state.
+        // checkTimeWindows() will shut down features that are now running outside
+        // their window (e.g. filter restored while its window has ended).
+        this.checkTimeWindows().catch(e =>
+            this.log.error(`restoreSavedState: checkTimeWindows reconcile failed – ${e.message}`)
+        );
     }
 
     async safeCmd(fn, label) {
@@ -1344,7 +1379,13 @@ class MspaAdapter extends utils.Adapter {
     }
 
     sleep(ms) {
-        return new Promise(r => setTimeout(r, ms));
+        return new Promise(r => {
+            const t = setTimeout(() => {
+                this._strayTimers.delete(t);
+                r();
+            }, ms);
+            this._strayTimers.add(t);
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -1426,8 +1467,8 @@ class MspaAdapter extends utils.Adapter {
     _scheduleCommandedReset(feature, val, delayMs = 30_000) {
         this.setStray(() => {
             if (this._unloading) {
-return;
-}
+                return;
+            }
             if (this._adapterCommanded[feature] === val) {
                 this._adapterCommanded[feature] = null;
                 this.log.debug(`_adapterCommanded.${feature} reset to null after ${delayMs} ms`);

@@ -21,10 +21,6 @@ function makeAdapter({ config = {}, sendToResult = null, sendToThrow = null } = 
             notify_telegram_enabled:  false,
             notify_telegram_instance: '',
             notify_telegram_users:    '',
-            notify_email_enabled:     false,
-            notify_email_instance:    '',
-            notify_email_recipient:   '',
-            notify_email_subject:     '',
             notification_language:    'en',
             ...config,
         },
@@ -151,23 +147,6 @@ describe('notificationHelper', () => {
             helper.init(adapter);
             await helper.send('test');
             assert.strictEqual(adapter._sentTo.length, 0);
-        });
-
-        // ── E-Mail ───────────────────────────────────────────────────────────
-
-        it('sends both Telegram and E-Mail when both are enabled', async () => {
-            const helper  = freshHelper();
-            const adapter = makeAdapter({ config: {
-                notify_telegram_enabled:  true,
-                notify_telegram_instance: 'telegram.0',
-                notify_email_enabled:     true,
-                notify_email_instance:    'email.0',
-                notify_email_recipient:   'x@x.com',
-            }});
-            helper.init(adapter);
-            await helper.send('dual');
-            // Only Telegram is sent – email removed
-            assert.strictEqual(adapter._sentTo.length, 1);
         });
     });
 });
