@@ -587,7 +587,17 @@ class MspaAdapter extends utils.Adapter {
 
             const start = w.start || '00:00';
             const end = w.end || '00:00';
-            const dayOn = !!w[dayKeys[day]];
+
+            // Overnight windows (e.g. 22:00–06:00): the "after-midnight" portion
+            // belongs to the day the window STARTED (yesterday). So if cur < end
+            // we must check yesterday's day flag, not today's.
+            const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+            const sMin = toMin(start);
+            const eMin = toMin(end);
+            const curMin = now.getHours() * 60 + now.getMinutes();
+            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
+            const effectiveDay = isOvernightAfterMidnight ? (day + 6) % 7 : day;
+            const dayOn = !!w[dayKeys[effectiveDay]];
             const inWin = dayOn && this.isInTimeWindow(start, end);
             const wasIn = this._timeWindowActive[i];
 
@@ -813,14 +823,19 @@ class MspaAdapter extends utils.Adapter {
                             return;
                         }
                         this._pumpFollowUpTimers[i] = null;
-                        // Re-check overlap at the time the follow-up fires
-                        const stillNeeded = Array.isArray(this.config.timeWindows) &&
+                        // Re-check at the time the follow-up fires whether any automation
+                        // still needs the filter running.
+                        const stillNeededByWindow = Array.isArray(this.config.timeWindows) &&
                             this.config.timeWindows.some((win, j) =>
                                 j !== i && this._timeWindowActive[j] && win.active &&
                                 (win.action_filter || win.action_heating || win.action_uvc)
                             );
+                        const stillNeededByEnsure  = this._uvcEnsureActive && this._uvcEnsureFilterStart;
+                        const stillNeededByPv      = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
+                        const stillNeededByFrost   = this._winterFrostActive;
+                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByPv || stillNeededByFrost;
                         if (stillNeeded) {
-                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed by another window – skipping filter OFF`);
+                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed (window=${stillNeededByWindow}, ensure=${stillNeededByEnsure}, pv=${stillNeededByPv}, frost=${stillNeededByFrost}) – skipping filter OFF`);
                             return;
                         }
                         if (this.config.more_log_enabled) {
