@@ -9,8 +9,7 @@
  *   3.  notificationHelper – Telegram Multi-User-Routing
  *   4.  pv.js – pvDeactivated-Notification war hinter more_log_enabled versteckt → gefixt
  *   5.  consumptionHelper – negativer day_kwh bei Zähler-Tausch → gefixt
- *   6.  consumptionHelper – handleStateChange ist no-op (API-Kompatibilität)
- *   7.  utils.js / transformStatus – diverse Edge-Cases
+ *   6.  utils.js / transformStatus – diverse Edge-Cases
  *   8.  utils.js / RateTracker – EMA-Akkumulation, Grenzen, Cooling-Modus
  *   9.  main.js / isInSeason – Jahresgrenzen-Überläufe, seasonEnabled=false
  *  10.  main.js / isInTimeWindow – Overnight-Fenster, leeres Fenster
@@ -238,11 +237,6 @@ describe('consumptionHelper – Zähler-Rollover & Edge-Cases', () => {
         };
     }
 
-    it('handleStateChange ist ein no-op (gibt undefined zurück)', async () => {
-        const h = freshHelper();
-        const result = await h.handleStateChange('any.id', { val: 1 });
-        assert.strictEqual(result, undefined);
-    });
 
     it('cleanup() räumt Timer auf ohne zu werfen', () => {
         const h = freshHelper();

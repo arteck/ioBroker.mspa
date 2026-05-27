@@ -1078,9 +1078,6 @@ class MspaAdapter extends utils.Adapter {
         return pvController.cancelAllDeactivationTimers(this);
     }
 
-    async pvReactivate(pvWindows, surplus) {
-        return pvController.reactivate(this, pvWindows, surplus);
-    }
 
     async pvStagedDeactivate(pvWindows, immediate = false) {
         return pvController.stagedDeactivate(this, pvWindows, immediate);
