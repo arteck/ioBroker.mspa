@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.8",
+    "version": "0.3.9",
     "news": {
+      "0.3.9": {
+        "en": "fix heater start",
+        "de": "heizungsstart",
+        "ru": "ремонтный нагреватель start",
+        "pt": "fixar o arranque do aquecedor",
+        "nl": "fix verwarming start",
+        "fr": "fixer le démarrage du chauffage",
+        "it": "fix riscaldamento di avvio",
+        "es": "empezar el calentador",
+        "pl": "rozruch ogrzewacza",
+        "uk": "фіксатор стартера",
+        "zh-cn": "固定加热器启动"
+      },
       "0.3.8": {
         "en": "Adapter requires node.js >= 22 now\noptimization, automatic detection\nfix uvc start",
         "de": "Adapter benötigt node.js >= 22 jetzt\noptimierung, automatische erkennung\nuvc start",
@@ -80,19 +93,6 @@
         "pl": "hejtrat\nfix uvc stop",
         "uk": "фіксувати тепловіддачу\nкріплення uvc зупинки",
         "zh-cn": "固定热率\n固定 uc 站点"
-      },
-      "0.3.2": {
-        "en": "see Readme",
-        "de": "Siehe Readme",
-        "ru": "см. файл Readme",
-        "pt": "Consulte o arquivo Leia-me.",
-        "nl": "zie Readme",
-        "fr": "Voir le fichier Lisez-moi",
-        "it": "vedi il file Readme",
-        "es": "ver Léame",
-        "pl": "zobacz Readme",
-        "uk": "див. файл Readme",
-        "zh-cn": "请参阅自述文件"
       }
     },
     "titleLang": {
