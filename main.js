@@ -1574,46 +1574,63 @@ class MspaAdapter extends utils.Adapter {
                     }
                 }
                 await this.setStatusCheck('send');
-                const result = await this._api.setHeaterState(state);
+                let result;
+                try {
+                    result = await this._api.setHeaterState(state);
+                } catch (err) {
+                    // FIX: API exception → clear _adapterCommanded, set error status, rethrow
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.heater = null;
+                    // heater OFF attempted but threw → cancel pending temp timer anyway
+                    if (!boolVal && this._pendingTempTimer) {
+                        clearTimeout(this._pendingTempTimer);
+                        this._pendingTempTimer = null;
+                    }
+                    throw err;
+                }
                 if (this._api._lastCommandConfirmed) {
                     await this.setStatusCheck('success');
                     this._scheduleCommandedReset('heater', boolVal);
+                    // FIX: only ack the state when the device actually confirmed the command
+                    this.setState('control.heater', boolVal, true);
+                    if (boolVal && this._pendingTargetTemp !== null) {
+                        // Heater just switched ON → send pending target temperature after 10 s
+                        if (this._pendingTempTimer) {
+                            clearTimeout(this._pendingTempTimer);
+                            this._pendingTempTimer = null;
+                        }
+                        const pendingTemp = this._pendingTargetTemp;
+                        // Sofort entwerten – konkurrierende Aufrufer (z. B. setTargetTemp)
+                        // dürfen den Wert nicht erneut abgreifen.
+                        this._pendingTargetTemp = null;
+                        this._pendingTempTimer = setTimeout(async () => {
+                            this._pendingTempTimer = null;
+                            if (this.config.more_log_enabled) {
+                                this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
+                            }
+                            try {
+                                await this.sendTargetTempDirect(pendingTemp);
+                            } catch (err) {
+                                this.log.error(`target_temperature: delayed send FAILED – ${err.message}`);
+                            }
+                        }, 10_000);
+                    }
                 } else {
                     await this.setStatusCheck('error');
                     this._adapterCommanded.heater = null;
+<<<<<<< HEAD
                     if (fromAutomation) {
                         throw new Error(`setFeature('heater', ${boolVal}): not confirmed by device after polling`);
                     }
+=======
+                    // FIX: do NOT ack state here – next poll will write the real device value
+                    this.log.warn('heater command not confirmed by device – state will be corrected on next poll');
+>>>>>>> d92c3e307164f7b8a73a3cfd023260ce53322689
                 }
-                // Immediate optimistic ack so UI confirms without waiting for next poll
-                this.setState('control.heater', boolVal, true);
-                if (boolVal && this._pendingTargetTemp !== null) {
-                    // Heater just switched ON ? send pending target temperature after 10 s
-                    if (this._pendingTempTimer) {
-                        clearTimeout(this._pendingTempTimer);
-                        this._pendingTempTimer = null;
-                    }
-                    const pendingTemp = this._pendingTargetTemp;
-                    // Sofort entwerten – konkurrierende Aufrufer (z. B. setTargetTemp)
-                    // dürfen den Wert nicht erneut abgreifen.
-                    this._pendingTargetTemp = null;
-                    this._pendingTempTimer = setTimeout(async () => {
-                        this._pendingTempTimer = null;
-                        if (this.config.more_log_enabled) {
-                            this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
-                        }
-                        try {
-                            await this.sendTargetTempDirect(pendingTemp);
-                        } catch (err) {
-                            this.log.error(`target_temperature: delayed send FAILED – ${err.message}`);
-                        }
-                    }, 10_000);
-                } else if (!boolVal) {
-                    // Heater switched OFF ? cancel any pending temperature command
-                    if (this._pendingTempTimer) {
-                        clearTimeout(this._pendingTempTimer);
-                        this._pendingTempTimer = null;
-                    }
+                // heater OFF: always cancel pending temp timer regardless of success/failure
+                if (!boolVal && this._pendingTempTimer) {
+                    clearTimeout(this._pendingTempTimer);
+                    this._pendingTempTimer = null;
                 }
                 return result;
             }
@@ -1621,6 +1638,8 @@ class MspaAdapter extends utils.Adapter {
                 if (!boolVal) {
                     // The API rejects a filter-OFF command while UVC is still running.
                     // → Explicitly switch off UVC (and bubble) first, then filter.
+                    // FIX: each pre-condition wrapped in try/catch so a single failure does NOT
+                    //      abort the filter-OFF sequence – we log a warning and continue.
                     const uvcState = this.getState('control.uvc');
                     const bubbleState = this.getState('control.bubble');
                     const heaterState = this.getState('control.heater');
@@ -1629,83 +1648,165 @@ class MspaAdapter extends utils.Adapter {
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
                         }
-                        await this.setStatusCheck('send');
-                        await this._api.setUvcState(0);
-                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                        this._adapterCommanded.uvc = false;
-                        this.setState('control.uvc', false, true);  // immediate ack
+                        try {
+                            await this.setStatusCheck('send');
+                            await this._api.setUvcState(0);
+                            this._adapterCommanded.uvc = false;
+                            if (this._api._lastCommandConfirmed) {
+                                await this.setStatusCheck('success');
+                                this.setState('control.uvc', false, true);
+                            } else {
+                                await this.setStatusCheck('error');
+                                this._adapterCommanded.uvc = null;
+                                this.log.warn('filter OFF: UVC pre-stop not confirmed – continuing with filter OFF anyway');
+                            }
+                        } catch (e) {
+                            await this.setStatusCheck('error');
+                            this._adapterCommanded.uvc = null;
+                            this.log.warn(`filter OFF: UVC pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
+                        }
                         await this.sleep(500);
                     }
                     if (bubbleState && bubbleState.val) {
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
                         }
-                        await this.setStatusCheck('send');
-                        await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
-                        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                        this._adapterCommanded.bubble = false;
-                        this.setState('control.bubble', false, true);  // immediate ack
+                        try {
+                            await this.setStatusCheck('send');
+                            await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
+                            this._adapterCommanded.bubble = false;
+                            if (this._api._lastCommandConfirmed) {
+                                await this.setStatusCheck('success');
+                                this.setState('control.bubble', false, true);
+                            } else {
+                                await this.setStatusCheck('error');
+                                this._adapterCommanded.bubble = null;
+                                this.log.warn('filter OFF: bubble pre-stop not confirmed – continuing with filter OFF anyway');
+                            }
+                        } catch (e) {
+                            await this.setStatusCheck('error');
+                            this._adapterCommanded.bubble = null;
+                            this.log.warn(`filter OFF: bubble pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
+                        }
                         await this.sleep(500);
                     }
                     if (heaterState && heaterState.val) {
                         if (this.config.more_log_enabled) {
                             this.log.info('filter OFF – auto-disabling heater first');
                         }
-                        await this.setFeature('heater', false, {fromUser, fromAutomation});
+                        try {
+                            await this.setFeature('heater', false, {fromUser, fromAutomation});
+                        } catch (e) {
+                            this.log.warn(`filter OFF: heater pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
+                        }
                         await this.sleep(500);
                     }
                 }
                 await this.setStatusCheck('send');
-                await this._api.setFilterState(state);
+                try {
+                    await this._api.setFilterState(state);
+                } catch (err) {
+                    // FIX: API exception → clear _adapterCommanded, set error status, rethrow
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.filter = null;
+                    throw err;
+                }
                 if (this._api._lastCommandConfirmed) {
                     await this.setStatusCheck('success');
                     this._scheduleCommandedReset('filter', boolVal);
+                    // FIX: only ack when device confirmed
+                    this.setState('control.filter', boolVal, true);
                 } else {
                     await this.setStatusCheck('error');
                     this._adapterCommanded.filter = null;
+<<<<<<< HEAD
                     if (fromAutomation) {
                         throw new Error(`setFeature('filter', ${boolVal}): not confirmed by device after polling`);
                     }
+=======
+                    // FIX: do NOT ack – next poll corrects the state
+                    this.log.warn('filter command not confirmed by device – state will be corrected on next poll');
+>>>>>>> d92c3e307164f7b8a73a3cfd023260ce53322689
                 }
-                this.setState('control.filter', boolVal, true);  // immediate ack
                 return;
             }
             case 'bubble':
                 await this.setStatusCheck('send');
-                await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                try {
+                    await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
+                } catch (err) {
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.bubble = null;
+                    throw err;
+                }
                 if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
                     this._scheduleCommandedReset('bubble', boolVal);
+                    this.setState('control.bubble', boolVal, true);
                 } else {
                     this._adapterCommanded.bubble = null;
+                    await this.setStatusCheck('error');
+                    this.log.warn('bubble command not confirmed by device – state will be corrected on next poll');
                 }
-                this.setState('control.bubble', boolVal, true);
                 return;
             case 'jet':
                 await this.setStatusCheck('send');
-                await this._api.setJetState(state);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                this.setState('control.jet', boolVal, true);
+                try {
+                    await this._api.setJetState(state);
+                } catch (err) {
+                    await this.setStatusCheck('error');
+                    throw err;
+                }
+                if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
+                    this.setState('control.jet', boolVal, true);
+                } else {
+                    await this.setStatusCheck('error');
+                    this.log.warn('jet command not confirmed by device – state will be corrected on next poll');
+                }
                 return;
             case 'ozone':
                 await this.setStatusCheck('send');
-                await this._api.setOzoneState(state);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                this.setState('control.ozone', boolVal, true);
+                try {
+                    await this._api.setOzoneState(state);
+                } catch (err) {
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.ozone = null;
+                    throw err;
+                }
+                if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
+                    this.setState('control.ozone', boolVal, true);
+                } else {
+                    this._adapterCommanded.ozone = null;
+                    await this.setStatusCheck('error');
+                    this.log.warn('ozone command not confirmed by device – state will be corrected on next poll');
+                }
                 return;
             case 'uvc':
                 await this.setStatusCheck('send');
-                await this._api.setUvcState(state);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+                try {
+                    await this._api.setUvcState(state);
+                } catch (err) {
+                    await this.setStatusCheck('error');
+                    this._adapterCommanded.uvc = null;
+                    throw err;
+                }
                 if (this._api._lastCommandConfirmed) {
+                    await this.setStatusCheck('success');
                     this._scheduleCommandedReset('uvc', boolVal);
+                    this.setState('control.uvc', boolVal, true);
                 } else {
                     this._adapterCommanded.uvc = null;
+<<<<<<< HEAD
                     if (fromAutomation) {
                         throw new Error(`setFeature('uvc', ${boolVal}): not confirmed by device after polling`);
                     }
+=======
+                    await this.setStatusCheck('error');
+                    this.log.warn('uvc command not confirmed by device – state will be corrected on next poll');
+>>>>>>> d92c3e307164f7b8a73a3cfd023260ce53322689
                 }
-                this.setState('control.uvc', boolVal, true);
                 return;
         }
     }
