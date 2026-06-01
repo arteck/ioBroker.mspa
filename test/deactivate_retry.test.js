@@ -38,33 +38,43 @@ function makeAdapter(overrides = {}) {
             more_log_enabled: false,
         },
         log: {
-            debug: () => {},
-            info: () => {},
-            warn: () => {},
-            error: () => {},
+            debug: () => {
+            },
+            info: () => {
+            },
+            warn: () => {
+            },
+            error: () => {
+            },
         },
-        enableRapidPolling() {},
-        getUvcTodayHours() { return 3; },
-        async evaluatePvSurplus() { this.evaluatePvSuerplusCalled = true; },
+        enableRapidPolling() {
+        },
+        getUvcTodayHours() {
+            return 3;
+        },
+        async evaluatePvSurplus() {
+            this.evaluatePvSuerplusCalled = true;
+        },
         ...overrides,
     };
 
     // Fehler-simulierendes setFeature (wirft wie main.js bei fromAutomation+unconfirmed)
     adapter.setFeatureThrows = async function (feature, val, opts) {
-        this.setFeatureCalls.push({ f: feature, v: val });
+        this.setFeatureCalls.push({f: feature, v: val});
         throw new Error(`${feature} ${val} not confirmed by device after polling`);
     };
 
     // Normales setFeature (erfolgreich)
     adapter.setFeatureOk = async function (feature, val) {
-        this.setFeatureCalls.push({ f: feature, v: val });
+        this.setFeatureCalls.push({f: feature, v: val});
     };
 
     // deactivateWindow – portiert aus main.js (vereinfacht, gleiche Logik)
     adapter.deactivateWindow = async function (w, i) {
         const pvHandlesHeater = w.pv_steu && (this._pvActive || this._pvStageTimer !== null);
         if (pvHandlesHeater) {
-            this.evaluatePvSurplus().catch(() => {});
+            this.evaluatePvSurplus().catch(() => {
+            });
         }
 
         const windows = this.config.timeWindows;
@@ -150,7 +160,7 @@ describe('Retry: heater OFF nicht bestätigt → _timeWindowActive bleibt true',
     it('setFeature("heater", false) wirft → _timeWindowActive[0]=true (Retry nächste Minute)', async () => {
         const adapter = makeAdapter();
         adapter.setFeature = adapter.setFeatureThrows;
-        adapter.config.timeWindows = [makeWindow({ action_heating: true })];
+        adapter.config.timeWindows = [makeWindow({action_heating: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
@@ -162,7 +172,7 @@ describe('Retry: heater OFF nicht bestätigt → _timeWindowActive bleibt true',
     it('setFeature("heater", false) erfolgreich → _timeWindowActive[0]=false', async () => {
         const adapter = makeAdapter();
         adapter.setFeature = adapter.setFeatureOk;
-        adapter.config.timeWindows = [makeWindow({ action_heating: true })];
+        adapter.config.timeWindows = [makeWindow({action_heating: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
@@ -177,12 +187,12 @@ describe('Retry: filter OFF nicht bestätigt → _timeWindowActive bleibt true',
         const adapter = makeAdapter();
         // Heater schlägt auch fehl oder ist nicht vorhanden; nur filter ON/OFF
         adapter.setFeature = async (f, v, opts) => {
-            adapter.setFeatureCalls.push({ f, v });
+            adapter.setFeatureCalls.push({f, v});
             if (f === 'filter' && !v) {
                 throw new Error('filter OFF not confirmed by device after polling');
             }
         };
-        adapter.config.timeWindows = [makeWindow({ action_filter: true })];
+        adapter.config.timeWindows = [makeWindow({action_filter: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
@@ -196,12 +206,12 @@ describe('Retry: UVC OFF nicht bestätigt → _timeWindowActive bleibt true', ()
     it('setFeature("uvc", false) wirft → _timeWindowActive[0]=true (Retry)', async () => {
         const adapter = makeAdapter();
         adapter.setFeature = async (f, v, opts) => {
-            adapter.setFeatureCalls.push({ f, v });
+            adapter.setFeatureCalls.push({f, v});
             if (f === 'uvc' && !v) {
                 throw new Error('uvc OFF not confirmed by device after polling');
             }
         };
-        adapter.config.timeWindows = [makeWindow({ action_uvc: true })];
+        adapter.config.timeWindows = [makeWindow({action_uvc: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
@@ -216,14 +226,14 @@ describe('Retry: mehrfach versuchen bis Erfolg', () => {
         const adapter = makeAdapter();
         let callCount = 0;
         adapter.setFeature = async (f, v, opts) => {
-            adapter.setFeatureCalls.push({ f, v });
+            adapter.setFeatureCalls.push({f, v});
             callCount++;
             if (callCount === 1) {
                 throw new Error('not confirmed (attempt 1)');
             }
             // Zweiter Aufruf erfolgreich
         };
-        adapter.config.timeWindows = [makeWindow({ action_heating: true })];
+        adapter.config.timeWindows = [makeWindow({action_heating: true})];
         adapter._timeWindowActive = [true];
 
         // Versuch 1: schlägt fehl
@@ -238,14 +248,14 @@ describe('Retry: mehrfach versuchen bis Erfolg', () => {
 
 describe('Retry: PV-Fenster – filter OFF nicht bestätigt → Retry möglich', () => {
     it('pv_steu=true + filter OFF wirft → _timeWindowActive bleibt true für Retry', async () => {
-        const adapter = makeAdapter({ _pvActive: true });
+        const adapter = makeAdapter({_pvActive: true});
         adapter.setFeature = async (f, v, opts) => {
-            adapter.setFeatureCalls.push({ f, v });
+            adapter.setFeatureCalls.push({f, v});
             if (f === 'filter' && !v) {
                 throw new Error('filter OFF not confirmed');
             }
         };
-        adapter.config.timeWindows = [makeWindow({ pv_steu: true })];
+        adapter.config.timeWindows = [makeWindow({pv_steu: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
@@ -257,9 +267,9 @@ describe('Retry: PV-Fenster – filter OFF nicht bestätigt → Retry möglich',
     });
 
     it('pv_steu=true + filter OFF erfolgreich → _timeWindowActive=false', async () => {
-        const adapter = makeAdapter({ _pvActive: true });
+        const adapter = makeAdapter({_pvActive: true});
         adapter.setFeature = adapter.setFeatureOk;
-        adapter.config.timeWindows = [makeWindow({ pv_steu: true })];
+        adapter.config.timeWindows = [makeWindow({pv_steu: true})];
         adapter._timeWindowActive = [true];
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
