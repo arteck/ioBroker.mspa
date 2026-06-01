@@ -1583,7 +1583,9 @@ class MspaAdapter extends utils.Adapter {
                     // FIX: each pre-condition wrapped in try/catch so a single failure does NOT
                     //      abort the filter-OFF sequence – we log a warning and continue.
 
-                    const getStateSync = ((this).getState.bind(this));
+                    // ioBroker TS-Typen kennen nur die Callback-Variante von getState;
+                    // die synchrone Variante existiert zur Laufzeit im Adapter-Core.
+                    const getStateSync = (id) => ((this)).getState(id);
                     const uvcState = getStateSync('control.uvc');
                     const bubbleState = getStateSync('control.bubble');
                     const heaterState = getStateSync('control.heater');
@@ -1771,7 +1773,7 @@ class MspaAdapter extends utils.Adapter {
         // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
         // when the heater was just switched ON but the poll hasn't confirmed it yet.
 
-        const heaterState = this.getState('control.heater');
+        const heaterState = ((this)).getState('control.heater');
         const heaterOnState = heaterState && !!heaterState.val;
         const heaterOnCommanded = this._adapterCommanded.heater === true;
         const heaterOnLive = this._lastData && this._lastData.heater === 'on';
@@ -2018,8 +2020,7 @@ class MspaAdapter extends utils.Adapter {
                     this.log.warn(`bubble_level ${state.val} out of range (0–3) – command ignored`);
                     await this.setStatusCheck('error');
                     // Ack with previous valid value from state store
-                    
-                    const cur = this.getState('control.bubble_level');
+                    const cur = ((this)).getState('control.bubble_level');
                     this.setState('control.bubble_level', (cur && cur.val != null) ? cur.val : 1, true);
                     return;
                 }
