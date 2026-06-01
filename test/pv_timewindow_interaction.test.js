@@ -77,19 +77,13 @@ function createAdapter(overrides = {}) {
         ...overrides,
     };
 
-    // ── checkTimeWindows – aus main.js portierte Logik ─────────────────────
+    // ── checkTimeWindows – aus main.js portierte Logik (neue Verhaltensversion) ──
     adapter.checkTimeWindowsReal = async function () {
         const windows = this.config.timeWindows;
         if (!Array.isArray(windows)) return;
 
         if (this._manualOverride) {
             this.log.debug('Time control: manual override active – skipping time window control');
-            return;
-        }
-        // PV guard: nur wenn mindestens ein Fenster pv_steu=true hat
-        const anyPvWindow = windows.some(w => w.active && w.pv_steu);
-        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
-            this.log.debug('Time control: PV control active – skipping time window control');
             return;
         }
         if (!this.isInSeason()) {
@@ -106,7 +100,6 @@ function createAdapter(overrides = {}) {
         for (let i = 0; i < windows.length; i++) {
             const w = windows[i];
             if (!w.active) {
-                // active=false: komplett ignorieren – kein deactivateWindow, kein State-Reset
                 continue;
             }
             const start  = w.start || '00:00';
@@ -118,20 +111,19 @@ function createAdapter(overrides = {}) {
             if (inWin && !wasIn) {
                 this._timeWindowActive[i] = true;
                 try {
-                    if (w.action_heating) {
-                        if (!w.action_filter) {
-                            // filter als Heizer-Voraussetzung (action_filter=false)
-                            await this.setFeature('filter', true);
-                        } else {
-                            // action_filter=true: filter VOR heater starten (Bug-Fix)
-                            await this.setFeature('filter', true);
-                        }
-                        await this.setFeature('heater', true);
-                    }
-                    if (w.action_filter) {
-                        // Nur senden wenn nicht bereits durch action_heating gestartet
-                        if (!w.action_heating) {
-                            await this.setFeature('filter', true);
+                    if (!w.action_filter && !w.action_heating && !w.action_uvc) {
+                        // ALL-OFF
+                        await this.setFeature('heater', false).catch(() => {});
+                        await this.setFeature('uvc',    false).catch(() => {});
+                        await this.setFeature('filter', false).catch(() => {});
+                    } else {
+                        // Filter IMMER an
+                        await this.setFeature('filter', true);
+                        if (w.pv_steu) {
+                            // PV entscheidet über Heizung
+                            this.evaluatePvSurplus && this.evaluatePvSurplus().catch(() => {});
+                        } else if (w.action_heating) {
+                            await this.setFeature('heater', true);
                         }
                         if (w.action_uvc) {
                             await this.setFeature('uvc', true);
@@ -148,30 +140,33 @@ function createAdapter(overrides = {}) {
         }
     };
 
-    // ── deactivateWindow – aus main.js portierte Logik ────────────────────
+    // ── deactivateWindow – aus main.js portierte Logik (neue Version) ─────
     adapter.deactivateWindow = async function (w, i) {
-        const anyPvWindow = Array.isArray(this.config.timeWindows) &&
-            this.config.timeWindows.some(win => win.active && win.pv_steu);
-        if (anyPvWindow && (this._pvActive || this._pvStageTimer !== null)) {
-            if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – PV control active, skipping deactivation`);
-            }
-            return;
+        const pvHandlesHeater = w.pv_steu && (this._pvActive || this._pvStageTimer !== null);
+        if (pvHandlesHeater) {
+            this._timeWindowActive[i] = false;
+            this.evaluatePvSurplus && this.evaluatePvSurplus().catch(() => {});
+            // Fall through to handle filter
         }
         if (this._pumpFollowUpTimers[i]) {
             clearTimeout(this._pumpFollowUpTimers[i]);
             this._pumpFollowUpTimers[i] = null;
         }
         try {
-            if (w.action_heating) await this.setFeature('heater', false);
+            if (!pvHandlesHeater && w.action_heating) await this.setFeature('heater', false);
             const uvcMinMet = this.getUvcTodayHours() >= (this.config.uvc_daily_min_h ?? 2);
-            if (w.action_filter && w.action_uvc) {
+            if (w.action_uvc) {
                 if (uvcMinMet) await this.setFeature('uvc', false);
-                else { this.enableRapidPolling(); return; }
+                else { if (!pvHandlesHeater) this._timeWindowActive[i] = false; this.enableRapidPolling(); return; }
             }
-            if (w.action_filter) await this.setFeature('filter', false);
+            // Filter IMMER stoppen (außer ALL-OFF)
+            const isAllOff = !w.action_filter && !w.action_heating && !w.action_uvc;
+            if (!isAllOff) {
+                await this.setFeature('filter', false);
+            }
+            if (!pvHandlesHeater) this._timeWindowActive[i] = false;
         } catch (err) {
-            this._timeWindowActive[i] = true;
+            if (!pvHandlesHeater) this._timeWindowActive[i] = true;
             this.log.error(`Time control [${i + 1}]: deactivation FAILED – ${err.message}`);
         }
     };
@@ -206,50 +201,58 @@ function makeWindow(overrides = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// A. PV aktiv → checkTimeWindows geblockt
+// A. PV aktiv + pv_steu=true → Filter startet immer, Heizung durch PV
 // ---------------------------------------------------------------------------
-describe('A. PV Guard – checkTimeWindows geblockt bei _pvActive=true', () => {
-    it('setzt keine Features wenn PV aktiv ist', async () => {
+describe('A. PV-Steuerung: Filter startet immer, Heizung nur bei Überschuss', () => {
+    it('filter ON wenn Fenster startet (pv_steu=true, _pvActive=true)', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [false];
 
         await adapter.checkTimeWindowsReal();
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'setFeature darf NICHT aufgerufen werden wenn PV aktiv ist');
-        assert.strictEqual(adapter._timeWindowActive[0], false,
-            '_timeWindowActive[0] muss false bleiben');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON muss gestartet werden – Filter immer vom Zeitfenster verwaltet');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater darf NICHT direkt gestartet werden – PV entscheidet über Heizung');
+        assert.strictEqual(adapter._timeWindowActive[0], true,
+            '_timeWindowActive[0] muss true werden');
     });
 
-    it('startet weder Heizer noch Filter wenn PV aktiv', async () => {
+    it('filter ON aber heater NICHT direkt wenn pv_steu=true', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: false, pv_steu: true })];
         adapter._timeWindowActive = [false];
 
         await adapter.checkTimeWindowsReal();
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0);
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON muss gestartet werden');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater darf NICHT direkt gestartet werden – PV entscheidet');
     });
 });
 
 // ---------------------------------------------------------------------------
-// B. PV staged (Stage-Timer läuft) → checkTimeWindows geblockt
+// B. PV staged (Stage-Timer läuft) → Heizung geblockt, Filter startet
 // ---------------------------------------------------------------------------
-describe('B. PV Guard – checkTimeWindows geblockt bei _pvStageTimer≠null', () => {
-    it('setzt keine Features wenn PV-Stage-Timer aktiv ist', async () => {
+describe('B. PV Stage-Timer läuft → Filter startet, Heizung geblockt', () => {
+    it('filter ON aber heater geblockt wenn PV-Stage-Timer aktiv ist', async () => {
+        const timer = setTimeout(() => {}, 60_000);
         const adapter = createAdapter({
             _pvActive: false,
-            _pvStageTimer: setTimeout(() => {}, 60_000),
+            _pvStageTimer: timer,
         });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [false];
 
         await adapter.checkTimeWindowsReal();
 
-        clearTimeout(adapter._pvStageTimer);
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'setFeature darf NICHT aufgerufen werden solange Stage-Timer läuft');
+        clearTimeout(timer);
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON muss gestartet werden – Filter immer vom Zeitfenster');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater darf NICHT gestartet werden – Stage-Timer läuft');
     });
 });
 
@@ -298,23 +301,22 @@ describe('C. Nicht genug PV → Zeitfenster übernimmt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D. deactivateWindow geblockt wenn PV aktiv
+// D. deactivateWindow: PV steuert Heizung, Zeitfenster steuert Filter
 // ---------------------------------------------------------------------------
-describe('D. deactivateWindow geblockt wenn _pvActive=true', () => {
-    it('schaltet Filter NICHT ab wenn PV gerade Filter steuert', async () => {
+describe('D. deactivateWindow: PV steuert Heizung, Zeitfenster steuert Filter', () => {
+    it('filter OFF wird gesendet, auch wenn PV aktiv ist', async () => {
         const adapter = createAdapter({ _pvActive: true });
-        adapter._pvManagedFeatures.filter = true;
-        // timeWindows muss pv_steu:true enthalten damit anyPvWindow=true
+        adapter._pvManagedFeatures.filter = false; // PV verwaltet Filter nicht mehr
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
         const w = makeWindow({ action_filter: true, action_heating: false, pv_steu: true });
 
         await adapter.deactivateWindow(w, 0);
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'setFeature darf NICHT aufgerufen werden – PV steuert Filter');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF MUSS gesendet werden – Zeitfenster verwaltet Filter');
     });
 
-    it('schaltet Heizer NICHT ab wenn PV aktiv ist', async () => {
+    it('heater OFF wird NICHT direkt gesendet wenn PV aktiv ist', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter._pvManagedFeatures.heater = true;
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
@@ -322,16 +324,16 @@ describe('D. deactivateWindow geblockt wenn _pvActive=true', () => {
 
         await adapter.deactivateWindow(w, 0);
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'heater OFF darf NICHT gesendet werden – PV ist aktiv');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false).length, 0,
+            'heater OFF darf NICHT direkt gesendet werden – PV übernimmt');
     });
 });
 
 // ---------------------------------------------------------------------------
-// E. deactivateWindow geblockt wenn PV-Stage-Timer läuft
+// E. deactivateWindow mit _pvStageTimer: Heizung geblockt, Filter wird abgeschaltet
 // ---------------------------------------------------------------------------
-describe('E. deactivateWindow geblockt wenn _pvStageTimer≠null', () => {
-    it('schaltet nichts ab wenn Stage-Timer noch läuft', async () => {
+describe('E. deactivateWindow mit Stage-Timer: Heizung geblockt, Filter abgeschaltet', () => {
+    it('filter OFF wird gesendet, heater geblockt wenn Stage-Timer noch läuft', async () => {
         const timer = setTimeout(() => {}, 60_000);
         const adapter = createAdapter({ _pvActive: false, _pvStageTimer: timer });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
@@ -340,8 +342,10 @@ describe('E. deactivateWindow geblockt wenn _pvStageTimer≠null', () => {
         await adapter.deactivateWindow(w, 0);
 
         clearTimeout(timer);
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'setFeature darf NICHT aufgerufen werden solange PV-Stage läuft');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF muss gesendet werden – Zeitfenster verwaltet Filter');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false).length, 0,
+            'heater darf NICHT gesendet werden – Stage-Timer läuft');
     });
 });
 
@@ -722,10 +726,10 @@ describe('L. Zeitfenster aktiv während PV-Überschuss fehlt', () => {
         assert.strictEqual(adapter._timeWindowActive[0], true, 'Phase 1: Fenster aktiv');
         adapter.setFeatureCalls.length = 0; // Reset
 
-        // Phase 2: PV kommt (blockt Zeitfenster-Scheduler)
+        // Phase 2: PV kommt (Filter läuft bereits, kein Guard mehr)
         adapter._pvActive = true;
         await adapter.checkTimeWindowsReal();
-        assert.strictEqual(adapter.setFeatureCalls.length, 0, 'Phase 2: PV Guard aktiv – kein Call');
+        assert.strictEqual(adapter.setFeatureCalls.length, 0, 'Phase 2: kein neuer Call – Filter already ON, wasIn=true');
         adapter.setFeatureCalls.length = 0;
 
         // Phase 3: PV verliert Surplus, schaltet ab
@@ -740,8 +744,8 @@ describe('L. Zeitfenster aktiv während PV-Überschuss fehlt', () => {
             'Phase 3: _timeWindowActive bleibt true');
     });
 
-    // L.7 – Zeitfenster soll NICHT starten wenn PV-Stage noch läuft (Übergangsphase)
-    it('L.7 Zeitfenster startet NICHT während PV-Stage noch abschaltet (_pvStageTimer aktiv)', async () => {
+    // L.7 – Zeitfenster startet auch wenn PV-Stage noch läuft: filter ON, heater geblockt
+    it('L.7 Zeitfenster startet mit Stage-Timer: filter ON, heater geblockt', async () => {
         const stageTimer = setTimeout(() => {}, 120_000);
         const adapter = createAdapter({ _pvActive: false, _pvStageTimer: stageTimer });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
@@ -750,14 +754,16 @@ describe('L. Zeitfenster aktiv während PV-Überschuss fehlt', () => {
         await adapter.checkTimeWindowsReal();
 
         clearTimeout(stageTimer);
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'Zeitfenster darf NICHT starten solange PV noch in der Abschaltreihenfolge ist');
-        assert.strictEqual(adapter._timeWindowActive[0], false);
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON muss gestartet werden – immer vom Zeitfenster');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater darf NICHT gestartet werden – Stage-Timer läuft noch');
+        assert.strictEqual(adapter._timeWindowActive[0], true);
     });
 
     // L.8 – Zeitfenster endet (isInTimeWindow=false) während PV aktiv →
-    //        deactivateWindow wird geblockt, Features bleiben laufen
-    it('L.8 Zeitfenster-Ende wird ignoriert wenn PV aktiv (deactivateWindow blockiert)', async () => {
+    //        filter wird vom Zeitfenster abgeschaltet, heater durch PV
+    it('L.8 Zeitfenster-Ende: filter OFF, heater durch PV', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [true]; // war aktiv
@@ -765,12 +771,10 @@ describe('L. Zeitfenster aktiv während PV-Überschuss fehlt', () => {
 
         await adapter.checkTimeWindowsReal();
 
-        // checkTimeWindows selbst wird durch PV-Guard geblockt (kein deactivateWindow)
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'filter OFF darf NICHT gesendet werden – PV Guard hat checkTimeWindows geblockt');
-        // _timeWindowActive wird nicht geändert weil checkTimeWindows früh returnt
-        assert.strictEqual(adapter._timeWindowActive[0], true,
-            '_timeWindowActive bleibt true weil PV-Guard greift bevor Loop läuft');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF muss gesendet werden – Zeitfenster verwaltet Filter');
+        assert.strictEqual(adapter._timeWindowActive[0], false,
+            '_timeWindowActive muss false werden');
     });
 
     // L.9 – Zeitfenster mit Heizer: PV nie aktiv, Fenster endet → Heizer + Filter korrekt abschalten
@@ -869,18 +873,20 @@ describe('M. Zeitfenster ohne pv_steu – PV Guard darf nicht blockieren', () =>
     // M.4 – Ein Fenster hat pv_steu=true (PV aktiv), ein anderes pv_steu=false →
     //        PV-Guard blockt NUR weil anyPvWindow=true, BEIDE Fenster werden geblockt
     //        (globaler Guard – korrektes Verhalten: sicherer als partieller Guard)
-    it('M.4 ein Fenster mit pv_steu=true genügt: Guard blockt checkTimeWindows komplett', async () => {
+    it('M.4 pv_steu=true-Fenster: filter ON, heater durch PV; pv_steu=false-Fenster: alles normal', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [
-            makeWindow({ action_filter: true, pv_steu: true }),   // PV-Fenster
-            makeWindow({ action_heating: true, pv_steu: false }),  // normales Fenster
+            makeWindow({ action_filter: true, pv_steu: true }),   // PV-Fenster → filter ON, heater durch PV
+            makeWindow({ action_heating: true, pv_steu: false }),  // normales Fenster → filter + heater
         ];
         adapter._timeWindowActive = [false, false];
 
         await adapter.checkTimeWindowsReal();
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'wenn anyPvWindow=true und _pvActive=true: gesamte Zeitfensterprüfung geblockt');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON muss gesendet werden – beide Fenster starten Filter');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'heater' && c.v === true),
+            'heater ON MUSS gesendet werden – Fenster 2 (pv_steu=false) startet Heizer direkt');
     });
 
     // M.5 – Kein Fenster mit pv_steu=true, _pvActive=true →
@@ -922,16 +928,19 @@ describe('M. Zeitfenster ohne pv_steu – PV Guard darf nicht blockieren', () =>
         );
     });
 
-    // M.7 – deactivateWindow: Fenster endet, pv_steu=true und _pvActive=true → geblockt
-    it('M.7 deactivateWindow geblockt wenn pv_steu=true-Fenster existiert und _pvActive=true', async () => {
+    // M.7 – deactivateWindow: Fenster endet, pv_steu=true und _pvActive=true →
+    //        Heizung durch PV, Filter durch Zeitfenster abgeschaltet
+    it('M.7 pv_steu=true + _pvActive=true: deactivateWindow – filter OFF, heater durch PV', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_filter: true, pv_steu: true })];
         const w = makeWindow({ action_filter: true, pv_steu: true });
 
         await adapter.deactivateWindow(w, 0);
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'filter OFF darf NICHT gesendet werden – PV steuert aktiv');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF MUSS gesendet werden – Zeitfenster verwaltet Filter');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false).length, 0,
+            'heater OFF darf NICHT direkt gesendet werden – PV übernimmt');
     });
 
     // M.8 – Vollständiger Zyklus: Fenster ohne pv_steu startet → _pvActive bleibt stale →
@@ -962,18 +971,20 @@ describe('M. Zeitfenster ohne pv_steu – PV Guard darf nicht blockieren', () =>
 // ---------------------------------------------------------------------------
 describe('N. action_heating=true + action_filter=true mit _pvActive=true', () => {
 
-    // N.1 – pv_steu=true, _pvActive=true → Guard blockt: weder heater noch filter ON
-    it('N.1 pv_steu=true + _pvActive=true: Guard blockt heater+filter Start', async () => {
+    // N.1 – pv_steu=true, _pvActive=true → Filter startet, Heizung durch PV
+    it('N.1 pv_steu=true + _pvActive=true: filter ON, heater durch PV (nicht direkt)', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [false];
 
         await adapter.checkTimeWindowsReal();
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'weder heater ON noch filter ON wenn PV-Guard aktiv');
-        assert.strictEqual(adapter._timeWindowActive[0], false,
-            '_timeWindowActive muss false bleiben');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
+            'filter ON MUSS gestartet werden – immer vom Zeitfenster');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater darf NICHT direkt gestartet werden – PV entscheidet');
+        assert.strictEqual(adapter._timeWindowActive[0], true,
+            '_timeWindowActive muss true werden');
     });
 
     // N.2 – pv_steu=false, _pvActive=true (stale) → Guard greift NICHT: heater+filter starten
@@ -1005,8 +1016,8 @@ describe('N. action_heating=true + action_filter=true mit _pvActive=true', () =>
             'heater ON muss gesendet werden');
     });
 
-    // N.4 – pv_steu=true, _pvActive=true → deactivateWindow geblockt: heater+filter bleiben an
-    it('N.4 pv_steu=true + _pvActive=true: deactivateWindow blockt heater+filter OFF', async () => {
+    // N.4 – pv_steu=true, _pvActive=true → deactivateWindow: PV schaltet Heizung ab, Zeitfenster Filter
+    it('N.4 pv_steu=true + _pvActive=true: deactivateWindow – heater durch PV, filter durch Zeitfenster', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
         const w = makeWindow({ action_heating: true, action_filter: true, pv_steu: true });
@@ -1014,8 +1025,12 @@ describe('N. action_heating=true + action_filter=true mit _pvActive=true', () =>
 
         await adapter.deactivateWindow(w, 0);
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'heater OFF und filter OFF dürfen NICHT gesendet werden – PV steuert');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false).length, 0,
+            'heater OFF darf NICHT direkt gesendet werden – PV übernimmt');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF MUSS gesendet werden – Zeitfenster verwaltet Filter');
+        assert.strictEqual(adapter._timeWindowActive[0], false,
+            '_timeWindowActive muss false werden');
     });
 
     // N.5 – pv_steu=false, _pvActive=true (stale) → deactivateWindow schaltet heater+filter ab
@@ -1033,39 +1048,40 @@ describe('N. action_heating=true + action_filter=true mit _pvActive=true', () =>
     });
 
     // N.6 – pv_steu=true, PV schaltet ab (_pvActive=false, _pvStageTimer=null) →
-    //        Zeitfenster übernimmt: heater+filter werden gestartet
-    it('N.6 pv_steu=true + PV deaktiviert: Zeitfenster übernimmt heater+filter', async () => {
+    //        Zeitfenster übernimmt: filter startet, heater über evaluatePvSurplus
+    it('N.6 pv_steu=true + PV deaktiviert: filter ON, heater über evaluatePvSurplus', async () => {
         const adapter = createAdapter({ _pvActive: false, _pvStageTimer: null });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
-        adapter._timeWindowActive = [false]; // PV hat Guard geblockt, Zeitfenster nie gestartet
+        adapter._timeWindowActive = [false];
 
         await adapter.checkTimeWindowsReal();
 
         assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true),
-            'filter ON muss nach PV-Abschaltung gesendet werden');
-        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'heater' && c.v === true),
-            'heater ON muss nach PV-Abschaltung gesendet werden');
+            'filter ON muss gestartet werden');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'heater NICHT direkt gestartet – evaluatePvSurplus entscheidet');
         assert.strictEqual(adapter._timeWindowActive[0], true);
     });
 
     // N.7 – Vollständiger Zyklus: Fenster (heater+filter, pv_steu=true) startet →
-    //        PV übernimmt (Guard) → PV verliert Überschuss → Zeitfenster übernimmt ohne Neustart
+    //        PV übernimmt Heizung → PV verliert Überschuss → Zeitfenster läuft weiter
     it('N.7 vollständiger Zyklus heater+filter+pv_steu: Start → PV → kein PV → Zeitfenster weiter', async () => {
         const adapter = createAdapter({ _pvActive: false });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [false];
 
-        // Phase 1: Zeitfenster startet (PV noch inaktiv)
+        // Phase 1: Zeitfenster startet → filter ON + evaluatePvSurplus (kein direktes heater ON)
         await adapter.checkTimeWindowsReal();
         assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === true), 'Phase 1: filter ON');
-        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'heater' && c.v === true), 'Phase 1: heater ON');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true).length, 0,
+            'Phase 1: heater NICHT direkt – evaluatePvSurplus entscheidet');
         assert.strictEqual(adapter._timeWindowActive[0], true);
         adapter.setFeatureCalls.length = 0;
 
-        // Phase 2: PV kommt (Guard aktiv)
+        // Phase 2: PV aktiv (Heizung von PV gesteuert)
         adapter._pvActive = true;
         await adapter.checkTimeWindowsReal();
-        assert.strictEqual(adapter.setFeatureCalls.length, 0, 'Phase 2: kein Call – PV Guard');
+        assert.strictEqual(adapter.setFeatureCalls.length, 0, 'Phase 2: kein Call – Fenster already aktiv');
         adapter.setFeatureCalls.length = 0;
 
         // Phase 3: PV verliert Überschuss
@@ -1077,8 +1093,8 @@ describe('N. action_heating=true + action_filter=true mit _pvActive=true', () =>
     });
 
     // N.8 – Fenster (heater+filter, pv_steu=true) endet während PV aktiv →
-    //        weder heater OFF noch filter OFF (deactivateWindow geblockt durch PV-Guard + checkTimeWindows Guard)
-    it('N.8 Fenster-Ende (heater+filter+pv_steu=true) während PV aktiv: kein heater/filter OFF', async () => {
+    //        filter wird vom Zeitfenster abgeschaltet, heater durch PV
+    it('N.8 Fenster-Ende (heater+filter+pv_steu=true) während PV aktiv: filter OFF, heater durch PV', async () => {
         const adapter = createAdapter({ _pvActive: true });
         adapter.config.timeWindows = [makeWindow({ action_heating: true, action_filter: true, pv_steu: true })];
         adapter._timeWindowActive = [true]; // war aktiv
@@ -1086,10 +1102,12 @@ describe('N. action_heating=true + action_filter=true mit _pvActive=true', () =>
 
         await adapter.checkTimeWindowsReal();
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'heater OFF und filter OFF dürfen NICHT gesendet werden – PV Guard blockt checkTimeWindows');
-        assert.strictEqual(adapter._timeWindowActive[0], true,
-            '_timeWindowActive bleibt true – Guard hat Loop nie erreicht');
+        assert.ok(adapter.setFeatureCalls.some(c => c.f === 'filter' && c.v === false),
+            'filter OFF muss gesendet werden – Zeitfenster verwaltet Filter');
+        assert.strictEqual(adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false).length, 0,
+            'heater OFF darf NICHT direkt gesendet werden – PV übernimmt');
+        assert.strictEqual(adapter._timeWindowActive[0], false,
+            '_timeWindowActive muss false werden');
     });
 
     // N.9 – Fenster (heater+filter, pv_steu=false) endet während _pvActive=true (stale) →

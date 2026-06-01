@@ -160,6 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
+### **WORK IN PROGRESS**
+* (arteck) new logic for heater
+
 ### 0.3.9 (2026-05-27)
 * (arteck) fix heater start
 

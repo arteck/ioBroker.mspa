@@ -607,14 +607,6 @@ class MspaAdapter extends utils.Adapter {
             this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
 
             if (inWin && !wasIn) {
-                // ── PV-Steuerung pro Fenster: wenn pv_steu=true, übernimmt der
-                // PV-Controller die Aktivierung – der Zeit-Scheduler darf NICHT
-                // direkt einschalten, wenn kein ausreichender Überschuss vorliegt.
-                if (w.pv_steu) {
-                    this._timeWindowActive[i] = true; // Zeitfenster als "aktiv" markieren
-                    this.log.debug(`Time control [${i + 1}]: window START (${start}–${end}) – pv_steu=true, skipping direct activation (PV controller handles this)`);
-                    continue; // kein Hardware-Befehl – PV evaluateSurplus entscheidet
-                }
                 try {
                     // ── "All OFF" window: action_filter=false + action_heating=false + action_uvc=false
                     // → actively shut down everything that is currently running
@@ -628,17 +620,19 @@ class MspaAdapter extends utils.Adapter {
                         });
                         this.enableRapidPolling();
                     } else {
-                        if (w.action_heating) {
-                            // heater requires filter pump – start it first (both cases).
-                            // If action_filter=true the explicit block below would also start it,
-                            // but the heater needs the pump running BEFORE the heater command,
-                            // so we always pre-start it here. The second call is idempotent.
-                            if (!w.action_filter) {
-                                this.log.debug(`Time control [${i + 1}]: filter ON (required for heating)`);
-                            } else {
-                                this.log.debug(`Time control [${i + 1}]: filter ON (before heater, also managed by action_filter)`);
-                            }
-                            await this.setFeature('filter', true, {fromAutomation: true});
+                        // ── Filter startet IMMER wenn ein Zeitfenster öffnet (unabhängig von PV).
+                        // PV-Steuerung betrifft nur die Heizung.
+                        this.log.debug(`Time control [${i + 1}]: filter ON (window start)`);
+                        await this.setFeature('filter', true, {fromAutomation: true});
+
+                        if (w.pv_steu) {
+                            // Heizung wird vom PV-Controller gesteuert – evaluatePvSurplus entscheidet
+                            this.log.debug(`Time control [${i + 1}]: pv_steu=true – heater managed by PV surplus, triggering evaluation`);
+                            this.evaluatePvSurplus().catch(e =>
+                                this.log.error(`Time control [${i + 1}]: evaluatePvSurplus on window start failed – ${e.message}`)
+                            );
+                        } else if (w.action_heating) {
+                            // Heizung direkt starten (kein PV-Überschuss benötigt)
                             this.log.debug(`Time control [${i + 1}]: heater ON`);
                             await this.setFeature('heater', true, {fromAutomation: true});
                             if (w.target_temp) {
@@ -665,18 +659,11 @@ class MspaAdapter extends utils.Adapter {
                                 });
                             }
                         }
-                        if (w.action_filter) {
-                            this.log.debug(`Time control [${i + 1}]: filter ON`);
-                            await this.setFeature('filter', true, {fromAutomation: true});
-                        }
+
                         if (w.action_uvc) {
-                            // UVC requires filter pump – start filter if not already running
-                            if (!w.action_filter && !w.action_heating) {
-                                this.log.debug(`Time control [${i + 1}]: filter ON (required for UVC)`);
-                                await this.setFeature('filter', true, {fromAutomation: true});
-                                this._filterStartedForUvc[i] = true;
-                            }
-                            this.log.debug(`Time control [${i + 1}]: UVC ON`);
+                            // UVC sofort mit Filter starten (action_uvc=true)
+                            // action_uvc=false → UVC-Ensure-Logik übernimmt (min. Stunden/Tag ab Startzeit)
+                            this.log.debug(`Time control [${i + 1}]: UVC ON (with filter, window start)`);
                             await this.setFeature('uvc', true, {fromAutomation: true});
                         }
                         this.enableRapidPolling();
@@ -715,18 +702,22 @@ class MspaAdapter extends utils.Adapter {
     }
 
     async deactivateWindow(w, i) {
-        // If PV is currently active AND this window uses PV surplus control,
-        // PV manages the features – don't touch them here.
-        // Non-PV windows deactivate independently regardless of PV state.
-        if (w.pv_steu && (this._pvActive || this._pvStageTimer !== null)) {
+        // PV-Steuerung betrifft nur die Heizung.
+        // Wenn pv_steu=true und PV aktiv: PV schaltet Heizung ab (evaluatePvSurplus).
+        // Der Filter wird IMMER vom Zeitfenster verwaltet – hier normal abschalten.
+        const pvHandlesHeater = w.pv_steu && (this._pvActive || this._pvStageTimer !== null);
+        if (pvHandlesHeater) {
             if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – pv_steu window, PV control active – triggering PV re-evaluation`);
+                this.log.info(`Time control [${i + 1}]: window END – pv_steu, PV handles heater – filter managed by time window`);
             }
-            this._timeWindowActive[i] = false; // mark inactive so _pvWindows() returns [] → evaluateSurplus deactivates
+            // PV erkennt Fenster-Ende über isInTimeWindow() (gibt jetzt false zurück).
+            // evaluatePvSurplus aufrufen damit Heizung sofort abgeschaltet wird.
+            // _timeWindowActive[i] wird ERST am Ende des try-Blocks auf false gesetzt
+            // damit der Retry-Mechanismus (catch → stays true) auch für filter OFF greift.
             this.evaluatePvSurplus().catch(e =>
                 this.log.error(`Time control [${i + 1}]: evaluatePvSurplus after window end failed – ${e.message}`)
             );
-            return;
+            // Fall through to handle filter in the try block below
         }
 
         // ── Overlap guard ───────────────────────────────────────────────────
@@ -763,11 +754,11 @@ class MspaAdapter extends utils.Adapter {
         const uvcMinMet = todayH >= uvcMinH;
 
         try {
-            // Always turn off heater immediately – unless another window still needs it
-            if (w.action_heating && !otherNeedsHeater) {
+            // Heater OFF: nur wenn PV es nicht steuert UND kein anderes Fenster den Heizer braucht
+            if (!pvHandlesHeater && w.action_heating && !otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater OFF`);
                 await this.setFeature('heater', false, {fromAutomation: true});
-            } else if (w.action_heating && otherNeedsHeater) {
+            } else if (!pvHandlesHeater && w.action_heating && otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater kept ON – required by overlapping window`);
             }
 
@@ -799,19 +790,16 @@ class MspaAdapter extends utils.Adapter {
                 return;
             }
 
-            // Determine if filter needs to be stopped:
-            //   a) window explicitly manages filter (action_filter=true)
-            //   b) window started filter for heating (action_heating=true, action_filter=false)
-            //   c) window started filter as UVC prerequisite (action_uvc=true, action_filter=false, action_heating=false)
-            const filterStartedForUvc = !!this._filterStartedForUvc[i];
-            const needsFilterStop = w.action_filter || (w.action_heating && !w.action_filter) || filterStartedForUvc;
+            // Filter wird IMMER von diesem Fenster verwaltet (außer ALL-OFF)
+            const isAllOffWindow = !w.action_filter && !w.action_heating && !w.action_uvc;
+            const needsFilterStop = !isAllOffWindow;
 
             // Filter pump: immediate or delayed?
             const stopPumpNow = !followUpMin || followUpMin <= 0;
 
             if (stopPumpNow) {
                 if (needsFilterStop) {
-                    this.log.debug(`Time control [${i + 1}]: filter OFF${filterStartedForUvc ? ' (was started as UVC prerequisite)' : w.action_heating && !w.action_filter ? ' (was started for heating only)' : ''}`);
+                    this.log.debug(`Time control [${i + 1}]: filter OFF`);
                     await this.setFeature('filter', false, {fromAutomation: true});
                     this._filterStartedForUvc[i] = false;
                 }
@@ -834,11 +822,10 @@ class MspaAdapter extends utils.Adapter {
                                 (win.action_filter || win.action_heating || win.action_uvc)
                             );
                         const stillNeededByEnsure = this._uvcEnsureActive && this._uvcEnsureFilterStart;
-                        const stillNeededByPv = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
                         const stillNeededByFrost = this._winterFrostActive;
-                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByPv || stillNeededByFrost;
+                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByFrost;
                         if (stillNeeded) {
-                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed (window=${stillNeededByWindow}, ensure=${stillNeededByEnsure}, pv=${stillNeededByPv}, frost=${stillNeededByFrost}) – skipping filter OFF`);
+                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed (window=${stillNeededByWindow}, ensure=${stillNeededByEnsure}, frost=${stillNeededByFrost}) – skipping filter OFF`);
                             return;
                         }
                         if (this.config.more_log_enabled) {
@@ -1594,6 +1581,9 @@ class MspaAdapter extends utils.Adapter {
                 } else {
                     await this.setStatusCheck('error');
                     this._adapterCommanded.heater = null;
+                    if (fromAutomation) {
+                        throw new Error(`setFeature('heater', ${boolVal}): not confirmed by device after polling`);
+                    }
                 }
                 // Immediate optimistic ack so UI confirms without waiting for next poll
                 this.setState('control.heater', boolVal, true);
@@ -1673,6 +1663,9 @@ class MspaAdapter extends utils.Adapter {
                 } else {
                     await this.setStatusCheck('error');
                     this._adapterCommanded.filter = null;
+                    if (fromAutomation) {
+                        throw new Error(`setFeature('filter', ${boolVal}): not confirmed by device after polling`);
+                    }
                 }
                 this.setState('control.filter', boolVal, true);  // immediate ack
                 return;
@@ -1708,6 +1701,9 @@ class MspaAdapter extends utils.Adapter {
                     this._scheduleCommandedReset('uvc', boolVal);
                 } else {
                     this._adapterCommanded.uvc = null;
+                    if (fromAutomation) {
+                        throw new Error(`setFeature('uvc', ${boolVal}): not confirmed by device after polling`);
+                    }
                 }
                 this.setState('control.uvc', boolVal, true);
                 return;

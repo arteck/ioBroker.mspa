@@ -485,7 +485,7 @@
         },
         "tc_intro": {
           "type": "staticText",
-          "text": "Define time windows in which the whirlpool is automatically activated. Outside these windows it will be switched off again. Enable the PV column to additionally activate a window when PV surplus is available (requires PV settings in the PV Surplus tab).",
+          "text": "Define time windows in which the whirlpool is automatically activated. The filter pump always starts when a window opens. Enable the PV column (pv_steu) to control the heater based on PV surplus availability – without PV the heater starts immediately when the window opens. Enable UVC to start the UV lamp immediately with the filter (when disabled, the daily-minimum ensure logic applies instead).",
           "newLine": true,
           "xs": 12,
           "sm": 12,

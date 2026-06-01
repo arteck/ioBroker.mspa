@@ -84,21 +84,22 @@ function createAdapter(overrides = {}) {
         ...overrides,
     };
 
-    // ── Aktuelle deactivateWindow Logik (nach allen Bug-Fixes) ──────────────
+    // ── Aktuelle deactivateWindow Logik (Filter immer verwaltet, PV nur Heizung) ──
     adapter.deactivateWindow = async function (w, i) {
-        if (w.pv_steu && (this._pvActive || this._pvStageTimer !== null)) {
+        const pvHandlesHeater = w.pv_steu && (this._pvActive || this._pvStageTimer !== null);
+        if (pvHandlesHeater) {
             if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – pv_steu, triggering PV re-eval`);
+                this.log.info(`Time control [${i + 1}]: window END – pv_steu, PV handles heater, window handles filter`);
             }
             this._timeWindowActive[i] = false;
             this.evaluatePvSurplus().catch(() => {});
-            return;
+            // Fall through to handle filter
         }
 
         const windows = this.config.timeWindows;
         const otherNeedsFilter = Array.isArray(windows) && windows.some((win, j) =>
             j !== i && this._timeWindowActive[j] && win.active &&
-            (win.action_filter || win.action_heating)
+            (win.action_filter || win.action_heating || win.action_uvc)
         );
         const otherNeedsHeater = Array.isArray(windows) && windows.some((win, j) =>
             j !== i && this._timeWindowActive[j] && win.active && win.action_heating
@@ -118,19 +119,18 @@ function createAdapter(overrides = {}) {
         const uvcMinMet    = todayH >= uvcMinH;
 
         try {
-            // Heater
-            if (w.action_heating && !otherNeedsHeater) {
+            // Heater: nur wenn PV es nicht steuert
+            if (!pvHandlesHeater && w.action_heating && !otherNeedsHeater) {
                 await this.setFeature('heater', false);
             }
 
-            // UVC (Bug-Fix: w.action_uvc statt w.action_filter && w.action_uvc)
+            // UVC
             if (w.action_uvc && !otherNeedsUvc) {
                 if (uvcMinMet) {
                     await this.setFeature('uvc', false);
                 } else {
-                    // UVC-Min nicht erreicht → Filter bleibt auch ON (ensure übernimmt)
-                    this._timeWindowActive[i] = false;
-                    this._filterStartedForUvc[i] = false; // ensure nimmt Ownership
+                    if (!pvHandlesHeater) this._timeWindowActive[i] = false;
+                    this._filterStartedForUvc[i] = false;
                     this.enableRapidPolling();
                     return;
                 }
@@ -138,24 +138,21 @@ function createAdapter(overrides = {}) {
 
             // Filter: Overlap prüfen
             if (otherNeedsFilter) {
-                this._timeWindowActive[i] = false;
+                if (!pvHandlesHeater) this._timeWindowActive[i] = false;
                 this._filterStartedForUvc[i] = false;
                 this.enableRapidPolling();
                 return;
             }
 
-            // Entscheidung: muss der Filter gestoppt werden?
-            const filterStartedForUvc = !!this._filterStartedForUvc[i];
-            const needsFilterStop = w.action_filter
-                || (w.action_heating && !w.action_filter)
-                || filterStartedForUvc;
+            // Filter IMMER stoppen (außer ALL-OFF)
+            const isAllOffWindow = !w.action_filter && !w.action_heating && !w.action_uvc;
+            const needsFilterStop = !isAllOffWindow;
 
             const stopPumpNow = !followUpMin || followUpMin <= 0;
 
             if (stopPumpNow) {
                 if (needsFilterStop) {
                     await this.setFeature('filter', false);
-                    this._pumpStartedForHeating = false;
                     this._filterStartedForUvc[i] = false;
                 }
             } else {
@@ -169,9 +166,8 @@ function createAdapter(overrides = {}) {
                                 (win.action_filter || win.action_heating || win.action_uvc)
                             );
                         const stillNeededByEnsure = this._uvcEnsureActive && this._uvcEnsureFilterStart;
-                        const stillNeededByPv     = this._pvActive && this._pvManagedFeatures && this._pvManagedFeatures.filter;
                         const stillNeededByFrost  = this._winterFrostActive;
-                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByPv || stillNeededByFrost;
+                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByFrost;
                         if (stillNeeded) return;
                         this.setFeature('filter', false)
                             .then(() => {
@@ -183,15 +179,14 @@ function createAdapter(overrides = {}) {
                 }
             }
 
-            this._timeWindowActive[i] = false;
+            if (!pvHandlesHeater) this._timeWindowActive[i] = false;
             this.enableRapidPolling();
         } catch (err) {
-            // _timeWindowActive[i] bleibt true → retry
             this.log.error(`deactivation FAILED: ${err.message}`);
         }
     };
 
-    // ── Aktuelle checkTimeWindows Logik (nach allen Bug-Fixes) ─────────────
+    // ── Aktuelle checkTimeWindows Logik (Filter immer an, PV nur Heizung) ─────
     adapter.checkTimeWindows = async function () {
         const windows = this.config.timeWindows;
         if (!Array.isArray(windows)) return;
@@ -213,15 +208,11 @@ function createAdapter(overrides = {}) {
 
             const start = w.start || '00:00';
             const end   = w.end   || '00:00';
-            const dayOn = w[dayKeys[day]] !== false; // default true wenn nicht gesetzt
+            const dayOn = w[dayKeys[day]] !== false;
             const inWin = dayOn && this.isInTimeWindow(start, end);
             const wasIn = this._timeWindowActive[i];
 
             if (inWin && !wasIn) {
-                if (w.pv_steu) {
-                    this._timeWindowActive[i] = true;
-                    continue;
-                }
                 try {
                     if (!w.action_filter && !w.action_heating && !w.action_uvc) {
                         // ALL-OFF
@@ -229,13 +220,12 @@ function createAdapter(overrides = {}) {
                         await this.setFeature('uvc',    false).catch(() => {});
                         await this.setFeature('filter', false).catch(() => {});
                     } else {
-                        if (w.action_heating) {
-                            if (!w.action_filter) {
-                                await this.setFeature('filter', true);
-                                this._pumpStartedForHeating = true;
-                            } else {
-                                await this.setFeature('filter', true);
-                            }
+                        // Filter IMMER an
+                        await this.setFeature('filter', true);
+                        if (w.pv_steu) {
+                            // PV entscheidet über Heizung
+                            this.evaluatePvSurplus().catch(() => {});
+                        } else if (w.action_heating) {
                             await this.setFeature('heater', true);
                             if (w.target_temp) {
                                 this.setStray(() => {
@@ -243,20 +233,13 @@ function createAdapter(overrides = {}) {
                                 }, 10_000);
                             }
                         }
-                        if (w.action_filter && !w.action_heating) {
-                            await this.setFeature('filter', true);
-                        }
                         if (w.action_uvc) {
-                            if (!w.action_filter && !w.action_heating) {
-                                await this.setFeature('filter', true);
-                                this._filterStartedForUvc[i] = true;
-                            }
+                            // UVC sofort mit Filter
                             await this.setFeature('uvc', true);
                         }
                     }
                     this._timeWindowActive[i] = true;
                 } catch (err) {
-                    // bleibt false
                     this.log.error(`activation FAILED: ${err.message}`);
                 }
             } else if (!inWin && wasIn) {
@@ -321,7 +304,7 @@ describe('START 1: Heizungs-Fenster (action_filter=true, action_heating=true)', 
 });
 
 describe('START 2: Heizungs-Fenster ohne Filter (action_filter=false, action_heating=true)', () => {
-    it('startet filter als Prerequisite und setzt _pumpStartedForHeating=true', async () => {
+    it('startet filter (immer) und heater', async () => {
         const adapter = createAdapter();
         adapter.config.timeWindows = [
             makeWindow({ action_filter: false, action_heating: true }),
@@ -332,10 +315,9 @@ describe('START 2: Heizungs-Fenster ohne Filter (action_filter=false, action_hea
         assert.strictEqual(adapter._timeWindowActive[0], true);
         const filterOn = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === true);
         const heaterOn = adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === true);
-        assert.strictEqual(filterOn.length, 1,  'filter muss als Prerequisite gestartet werden');
+        assert.strictEqual(filterOn.length, 1,  'filter muss gestartet werden (immer bei aktivem Fenster)');
         assert.strictEqual(heaterOn.length, 1,  'heater muss gestartet werden');
-        assert.strictEqual(adapter._pumpStartedForHeating, true,
-            '_pumpStartedForHeating muss gesetzt sein');
+        // _pumpStartedForHeating ist nicht mehr relevant – Filter immer gestartet
     });
 });
 
@@ -357,8 +339,8 @@ describe('START 3: Filter+UVC Fenster (action_filter=true, action_uvc=true)', ()
     });
 });
 
-describe('START 4: UVC-Only-Fenster (action_filter=false, action_uvc=true) – Bug-Fix', () => {
-    it('startet filter als Prerequisite und setzt _filterStartedForUvc[0]=true', async () => {
+describe('START 4: UVC-Only-Fenster (action_filter=false, action_uvc=true)', () => {
+    it('startet filter (immer) und UVC sofort', async () => {
         const adapter = createAdapter();
         adapter.config.timeWindows = [
             makeWindow({ action_filter: false, action_uvc: true }),
@@ -369,10 +351,9 @@ describe('START 4: UVC-Only-Fenster (action_filter=false, action_uvc=true) – B
         assert.strictEqual(adapter._timeWindowActive[0], true, 'Fenster aktiv');
         const filterOn = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === true);
         const uvcOn    = adapter.setFeatureCalls.filter(c => c.f === 'uvc'    && c.v === true);
-        assert.strictEqual(filterOn.length, 1, 'filter muss als UVC-Prerequisite gestartet werden');
-        assert.strictEqual(uvcOn.length,    1, 'UVC muss gestartet werden');
-        assert.strictEqual(adapter._filterStartedForUvc[0], true,
-            '_filterStartedForUvc[0] muss true sein');
+        assert.strictEqual(filterOn.length, 1, 'filter muss gestartet werden (immer bei aktivem Fenster)');
+        assert.strictEqual(uvcOn.length,    1, 'UVC muss sofort gestartet werden (action_uvc=true)');
+        // _filterStartedForUvc wird nicht mehr benötigt – Filter immer durch Zeitfenster verwaltet
     });
 
     it('startet heater NICHT obwohl filter gestartet wurde', async () => {
@@ -468,9 +449,8 @@ describe('ENDE 7: Heizungs-Fenster endet (action_filter=true, action_heating=tru
 });
 
 describe('ENDE 8: Heizungs-Fenster (action_filter=false) endet – Heating-Only', () => {
-    it('heater OFF und filter OFF (war als Prerequisite gestartet)', async () => {
+    it('heater OFF und filter OFF', async () => {
         const adapter = createAdapter();
-        adapter._pumpStartedForHeating = true;
         adapter.config.timeWindows = [
             makeWindow({ action_filter: false, action_heating: true }),
         ];
@@ -480,9 +460,7 @@ describe('ENDE 8: Heizungs-Fenster (action_filter=false) endet – Heating-Only'
         const heaterOff = adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false);
         const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
         assert.strictEqual(heaterOff.length, 1, 'heater muss abgeschaltet werden');
-        assert.strictEqual(filterOff.length, 1, 'filter muss abgeschaltet werden (Heating-Prerequisite)');
-        assert.strictEqual(adapter._pumpStartedForHeating, false,
-            '_pumpStartedForHeating muss zurückgesetzt werden');
+        assert.strictEqual(filterOff.length, 1, 'filter muss abgeschaltet werden (immer durch Zeitfenster verwaltet)');
     });
 });
 
@@ -524,41 +502,21 @@ describe('ENDE 10: Filter+UVC Fenster endet, UVC-Min NICHT erfüllt', () => {
     });
 });
 
-describe('ENDE 11: UVC-Only-Fenster endet, UVC-Min erfüllt – Bug-Fix für Filter-Prerequisite', () => {
-    it('UVC OFF und filter OFF (_filterStartedForUvc war true)', async () => {
+describe('ENDE 11: UVC-Only-Fenster endet, UVC-Min erfüllt', () => {
+    it('UVC OFF und filter OFF', async () => {
         const adapter = createAdapter(); // getUvcTodayHours() = 3 ≥ 2
         adapter.config.timeWindows = [
             makeWindow({ action_filter: false, action_uvc: true }),
         ];
         adapter._timeWindowActive   = [true];
-        adapter._filterStartedForUvc[0] = true; // war als Prerequisite gestartet
 
         await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
 
         const uvcOff    = adapter.setFeatureCalls.filter(c => c.f === 'uvc'    && c.v === false);
         const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
-        assert.strictEqual(uvcOff.length,    1,
-            'UVC muss abgeschaltet werden');
-        assert.strictEqual(filterOff.length, 1,
-            'filter muss abgeschaltet werden – war als UVC-Prerequisite gestartet (Bug-Fix!)');
-        assert.strictEqual(adapter._filterStartedForUvc[0], false,
-            '_filterStartedForUvc muss zurückgesetzt werden');
+        assert.strictEqual(uvcOff.length,    1, 'UVC muss abgeschaltet werden');
+        assert.strictEqual(filterOff.length, 1, 'filter muss abgeschaltet werden (Zeitfenster verwaltet immer Filter)');
         assert.strictEqual(adapter._timeWindowActive[0], false);
-    });
-
-    it('filter bleibt AN wenn _filterStartedForUvc=false (wurde extern gestartet)', async () => {
-        const adapter = createAdapter();
-        adapter.config.timeWindows = [
-            makeWindow({ action_filter: false, action_uvc: true }),
-        ];
-        adapter._timeWindowActive = [true];
-        adapter._filterStartedForUvc[0] = false; // nicht durch dieses Fenster gestartet
-
-        await adapter.deactivateWindow(adapter.config.timeWindows[0], 0);
-
-        const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
-        assert.strictEqual(filterOff.length, 0,
-            'filter darf NICHT abgeschaltet werden – wurde nicht durch dieses Fenster gestartet');
     });
 });
 
@@ -738,8 +696,8 @@ describe('ENDE 18: Follow-up Filter-OFF nach Delay (UVC-Only-Fenster)', () => {
     });
 });
 
-describe('ENDE 19: pv_steu-Fenster endet → evaluatePvSurplus statt direktes setFeature', () => {
-    it('kein setFeature, _pvSurplusEvaluated=true, _timeWindowActive=false', async () => {
+describe('ENDE 19: pv_steu-Fenster endet → PV schaltet Heizung ab, Zeitfenster Filter', () => {
+    it('evaluatePvSurplus aufgerufen, filter OFF, _timeWindowActive=false', async () => {
         const adapter = createAdapter();
         adapter._pvActive = true;
         adapter.config.timeWindows = [
@@ -752,12 +710,18 @@ describe('ENDE 19: pv_steu-Fenster endet → evaluatePvSurplus statt direktes se
         // Kurz warten damit evaluatePvSurplus-Promise feuert
         await new Promise(r => setTimeout(r, 20));
 
-        assert.strictEqual(adapter.setFeatureCalls.length, 0,
-            'kein direktes setFeature bei pv_steu – PV übernimmt');
         assert.strictEqual(adapter._pvSurplusEvaluated, true,
-            'evaluatePvSurplus muss aufgerufen werden');
+            'evaluatePvSurplus muss aufgerufen werden (PV schaltet Heizung ab)');
         assert.strictEqual(adapter._timeWindowActive[0], false,
             '_timeWindowActive muss false sein');
+        // Filter wird vom Zeitfenster abgeschaltet
+        const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
+        assert.strictEqual(filterOff.length, 1,
+            'filter muss abgeschaltet werden – vom Zeitfenster verwaltet');
+        // Heizung wird NICHT direkt abgeschaltet – PV übernimmt
+        const heaterOff = adapter.setFeatureCalls.filter(c => c.f === 'heater' && c.v === false);
+        assert.strictEqual(heaterOff.length, 0,
+            'heater darf NICHT direkt abgeschaltet werden – PV übernimmt');
     });
 
     it('kein evaluatePvSurplus wenn _pvActive=false (PV läuft nicht)', async () => {
@@ -937,20 +901,21 @@ describe('FOLLOW-UP: Filter-OFF wird blockiert wenn UVC Daily Ensure aktiv ist',
         }).catch(done);
     });
 
-    it('follow-up schaltet Filter NICHT ab wenn _pvActive=true und PV Filter steuert', (done) => {
+    it('follow-up schaltet Filter AB wenn _pvActive=true (PV verwaltet Filter nicht mehr)', (done) => {
         const adapter = createAdapter();
         adapter.config.pump_follow_up = 0.001;
         adapter.config.timeWindows = [makeWindow({ action_filter: true })];
         adapter._timeWindowActive = [false];
 
         adapter.deactivateWindow(adapter.config.timeWindows[0], 0).then(() => {
+            // PV verwaltet nur noch Heizung, nicht Filter → Filter darf abgeschaltet werden
             adapter._pvActive = true;
-            adapter._pvManagedFeatures.filter = true;
+            adapter._pvManagedFeatures.filter = false; // PV verwaltet Filter nicht mehr
 
             setTimeout(() => {
                 const filterOff = adapter.setFeatureCalls.filter(c => c.f === 'filter' && c.v === false);
-                assert.strictEqual(filterOff.length, 0,
-                    'filter darf NICHT abgeschaltet werden – PV steuert Filter');
+                assert.strictEqual(filterOff.length, 1,
+                    'filter MUSS abgeschaltet werden – PV verwaltet Filter nicht mehr');
                 done();
             }, 200);
         }).catch(done);

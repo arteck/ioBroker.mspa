@@ -484,27 +484,25 @@ describe('stagedDeactivate() – fromAutomation:true', () => {
         assert.strictEqual(call.opts.fromAutomation, true, 'Heater OFF braucht fromAutomation:true');
     });
 
-    it('Stage 3: Filter OFF hat fromAutomation:true', async () => {
-        const adapter = makePvAdapter({ heaterManaged: false, filterManaged: true });
+    it('Stage 3: Filter OFF wird NICHT von PV aufgerufen (Zeitfenster verwaltet Filter)', async () => {
+        const adapter = makePvAdapter({ heaterManaged: false, filterManaged: false });
         const windows = [{ action_filter: true }];
 
         await pvModule.stagedDeactivate(adapter, windows, true);
 
         const call = adapter.calls.find(c => c.feature === 'filter' && c.val === false);
-        assert.ok(call, 'Filter OFF muss aufgerufen sein');
-        assert.strictEqual(call.opts.fromAutomation, true, 'Filter OFF braucht fromAutomation:true');
+        assert.strictEqual(call, undefined, 'PV darf Filter NICHT direkt abschalten – Zeitfenster verwaltet Filter');
     });
 
-    it('Stage 2: UVC OFF hat fromAutomation:true wenn Minimum erreicht', async () => {
-        const adapter = makePvAdapter({ heaterManaged: false, filterManaged: true, uvcManaged: true });
+    it('Stage 2: UVC OFF wird NICHT von PV aufgerufen (Zeitfenster verwaltet UVC)', async () => {
+        const adapter = makePvAdapter({ heaterManaged: false, filterManaged: false, uvcManaged: false });
         adapter._uvcHoursUsed = 10; adapter._uvcDayStartH = 0;
         const windows = [{ action_filter: true, action_uvc: true }];
 
         await pvModule.stagedDeactivate(adapter, windows, true);
 
         const call = adapter.calls.find(c => c.feature === 'uvc' && c.val === false);
-        assert.ok(call, 'UVC OFF muss aufgerufen sein');
-        assert.strictEqual(call.opts.fromAutomation, true, 'UVC OFF braucht fromAutomation:true');
+        assert.strictEqual(call, undefined, 'PV darf UVC NICHT direkt abschalten – Zeitfenster verwaltet UVC');
     });
 
     it('stagedDeactivate: _lastCommandTime wird aktualisiert', async () => {
@@ -536,15 +534,14 @@ describe('reactivate() – fromAutomation:true', () => {
         return adapter;
     }
 
-    it('filter ON in reactivate hat fromAutomation:true', async () => {
+    it('filter ON wird NICHT in reactivate aufgerufen (Zeitfenster verwaltet Filter)', async () => {
         const adapter = makePvReactivateAdapter();
         const windows = [{ action_heating: true, action_filter: false, action_uvc: false, target_temp: 0 }];
 
         await pvModule.reactivate(adapter, windows, 800);
 
         const call = adapter.calls.find(c => c.feature === 'filter' && c.val === true);
-        assert.ok(call, 'Filter ON muss aufgerufen sein');
-        assert.strictEqual(call.opts.fromAutomation, true);
+        assert.strictEqual(call, undefined, 'PV darf Filter NICHT starten – Zeitfenster verwaltet Filter');
     });
 
     it('heater ON in reactivate hat fromAutomation:true', async () => {
@@ -558,15 +555,14 @@ describe('reactivate() – fromAutomation:true', () => {
         assert.strictEqual(call.opts.fromAutomation, true);
     });
 
-    it('uvc ON in reactivate hat fromAutomation:true', async () => {
+    it('uvc ON wird NICHT in reactivate aufgerufen (Zeitfenster verwaltet UVC)', async () => {
         const adapter = makePvReactivateAdapter();
         const windows = [{ action_heating: false, action_filter: false, action_uvc: true }];
 
         await pvModule.reactivate(adapter, windows, 800);
 
         const call = adapter.calls.find(c => c.feature === 'uvc' && c.val === true);
-        assert.ok(call, 'UVC ON muss aufgerufen sein');
-        assert.strictEqual(call.opts.fromAutomation, true);
+        assert.strictEqual(call, undefined, 'PV darf UVC NICHT starten – Zeitfenster verwaltet UVC');
     });
 });
 
