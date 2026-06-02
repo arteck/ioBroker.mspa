@@ -180,6 +180,8 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ### 0.3.5 (2026-05-12)
 * (arteck) clean code
 * (arteck) less notification
+* 
+[Older changelogs can be found there](CHANGELOG_OLD.md)
 
 ## License
 
