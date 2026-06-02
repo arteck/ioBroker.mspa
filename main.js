@@ -716,11 +716,14 @@ class MspaAdapter extends utils.Adapter {
         const uvcMinMet = todayH >= uvcMinH;
 
         try {
-            // Heater OFF: nur wenn PV es nicht steuert UND kein anderes Fenster den Heizer braucht
-            if (!pvHandlesHeater && w.action_heating && !otherNeedsHeater) {
+            // Heater OFF: nur wenn PV es nicht steuert UND kein anderes Fenster den Heizer braucht.
+            // Zusätzlich: pv_steu=true aber PV inzwischen inaktiv → Heizer wurde durch PV gestartet
+            // und muss beim Fenster-Ende durch das Zeitfenster gestoppt werden.
+            const windowStartedHeater = w.action_heating || w.pv_steu;
+            if (!pvHandlesHeater && windowStartedHeater && !otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater OFF`);
                 await this.setFeature('heater', false, {fromAutomation: true});
-            } else if (!pvHandlesHeater && w.action_heating && otherNeedsHeater) {
+            } else if (!pvHandlesHeater && windowStartedHeater && otherNeedsHeater) {
                 this.log.debug(`Time control [${i + 1}]: heater kept ON – required by overlapping window`);
             }
 
@@ -1585,7 +1588,7 @@ class MspaAdapter extends utils.Adapter {
 
                     // ioBroker TS-Typen kennen nur die Callback-Variante von getState;
                     // die synchrone Variante existiert zur Laufzeit im Adapter-Core.
-                    const getStateSync = (id) => ((this)).getState(id);
+                    const getStateSync = (id) => this.getState(id);
                     const uvcState = getStateSync('control.uvc');
                     const bubbleState = getStateSync('control.bubble');
                     const heaterState = getStateSync('control.heater');
@@ -1773,7 +1776,7 @@ class MspaAdapter extends utils.Adapter {
         // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
         // when the heater was just switched ON but the poll hasn't confirmed it yet.
 
-        const heaterState = ((this)).getState('control.heater');
+        const heaterState = this.getState('control.heater');
         const heaterOnState = heaterState && !!heaterState.val;
         const heaterOnCommanded = this._adapterCommanded.heater === true;
         const heaterOnLive = this._lastData && this._lastData.heater === 'on';
@@ -2020,7 +2023,7 @@ class MspaAdapter extends utils.Adapter {
                     this.log.warn(`bubble_level ${state.val} out of range (0–3) – command ignored`);
                     await this.setStatusCheck('error');
                     // Ack with previous valid value from state store
-                    const cur = ((this)).getState('control.bubble_level');
+                    const cur = this.getState('control.bubble_level');
                     this.setState('control.bubble_level', (cur && cur.val != null) ? cur.val : 1, true);
                     return;
                 }
