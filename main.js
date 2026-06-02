@@ -715,6 +715,7 @@ class MspaAdapter extends utils.Adapter {
         const todayH = this.getUvcTodayHours();
         const uvcMinMet = todayH >= uvcMinH;
 
+
         try {
             // Heater OFF: nur wenn PV es nicht steuert UND kein anderes Fenster den Heizer braucht.
             // Zusätzlich: pv_steu=true aber PV inzwischen inaktiv → Heizer wurde durch PV gestartet
