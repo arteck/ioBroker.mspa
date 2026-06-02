@@ -875,10 +875,34 @@ class MspaAdapter extends utils.Adapter {
             return;
         }
 
+        // Filter wird IMMER von einem Zeitfenster verwaltet (nicht nur wenn action_filter=true).
+        // anyWindowManagesFilter korrigieren: jedes aktive Fenster das IRGENDEINE Aktion hat verwaltet den Filter.
+        const anyWindowManagesFilterReal = Array.isArray(windows) && windows.some(w => w.active && (w.action_filter || w.action_heating || w.action_uvc));
+        if (anyWindowManagesFilterReal) {
+            anyWindowManagesFilter = true;
+        }
+
         // Is any time window active right now?
+        // FIX Race Condition: _timeWindowActive[i] wird erst am Ende von checkTimeWindows() gesetzt.
+        // Falls der erste Poll schneller zurückkommt als checkTimeWindows() die API-Befehle abarbeitet,
+        // würde anyWindowActiveNow=false sein obwohl ein Fenster gerade startet.
+        // Daher zusätzlich prüfen ob ein Fenster zeitlich gerade aktiv sein SOLLTE.
         const anyWindowActiveNow = this._timeWindowActive.some(v => v);
-        if (anyWindowActiveNow) {
-            this.log.debug('Startup check: a time window is currently active – leaving device state as-is');
+        const anyWindowShouldBeActive = Array.isArray(windows) && windows.some(w => {
+            if (!w.active) return false;
+            const now = new Date();
+            const day = now.getDay();
+            const dayKeys = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
+            const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+            const sMin = toMin(w.start || '00:00');
+            const eMin = toMin(w.end || '00:00');
+            const curMin = now.getHours() * 60 + now.getMinutes();
+            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
+            const effectiveDay = isOvernightAfterMidnight ? (day + 6) % 7 : day;
+            return !!w[dayKeys[effectiveDay]] && this.isInTimeWindow(w.start || '00:00', w.end || '00:00');
+        });
+        if (anyWindowActiveNow || anyWindowShouldBeActive) {
+            this.log.debug(`Startup check: a time window is currently active (tracked=${anyWindowActiveNow}, shouldBeActive=${anyWindowShouldBeActive}) – leaving device state as-is`);
             return;
         }
 
