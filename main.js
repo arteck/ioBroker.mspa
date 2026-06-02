@@ -2092,9 +2092,26 @@ class MspaAdapter extends utils.Adapter {
                         this.log.info('UVC daily ensure: skip requested by user – pausing for today');
                     }
                     await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
-                    // stop immediately if ensure is currently running
+                    // stop immediately if ensure is currently running – but only if UVC actually runs
                     if (this._uvcEnsureActive) {
-                        await this.stopUvcEnsure();
+                        try {
+                            const uvcState = await this.getStateAsync('control.uvc');
+                            if (uvcState && uvcState.val) {
+                                if (this.config.more_log_enabled) {
+                                    this.log.info('UVC daily ensure: skip requested – UVC läuft, wird gestoppt');
+                                }
+                                await this.stopUvcEnsure();
+                            } else {
+                                if (this.config.more_log_enabled) {
+                                    this.log.info('UVC daily ensure: skip requested – UVC bereits aus, kein Befehl gesendet');
+                                }
+                                this._uvcEnsureActive = false;
+                            }
+                        } catch (e) {
+                            this.log.warn(`UVC daily ensure: skip-check fehlgeschlagen – ${e.message}`);
+                            // Fallback: sicher stoppen
+                            await this.stopUvcEnsure();
+                        }
                     } else {
                         // ensure was not active – skip only affects the daily ensure scheduler,
                         // NOT a UVC that runs via time window or manually.
