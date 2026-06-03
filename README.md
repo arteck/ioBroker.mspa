@@ -160,7 +160,7 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.4.0 (2026-06-03)
 * (arteck) new logic for heater
 
 ### 0.3.9 (2026-05-27)
@@ -177,13 +177,7 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ### 0.3.6 (2026-05-12)
 * (arteck) fix daily uvc timer after adapter restart
 
-### 0.3.5 (2026-05-12)
-* (arteck) clean code
-* (arteck) less notification
-* 
-[Older changelogs can be found there](CHANGELOG_OLD.md)
-
-## License
+[Older changelogs can be found there](CHANGELOG_OLD.md)## License
 
 MIT License
 

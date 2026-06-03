@@ -47,6 +47,11 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.3.5 (2026-05-12)
+* (arteck) clean code
+* (arteck) less notification
+* 
+
 ## 0.3.4 (2026-05-05)
 * (arteck) fix manual override
 

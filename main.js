@@ -889,11 +889,15 @@ class MspaAdapter extends utils.Adapter {
         // Daher zusätzlich prüfen ob ein Fenster zeitlich gerade aktiv sein SOLLTE.
         const anyWindowActiveNow = this._timeWindowActive.some(v => v);
         const anyWindowShouldBeActive = Array.isArray(windows) && windows.some(w => {
-            if (!w.active) return false;
+            if (!w.active) {
+return false;
+}
             const now = new Date();
             const day = now.getDay();
             const dayKeys = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
-            const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+            const toMin = (hhmm) => {
+ const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; 
+};
             const sMin = toMin(w.start || '00:00');
             const eMin = toMin(w.end || '00:00');
             const curMin = now.getHours() * 60 + now.getMinutes();

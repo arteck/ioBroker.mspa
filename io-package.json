@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.3.9",
+    "version": "0.4.0",
     "news": {
+      "0.4.0": {
+        "en": "new logic for heater",
+        "de": "neue logik für heizung",
+        "ru": "новая логика для нагревателя",
+        "pt": "nova lógica para aquecedor",
+        "nl": "nieuwe logica voor verwarming",
+        "fr": "nouvelle logique pour le chauffage",
+        "it": "nuova logica per riscaldare",
+        "es": "nueva lógica para el calentador",
+        "pl": "nowa logika dla grzejnika",
+        "uk": "нова логіка для нагрівача",
+        "zh-cn": "热器的新逻辑"
+      },
       "0.3.9": {
         "en": "fix heater start",
         "de": "heizungsstart",
@@ -80,19 +93,6 @@
         "pl": "naprawić ręczne sterowanie\nnaprawić ręczne sterowanie",
         "uk": "ручна накладна\nручна накладна",
         "zh-cn": "修补手动覆盖\n修补手动覆盖"
-      },
-      "0.3.3": {
-        "en": "fix heatrate\nfix uvc stop",
-        "de": "hitzebeständigkeit festsetzen\nfix uvc stop",
-        "ru": "фиксировать тепло\nустановить uvc stop",
-        "pt": "fixar o calorato\ncorrigir o uvc stop",
-        "nl": "fix heat rate\nfix uvc stop",
-        "fr": "fixer le taux de chaleur\nfixer uvc arrêt",
-        "it": "correzione della temperatura\nfix uvre stop",
-        "es": "calentador\nparada uvc",
-        "pl": "hejtrat\nfix uvc stop",
-        "uk": "фіксувати тепловіддачу\nкріплення uvc зупинки",
-        "zh-cn": "固定热率\n固定 uc 站点"
       }
     },
     "titleLang": {
