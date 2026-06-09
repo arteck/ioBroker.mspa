@@ -1617,10 +1617,10 @@ return false;
 
                     // ioBroker TS-Typen kennen nur die Callback-Variante von getState;
                     // die synchrone Variante existiert zur Laufzeit im Adapter-Core.
-                    const getStateSync = (id) => this.getState(id);
-                    const uvcState = getStateSync('control.uvc');
-                    const bubbleState = getStateSync('control.bubble');
-                    const heaterState = getStateSync('control.heater');
+
+                    const uvcState = await this.getStateAsync('control.uvc');
+                    const bubbleState = await this.getStateAsync('control.bubble');
+                    const heaterState = await this.getStateAsync('control.heater');
 
                     if (uvcState && uvcState.val) {
                         if (this.config.more_log_enabled) {
@@ -1805,8 +1805,8 @@ return false;
         // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
         // when the heater was just switched ON but the poll hasn't confirmed it yet.
 
-        const heaterState = this.getState('control.heater');
-        const heaterOnState = heaterState && !!heaterState.val;
+        const heaterState = await this.getStateAsync('control.heater');
+        const heaterOnState = heaterState.val;
         const heaterOnCommanded = this._adapterCommanded.heater === true;
         const heaterOnLive = this._lastData && this._lastData.heater === 'on';
         const heaterOn = heaterOnState || heaterOnCommanded || heaterOnLive;
@@ -1838,8 +1838,23 @@ return false;
             this._lastCommandTime = Date.now();
         }
         await this.setStatusCheck('send');
-        const result = await this._api.setTemperatureSetting(temp);
+        let result;
+        try {
+            result = await this._api.setTemperatureSetting(temp);
+        } catch (err) {
+            // FIX: API exception → set error status, clear commanded marker, rethrow.
+            await this.setStatusCheck('error');
+            this._adapterCommanded.target_temperature = null;
+            this.log.warn(`target_temperature: command could not be sent – ${err.message}`);
+            throw err;
+        }
         await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
+        if (!this._api._lastCommandConfirmed) {
+            // Command was not processed/confirmed by the device – drop the
+            // commanded marker so the next poll writes the real device value.
+            this._adapterCommanded.target_temperature = null;
+            this.log.warn('target_temperature command not confirmed by device – state will be corrected on next poll');
+        }
         // Immediate ack so UI confirms value without waiting for next poll
         this.setState('control.target_temperature', temp, true);
         return result;
@@ -2052,7 +2067,7 @@ return false;
                     this.log.warn(`bubble_level ${state.val} out of range (0–3) – command ignored`);
                     await this.setStatusCheck('error');
                     // Ack with previous valid value from state store
-                    const cur = this.getState('control.bubble_level');
+                    const cur = await this.getStateAsync('control.bubble_level');
                     this.setState('control.bubble_level', (cur && cur.val != null) ? cur.val : 1, true);
                     return;
                 }
