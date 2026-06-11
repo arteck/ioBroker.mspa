@@ -25,6 +25,7 @@ class MspaAdapter extends utils.Adapter {
         this._api = null;
         this._authStore = {token: null, throttle: new MSpaThrottle()};
         this._pollTimer = null;
+        this._polling = false;  // true while doPoll() is executing (re-entrancy guard)
         this._pollInterval = 60_000;  // ms
         this._rapidUntil = 0;
         this._lastData = {};
@@ -1122,6 +1123,16 @@ return false;
     // Polling
     // -------------------------------------------------------------------------
     schedulePoll() {
+        if (this._unloading) {
+            return;
+        }
+        // Always cancel any pending poll before scheduling a new one so two timers
+        // can never coexist. Otherwise a timer set by enableRapidPolling() while a
+        // poll is in flight would be orphaned here → two concurrent doPoll() runs.
+        if (this._pollTimer) {
+            clearTimeout(this._pollTimer);
+            this._pollTimer = null;
+        }
         const isRapid = Date.now() < this._rapidUntil;
         const interval = isRapid ? 1000 : this._pollInterval;
         this._pollTimer = setTimeout(() => this.doPoll(), interval);
@@ -1141,6 +1152,18 @@ return false;
     }
 
     async doPoll() {
+        if (this._unloading) {
+            return;
+        }
+        // Re-entrancy guard: never run two polls concurrently. A trigger that arrives
+        // while a poll is in flight (e.g. a rapid-poll timer firing during a slow API
+        // call) is dropped – the in-flight poll reschedules itself when it finishes.
+        if (this._polling) {
+            this.log.debug('doPoll: a poll is already in progress – skipping overlapping trigger');
+            return;
+        }
+        this._polling = true;
+        try {
         try {
             let raw;
             if (this._api._lastStatus) {
@@ -1212,6 +1235,9 @@ return false;
         }
 
         this.schedulePoll();
+        } finally {
+            this._polling = false;
+        }
     }
 
     async publishStatus(data) {
@@ -1224,11 +1250,20 @@ return false;
 
     enableRapidPolling() {
         this._rapidUntil = Date.now() + 15_000;
+        if (this._unloading) {
+            return;
+        }
         // Cancel the currently scheduled poll and reschedule immediately (1 s)
         // so the ACK arrives quickly instead of waiting up to 60 s.
         if (this._pollTimer) {
             clearTimeout(this._pollTimer);
             this._pollTimer = null;
+        }
+        // If a poll is currently in flight it will reschedule itself on completion
+        // (using _rapidUntil, so still rapid). Avoid stacking a second timer that
+        // would fire mid-poll and be dropped by the re-entrancy guard anyway.
+        if (this._polling) {
+            return;
         }
         this._pollTimer = setTimeout(() => this.doPoll(), 1_000);
     }
