@@ -8,8 +8,8 @@
     "url": "git+https://github.com/arteck/ioBroker.mspa.git"
   },
   "keywords": [
-    "xsense",
-    "x-sense",
+    "mspa",
+    "whirlpool",
     "ioBroker"
   ],
   "author": {
@@ -49,7 +49,6 @@
     "admin{,/!(src)/**}/*.{html,css,png,svg,jpg,js}",
     "admin/i18n/",
     "lib/",
-    "python/",
     "io-package.json",
     "LICENSE",
     "main.js"
