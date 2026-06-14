@@ -168,23 +168,23 @@ function makeAdapter({
 // ---------------------------------------------------------------------------
 describe('Quelltext-Audit: checkPowerCycle enthält 60-s-Suppression', () => {
     it('main.js: suppressPowerCycleDetection prüft _lastCommandTime', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/powerCycle.js'), 'utf8');
         assert.ok(src.includes('suppressPowerCycleDetection'),
             'checkPowerCycle muss suppressPowerCycleDetection-Flag enthalten');
-        assert.ok(src.includes('cmdAgeMs < 60_000'),
+        assert.ok(src.includes('CONSTANTS.POWER_CYCLE_SUPPRESS_MS'),
             'Suppression muss auf 60 s ausgelegt sein');
         assert.ok(src.includes('_lastCommandTime'),
             '_lastCommandTime muss für die Suppression genutzt werden');
     });
 
     it('main.js: Suppression-Log-Meldung ist vorhanden', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/powerCycle.js'), 'utf8');
         assert.ok(src.includes('snapshot detection suppressed'),
             'Debug-Log bei Suppression muss vorhanden sein');
     });
 
     it('main.js: restoreSavedState enthält allowHeaterRestore-Guard', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/powerCycle.js'), 'utf8');
         assert.ok(src.includes('allowHeaterRestore'),
             'restoreSavedState muss allowHeaterRestore-Guard enthalten (2. Verteidigungslinie)');
     });

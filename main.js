@@ -8,12 +8,22 @@
 const utils = require('@iobroker/adapter-core');
 const crypto = require('node:crypto');
 const {MSpaApiClient, MSpaThrottle} = require('./lib/mspaApi');
-const {transformStatus, RateTracker} = require('./lib/utils');
+const {RateTracker, setStray, todayStr, sleep} = require('./lib/utils');
 const stateMgr = require('./lib/states');
 const pvController = require('./lib/pv');
 const uvcController = require('./lib/uvc');
 const consumptionHelper = require('./lib/consumptionHelper');
 const notificationHelper = require('./lib/notificationHelper');
+const commands = require('./lib/commands');
+const timeControl = require('./lib/timeControl');
+const polling = require('./lib/polling');
+const stateChangeHandler = require('./lib/stateChangeHandler');
+const powerCycle = require('./lib/powerCycle');
+const frostProtection = require('./lib/frostProtection');
+const manualOverride = require('./lib/manualOverride');
+const startupCheck = require('./lib/startupCheck');
+const stateRestore = require('./lib/stateRestore');
+const {CONSTANTS} = require('./lib/constants');
 
 // ---------------------------------------------------------------------------
 // Adapter class
@@ -26,14 +36,14 @@ class MspaAdapter extends utils.Adapter {
         this._authStore = {token: null, throttle: new MSpaThrottle()};
         this._pollTimer = null;
         this._polling = false;  // true while doPoll() is executing (re-entrancy guard)
-        this._pollInterval = 60_000;  // ms
+        this._pollInterval = CONSTANTS.DEFAULT_POLL_INTERVAL_MS;  // ms
         this._rapidUntil = 0;
         this._lastData = {};
         this._savedState = {};
         this._lastSnapshot = {};
         this._lastIsOnline = null;
         this._consecutiveErrors = 0;
-        this._maxReconnectTries = 3;
+        this._maxReconnectTries = CONSTANTS.MAX_RECONNECT_TRIES;
 
         // What the adapter last commanded to the device (heater/filter/uvc/target_temp).
         // Used to detect external changes made via the MSpa app.
@@ -55,9 +65,9 @@ class MspaAdapter extends utils.Adapter {
         //   MIN_RATE = 0,3 °C/h  (unterhalb = Rauschen oder Heizung steht still)
         //   minSampleMinutes = 20: bei ~30 min/°C braucht man mind. 15–20 min Fenster
         //   für eine stabile Messung; bei 60s-Polling = 20 Samples
-        this._heatTracker = new RateTracker({min: 0.3, max: 3.5, minSampleMinutes: 20});
+        this._heatTracker = new RateTracker({min: CONSTANTS.HEAT_RATE_MIN, max: CONSTANTS.HEAT_RATE_MAX, minSampleMinutes: CONSTANTS.HEAT_SAMPLE_MINUTES});
         // Abkühlung: ohne Heizung kühlt 930 L Whirlpool i.d.R. 0,3–1,5 °C/h (je nach Außentemp.)
-        this._coolTracker = new RateTracker({min: 0.05, max: 2.0, minSampleMinutes: 30});
+        this._coolTracker = new RateTracker({min: CONSTANTS.COOL_RATE_MIN, max: CONSTANTS.COOL_RATE_MAX, minSampleMinutes: CONSTANTS.COOL_SAMPLE_MINUTES});
         this._lastHeatRate = 0; // last positive heating rate (°C/h) for ETA calculation
 
         // PV surplus control
@@ -142,14 +152,14 @@ class MspaAdapter extends utils.Adapter {
         const password = cfg.password ? crypto.createHash('md5').update(cfg.password).digest('hex') : '';
         const region = cfg.region || 'ROW';
 
-        this._pollInterval = Math.max(10, (cfg.pollInterval || 60)) * 1000;
+        this._pollInterval = Math.max(CONSTANTS.MIN_POLL_INTERVAL_SECONDS, (cfg.pollInterval || 60)) * CONSTANTS.MS_PER_SECOND;
 
         this._api = new MSpaApiClient({
             email,
             password,
             region,
             authStore: this._authStore,
-            log: (level, msg) => this.log[level] ? this.log[level](msg) : this.log.info(msg),
+            log: (level, msg) => this.log[level] ? this.log[level](msg) : this.log.info(msg)
         });
 
         try {
@@ -170,7 +180,7 @@ class MspaAdapter extends utils.Adapter {
             this.log.error(`MSpa init failed: ${err.message} – retry in 30 s`);
             this.setStray(() => {
                 this.onReady().catch(e => this.log.error(`MSpa init retry failed: ${e.message}`));
-            }, 30_000);
+            }, CONSTANTS.INIT_RETRY_DELAY_MS);
             return;
         }
 
@@ -216,80 +226,7 @@ class MspaAdapter extends utils.Adapter {
      *  – every write goes to both the in-memory variable AND the state (ack:true).
      */
     async _restorePersistedStates() {
-        // ── season / winter mode ─────────────────────────────────────────────
-        const wmState = await this.getStateAsync('control.winter_mode');
-        const seState = await this.getStateAsync('control.season_enabled');
-        this._winterModeActive = wmState && wmState.val !== null ? !!wmState.val : false;
-        this._seasonEnabled = seState && seState.val !== null ? !!seState.val : false;
-        this.setState('control.winter_mode', this._winterModeActive, true);
-        this.setState('control.season_enabled', this._seasonEnabled, true);
-
-        // ── manual override – always reset to false on restart ───────────────
-        this._manualOverride = false;
-        this.setState('control.manual_override', false, true);
-        this.setState('control.manual_override_duration', 0, true);
-
-        // ── counters that reset on restart ───────────────────────────────────
-        this.setState('computed.pv_deactivate_remaining', 0, true);
-
-        // ── UVC daily ensure skip – only valid if date matches today ─────────
-        const skipState = await this.getStateAsync('control.uvc_ensure_skip_today');
-        const skipDateSt = await this.getStateAsync('control.uvc_ensure_skip_date');
-        const persistedSkip = skipState && skipState.val === true;
-        const persistedDate = skipDateSt && typeof skipDateSt.val === 'string' ? skipDateSt.val : '';
-        const today = this.todayStr();
-        if (persistedSkip && persistedDate === today) {
-            this._uvcEnsureSkipToday = true;
-            this._uvcEnsureSkipDate = today;
-            if (this.config.more_log_enabled) {
-                this.log.info('UVC daily ensure: skip flag restored – ensure paused for today');
-            }
-        } else {
-            if (persistedSkip && this.config.more_log_enabled) {
-                this.log.info(`UVC daily ensure: skip flag from ${persistedDate || 'unknown date'} is outdated (today=${today}) – resetting`);
-            }
-            this._uvcEnsureSkipToday = false;
-            this._uvcEnsureSkipDate = '';
-        }
-        this.setState('control.uvc_ensure_skip_today', this._uvcEnsureSkipToday, true);
-        this.setState('control.uvc_ensure_skip_date', this._uvcEnsureSkipDate, true);
-
-        // ── filter runtime ────────────────────────────────────────────────────
-        const filterRunningState = await this.getStateAsync('control.filter_running');
-        this._filterHoursUsed = (filterRunningState && typeof filterRunningState.val === 'number') ? filterRunningState.val : 0;
-        const filterCtrlState = await this.getStateAsync('control.filter');
-        if (filterCtrlState && filterCtrlState.val) {
-            const lastUpd = await this.getStateAsync('info.lastUpdate');
-            const lu = lastUpd && typeof lastUpd.val === 'number' ? lastUpd.val : 0;
-            const maxBack = 6 * 3_600_000; // 6 h plausibility cutoff
-            this._filterOnSince = (lu > 0 && (Date.now() - lu) <= maxBack) ? lu : Date.now();
-            if (this.config.more_log_enabled) {
-                this.log.info(`Filter runtime: filter was ON at startup – tracking from now (accumulated: ${this._filterHoursUsed.toFixed(2)} h)`);
-            }
-        }
-
-        // ── UVC operating hours ───────────────────────────────────────────────
-        const uvcHoursState = await this.getStateAsync('status.uvc_hours_used');
-        this._uvcHoursUsed = (uvcHoursState && typeof uvcHoursState.val === 'number') ? uvcHoursState.val : 0;
-
-        // Restore today's hours from persisted uvc_today_hours so a restart does not reset to 0.
-        // Check the state's timestamp – if it was written today, subtract its value from the total.
-        const uvcTodayState = await this.getStateAsync('status.uvc_today_hours');
-        const tsToday = uvcTodayState && uvcTodayState.ts ? new Date(uvcTodayState.ts).toISOString().slice(0, 10) : '';
-        if (tsToday === today && uvcTodayState && typeof uvcTodayState.val === 'number' && uvcTodayState.val > 0) {
-            this._uvcDayStartHours = Math.max(0, this._uvcHoursUsed - uvcTodayState.val);
-            this._uvcDayStartDate = today;
-            this.log.debug(`UVC: restored uvc_today_hours from last run: ${uvcTodayState.val.toFixed(2)} h (baseline: ${this._uvcDayStartHours.toFixed(2)} h)`);
-        } else {
-            this._uvcDayStartHours = this._uvcHoursUsed;
-            this._uvcDayStartDate = today;
-            this.log.debug(`UVC: new day or no prior data – uvc_today_hours starts at 0`);
-        }
-        const uvcCtrlState = await this.getStateAsync('control.uvc');
-        if (uvcCtrlState && uvcCtrlState.val) {
-            // UVC was ON at shutdown → start tracking from now (conservative)
-            this._uvcOnSince = Date.now();
-        }
+        return stateRestore.restorePersistedStates(this);
     }
 
     /**
@@ -302,16 +239,7 @@ class MspaAdapter extends utils.Adapter {
      * @returns {NodeJS.Timeout}
      */
     setStray(fn, ms) {
-        const t = setTimeout(() => {
-            this._strayTimers.delete(t);
-            try {
-                fn();
-            } catch (e) {
-                this.log.error(`stray timer cb: ${e.message}`);
-            }
-        }, ms);
-        this._strayTimers.add(t);
-        return t;
+        return setStray(this, fn, ms);
     }
 
     async onUnload(callback) {
@@ -390,10 +318,7 @@ class MspaAdapter extends utils.Adapter {
     // Publish configured time windows as JSON datapoint
     // -------------------------------------------------------------------------
     async publishTimeWindowsJson() {
-        const windows = this.config.timeWindows;
-        const json = JSON.stringify(Array.isArray(windows) ? windows : [], null, 2);
-        this.log.debug(`Time windows JSON: ${json}`);
-        this.setState('status.time_windows_json', {val: json, ack: true});
+        return timeControl.publishTimeWindowsJson(this);
     }
 
     /**
@@ -405,413 +330,22 @@ class MspaAdapter extends utils.Adapter {
      * @param {string} jsonStr – raw JSON string from the state
      */
     async _applyTimeWindowsJson(jsonStr) {
-        // ── 1. Parse & validate ──────────────────────────────────────────────
-        let parsed;
-        try {
-            parsed = JSON.parse(jsonStr);
-        } catch (e) {
-            this.log.error(`time_windows_json: invalid JSON – ${e.message}`);
-            // Rollback: write back the current valid value
-            await this.publishTimeWindowsJson();
-            return;
-        }
-        if (!Array.isArray(parsed)) {
-            this.log.error('time_windows_json: value must be a JSON array – ignoring');
-            await this.publishTimeWindowsJson();
-            return;
-        }
-
-        // ── 2. Persist to system.adapter config (native) ─────────────────────
-        try {
-            const objId = `system.adapter.${this.namespace}`;
-            const cfgObj = await this.getForeignObjectAsync(objId);
-            if (!cfgObj) {
-                this.log.error(`time_windows_json: could not load ${objId} – config not saved`);
-                return;
-            }
-            cfgObj.native.timeWindows = parsed;
-            await this.setForeignObjectAsync(objId, cfgObj);
-            this.log.info(`time_windows_json: ${parsed.length} window(s) saved to adapter config`);
-        } catch (e) {
-            this.log.error(`time_windows_json: failed to save adapter config – ${e.message}`);
-            return;
-        }
-
-        // ── 3. Update runtime config so changes take effect immediately ──────
-        this.config.timeWindows = parsed;
-
-        // ── 4. Ack the state with the normalised JSON ─────────────────────────
-        this.setState('status.time_windows_json', {val: JSON.stringify(parsed, null, 2), ack: true});
-
-        // ── 5. Re-initialise schedulers ──────────────────────────────────────
-        // Stop existing timers
-        if (this._timeTimer) {
-            clearInterval(this._timeTimer);
-            this._timeTimer = null;
-        }
-        if (this._timeAlignTimer) {
-            clearTimeout(this._timeAlignTimer);
-            this._timeAlignTimer = null;
-        }
-        this._timeWindowActive = [];
-        // Cancel any running PV deactivation
-        await this.pvCancelAllDeactivationTimers();
-        // Re-init both controllers with the new windows
-        this.initTimeControl();
-        await this.initPvControl();
-        this.log.info('time_windows_json: schedulers restarted with updated time windows');
+        return timeControl.applyTimeWindowsJson(this, jsonStr);
     }
 
     // -------------------------------------------------------------------------
     // Time Window Control
     // -------------------------------------------------------------------------
     initTimeControl() {
-        const windows = this.config.timeWindows;
-        if (!Array.isArray(windows) || windows.length === 0 || !windows.some(w => w.active)) {
-            this.log.debug('Time control: no active time windows configured – skipping');
-            return;
-        }
-        const cfg = this.config;
-        if (this._seasonEnabled) {
-            if (this.config.more_log_enabled) {
-                this.log.info(`Time control: season control active (${cfg.season_start} – ${cfg.season_end}), today inSeason=${this.isInSeason()}`);
-            }
-        }
-        // init tracking array to match current window count
-        this._timeWindowActive = windows.map(() => false);
-        if (this.config.more_log_enabled) {
-            this.log.info(`Time control: starting scheduler for ${windows.filter(w => w.active).length} active window(s) (checks every 60 s)`);
-        }
-
-        // run immediately, then every 60 s aligned to next full minute
-        this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
-        const now = new Date();
-        const msToMin = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-        if (this._timeAlignTimer) {
-            clearTimeout(this._timeAlignTimer);
-        }
-        this._timeAlignTimer = setTimeout(() => {
-            this._timeAlignTimer = null;
-            // Guard: clear any stale interval that may exist (defensive)
-            if (this._timeTimer) {
-                clearInterval(this._timeTimer);
-                this._timeTimer = null;
-            }
-            this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`));
-            this._timeTimer = setInterval(() => this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows: ${e.message}`)), 60_000,);
-        }, msToMin);
+        return timeControl.initTimeControl(this);
     }
 
     async checkTimeWindows() {
-        const windows = this.config.timeWindows;
-        if (!Array.isArray(windows)) {
-            return;
-        }
-
-        // --- Manual override guard -----------------------------------------
-        if (this._manualOverride) {
-            this.log.debug('Time control: manual override active – skipping time window control');
-            return;
-        }
-        // --- PV guard -------------------------------------------------------
-        // PV surplus control is handled per window (pv_steu flag).
-        // Windows with pv_steu=true: time scheduler marks them active but does NOT
-        // send hardware commands – evaluateSurplus() in pv.js activates them when
-        // there is enough surplus.
-        // Windows with pv_steu=false: always activate/deactivate independently,
-        // regardless of whether PV is running or not.
-        // --- Season guard ---------------------------------------------------
-        if (!this.isInSeason()) {
-            this.log.debug('Time control: outside season – skipping time window control (polling continues)');
-            // deactivate any windows that were still active
-            for (let i = 0; i < windows.length; i++) {
-                if (this._timeWindowActive[i]) {
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Time control [${i + 1}]: season ended – deactivating window`);
-                    }
-                    // Do NOT pre-set _timeWindowActive[i]=false here –
-                    // deactivateWindow sets it at the end. If it fails (API error),
-                    // _timeWindowActive[i] stays true so next minute triggers a retry.
-                    await this.deactivateWindow(windows[i], i);
-                    if (!this._timeWindowActive[i]) {
-                        // deactivation succeeded
-                        await notificationHelper.send(notificationHelper.format('timeWindowSeasonEnded', {window: i + 1}));
-                    }
-                }
-            }
-            return;
-        }
-        // --------------------------------------------------------------------
-
-        const now = new Date();
-        const day = now.getDay(); // 0=Sun … 6=Sat
-        const dayKeys = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
-
-        // ensure tracking array is large enough
-        while (this._timeWindowActive.length < windows.length) {
-            this._timeWindowActive.push(false);
-        }
-
-        for (let i = 0; i < windows.length; i++) {
-            const w = windows[i];
-            if (!w.active) {
-                // active=false means the window is disabled entirely.
-                // If it was running when disabled, deactivate hardware now.
-                if (this._timeWindowActive[i]) {
-                    this.log.info(`Time control [${i + 1}]: window disabled while active – deactivating`);
-                    await this.deactivateWindow(w, i);
-                    if (!this._timeWindowActive[i]) {
-                        await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
-                            window: i + 1, start: w.start || '00:00', end: w.end || '00:00'
-                        })).catch(e => this.log.error(`timeWindowEnded notification: ${e.message}`));
-                    }
-                }
-                continue;
-            }
-
-            const start = w.start || '00:00';
-            const end = w.end || '00:00';
-
-            // Overnight windows (e.g. 22:00–06:00): the "after-midnight" portion
-            // belongs to the day the window STARTED (yesterday). So if cur < end
-            // we must check yesterday's day flag, not today's.
-            const toMin = (hhmm) => {
-                const [h, m] = hhmm.split(':').map(Number);
-                return h * 60 + m;
-            };
-            const sMin = toMin(start);
-            const eMin = toMin(end);
-            const curMin = now.getHours() * 60 + now.getMinutes();
-            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
-            const effectiveDay = isOvernightAfterMidnight ? (day + 6) % 7 : day;
-            const dayOn = !!w[dayKeys[effectiveDay]];
-            const inWin = dayOn && this.isInTimeWindow(start, end);
-            const wasIn = this._timeWindowActive[i];
-
-            this.log.debug(`Time control [${i + 1}]: inWindow=${inWin}, wasActive=${wasIn}, day=${dayKeys[day]}, ${start}–${end}`);
-
-            if (inWin && !wasIn) {
-                try {
-                    // ── "All OFF" window: action_filter=false + action_heating=false + action_uvc=false
-                    // → actively shut down everything that is currently running
-                    if (!w.action_filter && !w.action_heating && !w.action_uvc) {
-                        this.log.info(`Time control [${i + 1}]: ALL-OFF window – shutting down heater, UVC, filter`);
-                        await this.setFeature('heater', false, {fromAutomation: true}).catch(() => {
-                        });
-                        await this.setFeature('uvc', false, {fromAutomation: true}).catch(() => {
-                        });
-                        await this.setFeature('filter', false, {fromAutomation: true}).catch(() => {
-                        });
-                        this.enableRapidPolling();
-                    } else {
-                        // ── Filter startet IMMER wenn ein Zeitfenster öffnet (unabhängig von PV).
-                        // PV-Steuerung betrifft nur die Heizung.
-                        this.log.debug(`Time control [${i + 1}]: filter ON (window start)`);
-                        await this.setFeature('filter', true, {fromAutomation: true});
-
-                        if (w.pv_steu) {
-                            // Heizung wird vom PV-Controller gesteuert – evaluatePvSurplus entscheidet
-                            this.log.debug(`Time control [${i + 1}]: pv_steu=true – heater managed by PV surplus, triggering evaluation`);
-                            this.evaluatePvSurplus().catch(e => this.log.error(`Time control [${i + 1}]: evaluatePvSurplus on window start failed – ${e.message}`));
-                        } else if (w.action_heating) {
-                            // Heizung direkt starten (kein PV-Überschuss benötigt)
-                            this.log.debug(`Time control [${i + 1}]: heater ON`);
-                            await this.setFeature('heater', true, {fromAutomation: true});
-                            if (w.target_temp) {
-                                // Prefer current user-set temperature over window config
-                                // (consistent with PV getEffectiveTargetTemp logic)
-                                this.getStateAsync('control.target_temperature').then(st => {
-                                    const effectiveTemp = (st && st.val != null && Number(st.val) > 0) ? Number(st.val) : w.target_temp;
-                                    if (this.config.more_log_enabled) {
-                                        this.log.info(`Time control [${i + 1}]: target temperature → ${effectiveTemp}°C${effectiveTemp !== w.target_temp ? ` (user-set, window=${w.target_temp}°C)` : ''} – sending in 10 s`);
-                                    }
-                                    this.setStray(() => {
-                                        this.sendTargetTempDirect(effectiveTemp ?? 0, {fromAutomation: true}).catch(e => this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`));
-                                    }, 10_000);
-                                }).catch(() => {
-                                    this.setStray(() => {
-                                        this.sendTargetTempDirect(w.target_temp ?? 0, {fromAutomation: true}).catch(e => this.log.error(`Time control [${i + 1}]: target temperature send FAILED – ${e.message}`));
-                                    }, 10_000);
-                                });
-                            }
-                        }
-
-                        if (w.action_uvc) {
-                            // UVC sofort mit Filter starten (action_uvc=true)
-                            // action_uvc=false → UVC-Ensure-Logik übernimmt (min. Stunden/Tag ab Startzeit)
-                            this.log.debug(`Time control [${i + 1}]: UVC ON (with filter, window start)`);
-                            await this.setFeature('uvc', true, {fromAutomation: true});
-                        }
-                        this.enableRapidPolling();
-                    }
-                    // Notification NUR nach erfolgreicher Aktivierung
-                    this._timeWindowActive[i] = true;
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Time control [${i + 1}]: window START (${start}–${end}) – activating`);
-                    }
-                    await notificationHelper.send(notificationHelper.format('timeWindowStarted', {
-                        window: i + 1, start, end
-                    })).catch(e => this.log.error(`timeWindowStarted notification: ${e.message}`));
-                } catch (err) {
-                    // _timeWindowActive[i] bleibt false – retry next minute
-                    this.log.error(`Time control [${i + 1}]: activation FAILED – ${err.message}`);
-                    this.log.debug(`Time control [${i + 1}]: ${err.stack}`);
-                }
-
-            } else if (!inWin && wasIn) {
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Time control [${i + 1}]: window END (${start}–${end}) – deactivating`);
-                }
-                await this.deactivateWindow(w, i);
-                // Notification NUR nach erfolgreicher Deaktivierung (deactivateWindow rollt _timeWindowActive[i] im Fehlerfall zurück)
-                if (!this._timeWindowActive[i]) {
-                    await notificationHelper.send(notificationHelper.format('timeWindowEnded', {
-                        window: i + 1, start, end
-                    })).catch(e => this.log.error(`timeWindowEnded notification: ${e.message}`));
-                }
-            }
-        }
+        return timeControl.checkTimeWindows(this);
     }
 
     async deactivateWindow(w, i) {
-        // PV-Steuerung betrifft nur die Heizung.
-        // Wenn pv_steu=true und PV aktiv: PV schaltet Heizung ab (evaluatePvSurplus).
-        // Der Filter wird IMMER vom Zeitfenster verwaltet – hier normal abschalten.
-        const pvHandlesHeater = w.pv_steu && (this._pvActive || this._pvStageTimer !== null);
-        if (pvHandlesHeater) {
-            if (this.config.more_log_enabled) {
-                this.log.info(`Time control [${i + 1}]: window END – pv_steu, PV handles heater – filter managed by time window`);
-            }
-            // PV erkennt Fenster-Ende über isInTimeWindow() (gibt jetzt false zurück).
-            // evaluatePvSurplus aufrufen damit Heizung sofort abgeschaltet wird.
-            // _timeWindowActive[i] wird ERST am Ende des try-Blocks auf false gesetzt
-            // damit der Retry-Mechanismus (catch → stays true) auch für filter OFF greift.
-            this.evaluatePvSurplus().catch(e => this.log.error(`Time control [${i + 1}]: evaluatePvSurplus after window end failed – ${e.message}`));
-            // Fall through to handle filter in the try block below
-        }
-
-        // ── Overlap guard ───────────────────────────────────────────────────
-        // Before turning off any feature, check whether ANOTHER window that is
-        // still active (index != i, _timeWindowActive[j]=true) also uses that
-        // feature. If so, do NOT turn it off – it must keep running for that window.
-        const windows = this.config.timeWindows;
-        const otherNeedsFilter = Array.isArray(windows) && windows.some((win, j) => j !== i && this._timeWindowActive[j] && win.active && (win.action_filter || win.action_heating || (win.action_uvc && !!this._filterStartedForUvc[j])));
-        const otherNeedsHeater = Array.isArray(windows) && windows.some((win, j) => j !== i && this._timeWindowActive[j] && win.active && win.action_heating);
-        const otherNeedsUvc = Array.isArray(windows) && windows.some((win, j) => j !== i && this._timeWindowActive[j] && win.active && win.action_uvc);
-
-        if (otherNeedsFilter || otherNeedsHeater || otherNeedsUvc) {
-            this.log.debug(`Time control [${i + 1}]: window END – overlapping window active (filter=${otherNeedsFilter}, heater=${otherNeedsHeater}, uvc=${otherNeedsUvc}) – individual feature guards apply`);
-        }
-        // ────────────────────────────────────────────────────────────────────
-
-        // Cancel any existing follow-up timer for this window
-        if (this._pumpFollowUpTimers[i]) {
-            clearTimeout(this._pumpFollowUpTimers[i]);
-            this._pumpFollowUpTimers[i] = null;
-        }
-
-        const followUpMin = Number(this.config.pump_follow_up) || 0;
-        const cfg = this.config;
-        const uvcMinH = cfg.uvc_daily_min_h ?? 2;
-        const todayH = this.getUvcTodayHours();
-        const uvcMinMet = todayH >= uvcMinH;
-
-
-        try {
-            // Heater OFF: nur wenn PV es nicht steuert UND kein anderes Fenster den Heizer braucht.
-            // Zusätzlich: pv_steu=true aber PV inzwischen inaktiv → Heizer wurde durch PV gestartet
-            // und muss beim Fenster-Ende durch das Zeitfenster gestoppt werden.
-            const windowStartedHeater = w.action_heating || w.pv_steu;
-            if (!pvHandlesHeater && windowStartedHeater && !otherNeedsHeater) {
-                this.log.debug(`Time control [${i + 1}]: heater OFF`);
-                await this.setFeature('heater', false, {fromAutomation: true});
-            } else if (!pvHandlesHeater && windowStartedHeater && otherNeedsHeater) {
-                this.log.debug(`Time control [${i + 1}]: heater kept ON – required by overlapping window`);
-            }
-
-            // UVC off – but only if daily minimum is already reached AND no other window needs it.
-            if (w.action_uvc && !otherNeedsUvc) {
-                if (uvcMinMet) {
-                    this.log.debug(`Time control [${i + 1}]: UVC OFF (daily minimum met: ${todayH.toFixed(2)} h >= ${uvcMinH} h)`);
-                    await this.setFeature('uvc', false, {fromAutomation: true});
-                } else {
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Time control [${i + 1}]: UVC kept ON – daily minimum not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h), daily ensure will take over`);
-                    }
-                    // Filter stays ON for UVC – daily ensure takes ownership (checks _timeWindowActive next minute)
-                    this._timeWindowActive[i] = false;
-                    this._filterStartedForUvc[i] = false; // ensure takes over ownership
-                    this.enableRapidPolling();
-                    return;
-                }
-            } else if (w.action_uvc && otherNeedsUvc) {
-                this.log.debug(`Time control [${i + 1}]: UVC kept ON – required by overlapping window`);
-            }
-
-            // Filter pump: only stop if no other window needs it
-            if (otherNeedsFilter) {
-                this.log.debug(`Time control [${i + 1}]: filter kept ON – required by overlapping window`);
-                this._timeWindowActive[i] = false;
-                this._filterStartedForUvc[i] = false;
-                this.enableRapidPolling();
-                return;
-            }
-
-            // Filter wird IMMER von diesem Fenster verwaltet (außer ALL-OFF)
-            const isAllOffWindow = !w.action_filter && !w.action_heating && !w.action_uvc;
-            const needsFilterStop = !isAllOffWindow;
-
-            // Filter pump: immediate or delayed?
-            const stopPumpNow = !followUpMin || followUpMin <= 0;
-
-            if (stopPumpNow) {
-                if (needsFilterStop) {
-                    this.log.debug(`Time control [${i + 1}]: filter OFF`);
-                    await this.setFeature('filter', false, {fromAutomation: true});
-                    this._filterStartedForUvc[i] = false;
-                }
-            } else {
-                if (needsFilterStop) {
-                    // Follow-up active – pump keeps running for followUpMin minutes
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Time control [${i + 1}]: filter pump FOLLOW-UP for ${followUpMin} min`);
-                    }
-                    this._pumpFollowUpTimers[i] = setTimeout(() => {
-                        if (this._unloading) {
-                            return;
-                        }
-                        this._pumpFollowUpTimers[i] = null;
-                        // Re-check at the time the follow-up fires whether any automation
-                        // still needs the filter running.
-                        const stillNeededByWindow = Array.isArray(this.config.timeWindows) && this.config.timeWindows.some((win, j) => j !== i && this._timeWindowActive[j] && win.active && (win.action_filter || win.action_heating || win.action_uvc));
-                        const stillNeededByEnsure = this._uvcEnsureActive && this._uvcEnsureFilterStart;
-                        const stillNeededByFrost = this._winterFrostActive;
-                        const stillNeeded = stillNeededByWindow || stillNeededByEnsure || stillNeededByFrost;
-                        if (stillNeeded) {
-                            this.log.debug(`Time control [${i + 1}]: follow-up elapsed but filter still needed (window=${stillNeededByWindow}, ensure=${stillNeededByEnsure}, frost=${stillNeededByFrost}) – skipping filter OFF`);
-                            return;
-                        }
-                        if (this.config.more_log_enabled) {
-                            this.log.info(`Time control [${i + 1}]: follow-up time elapsed – filter OFF`);
-                        }
-                        this.setFeature('filter', false, {fromAutomation: true})
-                            .then(() => {
-                                this._filterStartedForUvc[i] = false;
-                                this.enableRapidPolling();
-                            })
-                            .catch(err => this.log.error(`Time control [${i + 1}]: follow-up filter OFF FAILED – ${err.message}`));
-                    }, Math.round(followUpMin * 60 * 1000));
-                }
-            }
-
-            // Deactivation completed successfully – mark window as inactive
-            this._timeWindowActive[i] = false;
-            this.enableRapidPolling();
-        } catch (err) {
-            // _timeWindowActive[i] remains true – retry next minute
-            this.log.error(`Time control [${i + 1}]: deactivation FAILED – ${err.message}`);
-            this.log.debug(`Time control [${i + 1}]: ${err.stack}`);
-        }
+        return timeControl.deactivateWindow(this, w, i);
     }
 
     // -------------------------------------------------------------------------
@@ -834,121 +368,7 @@ class MspaAdapter extends utils.Adapter {
      * @param data
      */
     async checkStartupDeviceState(data) {
-        // Skip if manual override or PV is active – those automations take over
-        if (this._manualOverride || this._pvActive) {
-            this.log.debug('Startup check: skipped (manual override or PV active)');
-            return;
-        }
-
-        const windows = this.config.timeWindows;
-        if (!Array.isArray(windows) || !windows.some(w => w.active)) {
-            this.log.debug('Startup check: no active time windows – skipping');
-            return;
-        }
-
-        // Determine which features any active window would manage
-        let anyWindowManagesHeater = false;
-        let anyWindowManagesFilter = false;
-        let anyWindowManagesUvc = false;
-
-        for (const w of windows) {
-            if (!w.active) {
-                continue;
-            }
-            if (w.action_heating) {
-                anyWindowManagesHeater = true;
-            }
-            if (w.action_filter) {
-                anyWindowManagesFilter = true;
-            }
-            if (w.action_uvc) {
-                anyWindowManagesUvc = true;
-            }
-        }
-
-        // Check if any of those features is currently ON on the device
-        const heaterOn = !!data.heater;
-        const filterOn = !!data.filter;
-        const uvcOn = !!data.uvc;
-
-        if (!heaterOn && !filterOn && !uvcOn) {
-            this.log.debug('Startup check: device is idle – nothing to do');
-            return;
-        }
-
-        // Filter wird IMMER von einem Zeitfenster verwaltet (nicht nur wenn action_filter=true).
-        // anyWindowManagesFilter korrigieren: jedes aktive Fenster das IRGENDEINE Aktion hat verwaltet den Filter.
-        const anyWindowManagesFilterReal = Array.isArray(windows) && windows.some(w => w.active && (w.action_filter || w.action_heating || w.action_uvc));
-        if (anyWindowManagesFilterReal) {
-            anyWindowManagesFilter = true;
-        }
-
-        // Is any time window active right now?
-        // FIX Race Condition: _timeWindowActive[i] wird erst am Ende von checkTimeWindows() gesetzt.
-        // Falls der erste Poll schneller zurückkommt als checkTimeWindows() die API-Befehle abarbeitet,
-        // würde anyWindowActiveNow=false sein obwohl ein Fenster gerade startet.
-        // Daher zusätzlich prüfen ob ein Fenster zeitlich gerade aktiv sein SOLLTE.
-        const anyWindowActiveNow = this._timeWindowActive.some(v => v);
-        const anyWindowShouldBeActive = Array.isArray(windows) && windows.some(w => {
-            if (!w.active) {
-return false;
-}
-            const now = new Date();
-            const day = now.getDay();
-            const dayKeys = ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'];
-            const toMin = (hhmm) => {
- const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; 
-};
-            const sMin = toMin(w.start || '00:00');
-            const eMin = toMin(w.end || '00:00');
-            const curMin = now.getHours() * 60 + now.getMinutes();
-            const isOvernightAfterMidnight = sMin > eMin && eMin > 0 && curMin < eMin;
-            const effectiveDay = isOvernightAfterMidnight ? (day + 6) % 7 : day;
-            return !!w[dayKeys[effectiveDay]] && this.isInTimeWindow(w.start || '00:00', w.end || '00:00');
-        });
-        if (anyWindowActiveNow || anyWindowShouldBeActive) {
-            this.log.debug(`Startup check: a time window is currently active (tracked=${anyWindowActiveNow}, shouldBeActive=${anyWindowShouldBeActive}) – leaving device state as-is`);
-            return;
-        }
-
-        if (this.config.more_log_enabled) {
-            this.log.info('Startup check: device appears to be running but no time window is active – checking for orphaned features');
-        }
-
-        try {
-            if (heaterOn && anyWindowManagesHeater) {
-                if (this.config.more_log_enabled) {
-                    this.log.info('Startup check: heater ON but no active window ? switching OFF');
-                }
-                await this.setFeature('heater', false, {fromAutomation: true});
-            }
-            // UVC before filter (filter may need to stay for UVC daily ensure)
-            if (uvcOn && anyWindowManagesUvc) {
-                const todayH = this.getUvcTodayHours();
-                const uvcMinH = this.config.uvc_daily_min_h ?? 2;
-                if (todayH >= uvcMinH) {
-                    if (this.config.more_log_enabled) {
-                        this.log.info('Startup check: UVC ON but no active window ? switching OFF');
-                    }
-                    await this.setFeature('uvc', false, {fromAutomation: true});
-                } else {
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Startup check: UVC ON, daily min not yet met (${todayH.toFixed(2)} h of ${uvcMinH} h) – keeping ON for daily ensure`);
-                    }
-                    // Filter must stay ON for UVC – skip filter shutdown
-                    return;
-                }
-            }
-            if (filterOn && anyWindowManagesFilter) {
-                if (this.config.more_log_enabled) {
-                    this.log.info('Startup check: filter ON but no active window ? switching OFF');
-                }
-                await this.setFeature('filter', false, {fromAutomation: true});
-            }
-            this.enableRapidPolling();
-        } catch (err) {
-            this.log.error(`Startup check: error while shutting down orphaned features – ${err.message}`);
-        }
+        return startupCheck.checkStartupDeviceState(this, data);
     }
 
     // -------------------------------------------------------------------------
@@ -959,11 +379,7 @@ return false;
      * session (if filter is ON right now). Does NOT mutate this._filterHoursUsed.
      */
     accumulateFilterHours() {
-        let total = this._filterHoursUsed || 0;
-        if (this._filterOnSince !== null) {
-            total += (Date.now() - this._filterOnSince) / (1000 * 3600);
-        }
-        return total;
+        return timeControl.accumulateFilterHours(this);
     }
 
 
@@ -975,41 +391,7 @@ return false;
      * Supports seasons spanning the year boundary (e.g. 01.10 – 31.03).
      */
     isInSeason() {
-        const cfg = this.config;
-        if (!this._seasonEnabled) {
-            this.log.debug('Season check: season_enabled=false ? automatic controls blocked (only winter mode allowed)');
-            return false;
-        }
-
-        const parseDate = (ddmm) => {
-            const parts = (ddmm || '').split('.');
-            return {day: parseInt(parts[0], 10) || 1, month: parseInt(parts[1], 10) || 1};
-        };
-
-        const now = new Date();
-        const today = now.getDate();
-        const month = now.getMonth() + 1; // 1-based
-
-        const start = parseDate(cfg.season_start || '01.01');
-        const end = parseDate(cfg.season_end || '31.12');
-
-        // convert to a simple comparable number MMDD
-        const toNum = (d) => d.month * 100 + d.day;
-        const cur = month * 100 + today;
-        const s = toNum(start);
-        const e = toNum(end);
-
-        let inSeason;
-        if (s <= e) {
-            // normal range (e.g. 01.05 – 30.09)
-            inSeason = cur >= s && cur <= e;
-        } else {
-            // year-spanning range (e.g. 01.10 – 31.03)
-            inSeason = cur >= s || cur <= e;
-        }
-
-        this.log.debug(`Season check: today=${today}.${month} (${cur}), season=${cfg.season_start}–${cfg.season_end} (${s}–${e}), inSeason=${inSeason}`);
-        return inSeason;
+        return timeControl.isInSeason(this);
     }
 
     /**
@@ -1020,21 +402,7 @@ return false;
      * @param end
      */
     isInTimeWindow(start, end) {
-        const now = new Date();
-        const toMin = (hhmm) => {
-            const [h, m] = hhmm.split(':').map(Number);
-            return h * 60 + m;
-        };
-        const cur = now.getHours() * 60 + now.getMinutes();
-        const s = toMin(start);
-        const e = toMin(end);
-        if (s === e) {
-            return false;
-        }  // empty window
-        if (s < e) {
-            return cur >= s && cur < e;
-        }
-        return cur >= s || cur < e;     // overnight
+        return timeControl.isInTimeWindow(this, start, end);
     }
 
     // -------------------------------------------------------------------------
@@ -1093,8 +461,7 @@ return false;
     // -------------------------------------------------------------------------
 
     todayStr() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return todayStr();
     }
 
     // -------------------------------------------------------------------------
@@ -1123,121 +490,15 @@ return false;
     // Polling
     // -------------------------------------------------------------------------
     schedulePoll() {
-        if (this._unloading) {
-            return;
-        }
-        // Always cancel any pending poll before scheduling a new one so two timers
-        // can never coexist. Otherwise a timer set by enableRapidPolling() while a
-        // poll is in flight would be orphaned here → two concurrent doPoll() runs.
-        if (this._pollTimer) {
-            clearTimeout(this._pollTimer);
-            this._pollTimer = null;
-        }
-        const isRapid = Date.now() < this._rapidUntil;
-        const interval = isRapid ? 1000 : this._pollInterval;
-        this._pollTimer = setTimeout(() => this.doPoll(), interval);
+        polling.schedulePoll(this);
     }
 
     async tryReconnect() {
-        try {
-            this._authStore.token = null;
-            await this._api.init();
-            // Device info ist statisch und wurde bereits beim ersten Poll geschrieben.
-            this.setState('info.connection', true, true);
-            return true;
-        } catch (err) {
-            this.log.error(`MSpa reconnect failed: ${err.message}`);
-            return false;
-        }
+        return polling.tryReconnect(this);
     }
 
     async doPoll() {
-        if (this._unloading) {
-            return;
-        }
-        // Re-entrancy guard: never run two polls concurrently. A trigger that arrives
-        // while a poll is in flight (e.g. a rapid-poll timer firing during a slow API
-        // call) is dropped – the in-flight poll reschedules itself when it finishes.
-        if (this._polling) {
-            this.log.debug('doPoll: a poll is already in progress – skipping overlapping trigger');
-            return;
-        }
-        this._polling = true;
-        try {
-        try {
-            let raw;
-            if (this._api._lastStatus) {
-                raw = this._api._lastStatus;
-                this._api._lastStatus = null;
-            } else {
-                raw = await this._api.getHotTubStatus();
-            }
-
-            // DEBUG: einmalig rohe API-Daten loggen (nur beim ersten Poll)
-            if (!this._rawApiLogged) {
-                this._rawApiLogged = true;
-                if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa RAW API response (${this._api.model}): ${JSON.stringify(raw)}`);
-                }
-                // Create model-specific status states based on what the API actually reports
-                await this.createDynamicStates(raw);
-            }
-
-            const data = transformStatus(raw);
-            this._lastData = data;
-
-            await this.publishStatus(data);
-            await this.checkFrostProtection(data);
-            await this.checkPowerCycle(data);
-            // Adaptive polling: rapid mode during active heating cycle
-            if (data.heat_state === 2 && data.heater === 'on') {
-                this._rapidUntil = Date.now() + 15_000;
-            }
-            this.setState('info.connection', true, true);
-            this.setState('info.lastUpdate', Date.now(), true);
-            this._consecutiveErrors = 0;
-
-            // Startup check: after first successful poll, verify device state
-            // against active time windows and shut down orphaned features.
-            if (!this._firstPollDone) {
-                this._firstPollDone = true;
-                // Statische Geräteinfos (Modell, Seriennummer, FW-Versionen, …)
-                // werden EINMALIG beim ersten erfolgreichen Poll geschrieben.
-                try {
-                    await this.updateDeviceInfo();
-                } catch (e) {
-                    this.log.warn(`updateDeviceInfo failed: ${e.message}`);
-                }
-                await this.checkStartupDeviceState(data);
-            }
-
-        } catch (err) {
-            this._consecutiveErrors++;
-            this.log.error(`MSpa poll error (${this._consecutiveErrors}): ${err.message}`);
-            this.setState('info.connection', false, true);
-
-            if (this._consecutiveErrors <= this._maxReconnectTries) {
-                if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa attempting reconnect (try ${this._consecutiveErrors}/${this._maxReconnectTries})…`);
-                }
-                const reconnected = await this.tryReconnect();
-                if (reconnected) {
-                    if (this.config.more_log_enabled) {
-                        this.log.info('MSpa reconnect successful – retrying poll immediately');
-                    }
-                    this.schedulePoll();
-                    return;
-                }
-            } else {
-                this.log.warn(`MSpa reconnect limit reached (${this._maxReconnectTries}), waiting for next regular poll interval`);
-                this._consecutiveErrors = 0;
-            }
-        }
-
-        this.schedulePoll();
-        } finally {
-            this._polling = false;
-        }
+        return polling.doPoll(this);
     }
 
     async publishStatus(data) {
@@ -1249,189 +510,30 @@ return false;
     // -------------------------------------------------------------------------
 
     enableRapidPolling() {
-        this._rapidUntil = Date.now() + 15_000;
-        if (this._unloading) {
-            return;
-        }
-        // Cancel the currently scheduled poll and reschedule immediately (1 s)
-        // so the ACK arrives quickly instead of waiting up to 60 s.
-        if (this._pollTimer) {
-            clearTimeout(this._pollTimer);
-            this._pollTimer = null;
-        }
-        // If a poll is currently in flight it will reschedule itself on completion
-        // (using _rapidUntil, so still rapid). Avoid stacking a second timer that
-        // would fire mid-poll and be dropped by the re-entrancy guard anyway.
-        if (this._polling) {
-            return;
-        }
-        this._pollTimer = setTimeout(() => this.doPoll(), 1_000);
+        polling.enableRapidPolling(this);
     }
 
     // -------------------------------------------------------------------------
     // Power cycle detection + state restore
     // -------------------------------------------------------------------------
     async checkPowerCycle(data) {
-        const currentOnline = !!data.is_online;
-        let powerCycle = false;
-
-        if (this._lastIsOnline !== null) {
-            if (this._lastIsOnline && !currentOnline) {
-                if (this.config.more_log_enabled) {
-                    this.log.info('MSpa power OFF detected – saving state');
-                }
-                this._savedState = {
-                    heater: data.heater,
-                    target_temperature: data.target_temperature,
-                    filter: data.filter,
-                    temperature_unit: data.temperature_unit,
-                    ozone: data.ozone,
-                    uvc: data.uvc,
-                    bubble: data.bubble,
-                    bubble_level: data.bubble_level,
-                };
-            } else if (!this._lastIsOnline && currentOnline) {
-                powerCycle = true;
-                if (this.config.more_log_enabled) {
-                    this.log.info('MSpa power ON detected (is_online transition)');
-                }
-            }
-        }
-
-        if (!powerCycle && Object.keys(this._lastSnapshot).length) {
-            // Suppress power-cycle detection for 60 s after the adapter sent any command.
-            // Two features going off simultaneously (e.g. UVC + filter after stopEnsure)
-            // would otherwise be misinterpreted as a power cycle.
-            const cmdAgeMs = Date.now() - this._lastCommandTime;
-            const suppressPowerCycleDetection = this._lastCommandTime > 0 && cmdAgeMs < 60_000;
-            if (suppressPowerCycleDetection) {
-                this.log.debug(`checkPowerCycle: snapshot detection suppressed (last command ${Math.round(cmdAgeMs / 1000)} s ago)`);
-            } else {
-                const changes = [];
-                if (this._lastSnapshot.temperature_unit === 0 && data.temperature_unit === 1) {
-                    changes.push('temp_unit_reset');
-                }
-                if (this._lastSnapshot.heater === 'on' && data.heater === 'off') {
-                    changes.push('heater_off');
-                }
-                if (this._lastSnapshot.filter === 'on' && data.filter === 'off') {
-                    changes.push('filter_off');
-                }
-                if (this._lastSnapshot.ozone === 'on' && data.ozone === 'off') {
-                    changes.push('ozone_off');
-                }
-                if (this._lastSnapshot.uvc === 'on' && data.uvc === 'off') {
-                    changes.push('uvc_off');
-                }
-                if (changes.length >= 2) {
-                    powerCycle = true;
-                    this.log.warn(`MSpa possible power cycle (${changes.join(', ')})`);
-                }
-            }
-        }
-
-        this._lastSnapshot = {
-            temperature_unit: data.temperature_unit,
-            heater: data.heater,
-            filter: data.filter,
-            ozone: data.ozone,
-            uvc: data.uvc,
-            target_temperature: data.target_temperature,
-        };
-        this._lastIsOnline = currentOnline;
-
-        if (powerCycle) {
-            const cfg = this.config;
-            if (cfg.trackTemperatureUnit) {
-                await this.enforceTemperatureUnit(data);
-            }
-            if (cfg.restoreStateOnPowerCycle && Object.keys(this._savedState).length) {
-                await this.restoreSavedState();
-            }
-        }
-
-        if (this.config.alwaysEnforceUnit && !powerCycle) {
-            await this.enforceTemperatureUnit(data);
-        }
+        return powerCycle.checkPowerCycle(this, data);
     }
 
     async enforceTemperatureUnit(data) {
-        const desired = 0; // °C
-        if ((data.temperature_unit || 0) !== desired) {
-            if (this.config.more_log_enabled) {
-                this.log.info('MSpa enforcing temperature unit ? Celsius');
-            }
-            await this._api.setTemperatureUnit(desired);
-        }
+        return powerCycle.enforceTemperatureUnit(this, data);
     }
 
     async restoreSavedState() {
-        if (this.config.more_log_enabled) {
-            this.log.info('MSpa restoring state after power cycle…');
-        }
-        await this.sleep(2000);
-
-        // ── Guard: heater must not be restored outside an active automation ──────
-        // If time windows or PV are configured, only restore the heater when at
-        // least one window with action_heating is CURRENTLY active (in-window AND
-        // tracked as active) or PV is currently active with a heating window.
-        // Without this guard the heater would be restored e.g. at 19:00 even if
-        // the window ended at 18:00 – and checkTimeWindows() would never shut it
-        // down because _timeWindowActive[i] is false (new adapter session, wasIn=false).
-        let allowHeaterRestore = true;
-        const windows = this.config.timeWindows;
-        const hasHeatingWindows = Array.isArray(windows) && windows.some(w => w.active && w.action_heating);
-        if (hasHeatingWindows && !this._pvActive) {
-            const heatingWindowActiveNow = Array.isArray(windows) && windows.some((w, i) => w.active && w.action_heating && this._timeWindowActive[i]);
-            if (!heatingWindowActiveNow) {
-                allowHeaterRestore = false;
-                this.log.info('Power cycle restore: heater NOT restored – no heating time window is currently active');
-            }
-        }
-        if (!this._seasonEnabled && !this._winterModeActive) {
-            allowHeaterRestore = false;
-            this.log.info('Power cycle restore: heater NOT restored – season disabled and winter mode inactive');
-        }
-        // ─────────────────────────────────────────────────────────────────────────
-
-        if (this._savedState.target_temperature && allowHeaterRestore) {
-            await this.safeCmd(() => this.setTargetTemp(this._savedState.target_temperature), 'temperature');
-        }
-        for (const feature of ['heater', 'filter', 'ozone', 'uvc', 'bubble']) {
-            if (this._savedState[feature] === 'on') {
-                if (feature === 'heater' && !allowHeaterRestore) {
-                    continue;
-                }
-                await this.safeCmd(() => this.setFeature(feature, true, {fromAutomation: true}), feature);
-                await this.sleep(500);
-            }
-        }
-        if (this._savedState.bubble === 'on' && this._savedState.bubble_level) {
-            await this.safeCmd(() => this._api.setBubbleLevel(this._savedState.bubble_level), 'bubble_level',);
-        }
-
-        // After restore: reconcile automation state with actual device state.
-        // checkTimeWindows() will shut down features that are now running outside
-        // their window (e.g. filter restored while its window has ended).
-        this.checkTimeWindows().catch(e => this.log.error(`restoreSavedState: checkTimeWindows reconcile failed – ${e.message}`));
+        return powerCycle.restoreSavedState(this);
     }
 
     async safeCmd(fn, label) {
-        try {
-            await fn();
-        } catch (err) {
-            this.log.error(`MSpa restore ${label} failed: ${err.message}`);
-        }
+        return powerCycle.safeCmd(this, fn, label);
     }
 
     sleep(ms) {
-        return new Promise(/** @param {() => void} r */(r => {
-            const t = setTimeout(() => {
-                this._strayTimers.delete(t);
-                r();
-            }, ms);
-            this._strayTimers.add(t);
-        }));
+        return sleep(this, ms);
     }
 
     // -------------------------------------------------------------------------
@@ -1442,56 +544,7 @@ return false;
     // Winter mode – frost protection
     // -------------------------------------------------------------------------
     async checkFrostProtection(data) {
-        if (this._manualOverride) {
-            this.log.debug('Winter mode: manual override active – skipping frost protection');
-            return;
-        }
-        const cfg = this.config;
-        const winterMode = this._winterModeActive;
-        if (!winterMode) {
-            // if frost was active but winter mode got disabled ? switch off
-            if (this._winterFrostActive) {
-                this._winterFrostActive = false;
-                if (this.config.more_log_enabled) {
-                    this.log.info('Winter mode: disabled – switching heater + filter OFF');
-                }
-                await this.setFeature('heater', false, {fromAutomation: true});
-                await this.setFeature('filter', false, {fromAutomation: true});
-            }
-            return;
-        }
-
-        const threshold = cfg.winter_frost_temp ?? 5;
-        const hysteresis = 3;
-        const temp = data.water_temperature;
-        if (temp === undefined || temp === null) {
-            return;
-        }
-
-        if (!this._winterFrostActive && temp <= threshold) {
-            this._winterFrostActive = true;
-            if (this.config.more_log_enabled) {
-                this.log.info(`Winter mode: temp ${temp}°C = ${threshold}°C – switching heater + filter ON`);
-            }
-            await notificationHelper.send(notificationHelper.format('frostActive', {temp, threshold}));
-            await this.setFeature('filter', true, {fromAutomation: true});
-            await this.setFeature('heater', true, {fromAutomation: true});
-            this.enableRapidPolling();
-        } else if (this._winterFrostActive && temp >= threshold + hysteresis) {
-            this._winterFrostActive = false;
-            if (this.config.more_log_enabled) {
-                this.log.info(`Winter mode: temp ${temp}°C = ${threshold + hysteresis}°C – switching heater + filter OFF`);
-            }
-            await notificationHelper.send(notificationHelper.format('frostDeactivated', {
-                temp, hysteresis: threshold + hysteresis
-            }));
-            await this.setFeature('heater', false, {fromAutomation: true});
-            await this.setFeature('filter', false, {fromAutomation: true});
-            this.enableRapidPolling();
-            // Frost cycle ended ? immediately re-evaluate UVC daily minimum
-            // (was deferred while frost was active)
-            this.checkUvcDailyMinimum().catch(e => this.log.error(`UVC daily ensure trigger after frost: ${e.message}`));
-        }
+        return frostProtection.checkFrostProtection(this, data);
     }
 
     // -------------------------------------------------------------------------
@@ -1503,22 +556,14 @@ return false;
 
     /**
      * Resets _adapterCommanded[feature] back to null after delayMs.
-     * Guard: only resets if value hasn't changed in the meantime.
+     * Delegates to lib/commands.js.
      *
      * @param feature
      * @param val
      * @param delayMs
      */
-    _scheduleCommandedReset(feature, val, delayMs = 30_000) {
-        this.setStray(() => {
-            if (this._unloading) {
-                return;
-            }
-            if (this._adapterCommanded[feature] === val) {
-                this._adapterCommanded[feature] = null;
-                this.log.debug(`_adapterCommanded.${feature} reset to null after ${delayMs} ms`);
-            }
-        }, delayMs);
+    _scheduleCommandedReset(feature, val, delayMs = CONSTANTS.COMMANDED_RESET_DELAY_MS) {
+        return commands._scheduleCommandedReset(this, feature, val, delayMs);
     }
 
     /**
@@ -1527,372 +572,21 @@ return false;
      * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts]
      */
     async setFeature(feature, boolVal, {fromUser = false, fromAutomation = false} = {}) {
-        const state = boolVal ? 1 : 0;
-        if (feature in this._adapterCommanded) {
-            this._adapterCommanded[feature] = boolVal;
-        }
-        // Mark command time – app-change detection will be suppressed for 30 s
-        // Set for user commands AND automations (PV / time windows / frost) to avoid false-positive app-change detection.
-        if (fromUser || fromAutomation) {
-            this._lastCommandTime = Date.now();
-        }
-
-        // UVC can only be switched on when the filter pump is already running.
-        // Auto-start filter if needed, then wait up to 15 s for the device to confirm it.
-        if (feature === 'uvc' && boolVal) {
-            const filterRunning = () => (this._lastData && this._lastData.filter === 'on') || (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1) || (this._adapterCommanded.filter === true) || (this._pvManagedFeatures && this._pvManagedFeatures.filter === true);
-
-            if (!filterRunning()) {
-                if (this.config.more_log_enabled) {
-                    this.log.info('UVC ON – filter not running, auto-starting filter pump first');
-                }
-                await this.setFeature('filter', true, {fromUser, fromAutomation});
-                // Poll up to 15 s until filter is confirmed ON by the device
-                const start = Date.now();
-                let ok = false;
-                while (Date.now() - start < 15_000) {
-                    await new Promise(r => setTimeout(r, 1_000));
-                    if (filterRunning()) {
-                        ok = true;
-                        break;
-                    }
-                    try {
-                        const raw = await this._api.getHotTubStatus();
-                        this._lastData = transformStatus(raw);
-                    } catch (e) {
-                        this.log.debug(`UVC pre-check poll failed: ${e.message}`);
-                    }
-                }
-                if (!ok) {
-                    this.log.warn('UVC ON: filter still not confirmed after 15 s – sending UVC command anyway');
-                }
-            }
-        }
-
-        switch (feature) {
-            case 'heater': {
-                if (boolVal) {
-                    // The heater requires the filter pump to be running.
-                    // Auto-start it if not already ON (live API data takes priority).
-                    const filterOn = (this._lastData && this._lastData.filter === 'on') || (this._api && this._api._lastStatus && this._api._lastStatus.filter_state === 1) || (this._adapterCommanded.filter === true);
-                    if (!filterOn) {
-                        if (this.config.more_log_enabled) {
-                            this.log.info('heater ON – auto-starting filter pump first (required by device)');
-                        }
-                        await this.setFeature('filter', true, {fromUser, fromAutomation});
-                        await this.sleep(1_500); // give the pump time to spin up
-                    }
-                }
-                await this.setStatusCheck('send');
-                let result;
-                try {
-                    result = await this._api.setHeaterState(state);
-                } catch (err) {
-                    // FIX: API exception → clear _adapterCommanded, set error status, rethrow
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.heater = null;
-                    // heater OFF attempted but threw → cancel pending temp timer anyway
-                    if (!boolVal && this._pendingTempTimer) {
-                        clearTimeout(this._pendingTempTimer);
-                        this._pendingTempTimer = null;
-                    }
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this._scheduleCommandedReset('heater', boolVal);
-                    // FIX: only ack the state when the device actually confirmed the command
-                    this.setState('control.heater', boolVal, true);
-                    if (boolVal && this._pendingTargetTemp !== null) {
-                        // Heater just switched ON → send pending target temperature after 10 s
-                        if (this._pendingTempTimer) {
-                            clearTimeout(this._pendingTempTimer);
-                            this._pendingTempTimer = null;
-                        }
-                        const pendingTemp = this._pendingTargetTemp;
-                        // Sofort entwerten – konkurrierende Aufrufer (z. B. setTargetTemp)
-                        // dürfen den Wert nicht erneut abgreifen.
-                        this._pendingTargetTemp = null;
-                        this._pendingTempTimer = setTimeout(async () => {
-                            this._pendingTempTimer = null;
-                            if (this.config.more_log_enabled) {
-                                this.log.info(`target_temperature: sending pending value ${pendingTemp}°C (10 s after heater ON)`);
-                            }
-                            try {
-                                await this.sendTargetTempDirect(pendingTemp);
-                            } catch (err) {
-                                this.log.error(`target_temperature: delayed send FAILED – ${err.message}`);
-                            }
-                        }, 10_000);
-                    }
-                } else {
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.heater = null;
-
-                    if (fromAutomation) {
-                        throw new Error(`setFeature('heater', ${boolVal}): not confirmed by device after polling`);
-                    }
-
-                    // FIX: do NOT ack state here – next poll will write the real device value
-                    this.log.warn('heater command not confirmed by device – state will be corrected on next poll');
-                }
-                // heater OFF: always cancel pending temp timer regardless of success/failure
-                if (!boolVal && this._pendingTempTimer) {
-                    clearTimeout(this._pendingTempTimer);
-                    this._pendingTempTimer = null;
-                }
-                return result;
-            }
-            case 'filter': {
-                if (!boolVal) {
-                    // The API rejects a filter-OFF command while UVC is still running.
-                    // → Explicitly switch off UVC (and bubble) first, then filter.
-                    // FIX: each pre-condition wrapped in try/catch so a single failure does NOT
-                    //      abort the filter-OFF sequence – we log a warning and continue.
-
-                    // ioBroker TS-Typen kennen nur die Callback-Variante von getState;
-                    // die synchrone Variante existiert zur Laufzeit im Adapter-Core.
-
-                    const uvcState = await this.getStateAsync('control.uvc');
-                    const bubbleState = await this.getStateAsync('control.bubble');
-                    const heaterState = await this.getStateAsync('control.heater');
-
-                    if (uvcState && uvcState.val) {
-                        if (this.config.more_log_enabled) {
-                            this.log.info('filter OFF – auto-disabling UVC first (API requirement)');
-                        }
-                        try {
-                            await this.setStatusCheck('send');
-                            await this._api.setUvcState(0);
-                            this._adapterCommanded.uvc = false;
-                            if (this._api._lastCommandConfirmed) {
-                                await this.setStatusCheck('success');
-                                this.setState('control.uvc', false, true);
-                            } else {
-                                await this.setStatusCheck('error');
-                                this._adapterCommanded.uvc = null;
-                                this.log.warn('filter OFF: UVC pre-stop not confirmed – continuing with filter OFF anyway');
-                            }
-                        } catch (e) {
-                            await this.setStatusCheck('error');
-                            this._adapterCommanded.uvc = null;
-                            this.log.warn(`filter OFF: UVC pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
-                        }
-                        await this.sleep(500);
-                    }
-                    if (bubbleState && bubbleState.val) {
-                        if (this.config.more_log_enabled) {
-                            this.log.info('filter OFF – auto-disabling bubble first (API requirement)');
-                        }
-                        try {
-                            await this.setStatusCheck('send');
-                            await this._api.setBubbleState(0, this._lastData.bubble_level || 1);
-                            this._adapterCommanded.bubble = false;
-                            if (this._api._lastCommandConfirmed) {
-                                await this.setStatusCheck('success');
-                                this.setState('control.bubble', false, true);
-                            } else {
-                                await this.setStatusCheck('error');
-                                this._adapterCommanded.bubble = null;
-                                this.log.warn('filter OFF: bubble pre-stop not confirmed – continuing with filter OFF anyway');
-                            }
-                        } catch (e) {
-                            await this.setStatusCheck('error');
-                            this._adapterCommanded.bubble = null;
-                            this.log.warn(`filter OFF: bubble pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
-                        }
-                        await this.sleep(500);
-                    }
-                    if (heaterState && heaterState.val) {
-                        if (this.config.more_log_enabled) {
-                            this.log.info('filter OFF – auto-disabling heater first');
-                        }
-                        try {
-                            await this.setFeature('heater', false, {fromUser, fromAutomation});
-                        } catch (e) {
-                            this.log.warn(`filter OFF: heater pre-stop failed (${e.message}) – continuing with filter OFF anyway`);
-                        }
-                        await this.sleep(500);
-                    }
-                }
-                await this.setStatusCheck('send');
-                try {
-                    await this._api.setFilterState(state);
-                } catch (err) {
-                    // FIX: API exception → clear _adapterCommanded, set error status, rethrow
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.filter = null;
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this._scheduleCommandedReset('filter', boolVal);
-                    // FIX: only ack when device confirmed
-                    this.setState('control.filter', boolVal, true);
-                } else {
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.filter = null;
-
-                    if (fromAutomation) {
-                        throw new Error(`setFeature('filter', ${boolVal}): not confirmed by device after polling`);
-                    }
-
-                    // FIX: do NOT ack – next poll corrects the state
-                    this.log.warn('filter command not confirmed by device – state will be corrected on next poll');
-
-                }
-                return;
-            }
-            case 'bubble':
-                await this.setStatusCheck('send');
-                try {
-                    await this._api.setBubbleState(state, this._lastData.bubble_level || 1);
-                } catch (err) {
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.bubble = null;
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this._scheduleCommandedReset('bubble', boolVal);
-                    this.setState('control.bubble', boolVal, true);
-                } else {
-                    this._adapterCommanded.bubble = null;
-                    await this.setStatusCheck('error');
-                    this.log.warn('bubble command not confirmed by device – state will be corrected on next poll');
-                }
-                return;
-            case 'jet':
-                await this.setStatusCheck('send');
-                try {
-                    await this._api.setJetState(state);
-                } catch (err) {
-                    await this.setStatusCheck('error');
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this.setState('control.jet', boolVal, true);
-                } else {
-                    await this.setStatusCheck('error');
-                    this.log.warn('jet command not confirmed by device – state will be corrected on next poll');
-                }
-                return;
-            case 'ozone':
-                await this.setStatusCheck('send');
-                try {
-                    await this._api.setOzoneState(state);
-                } catch (err) {
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.ozone = null;
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this.setState('control.ozone', boolVal, true);
-                } else {
-                    this._adapterCommanded.ozone = null;
-                    await this.setStatusCheck('error');
-                    this.log.warn('ozone command not confirmed by device – state will be corrected on next poll');
-                }
-                return;
-            case 'uvc':
-                await this.setStatusCheck('send');
-                try {
-                    await this._api.setUvcState(state);
-                } catch (err) {
-                    await this.setStatusCheck('error');
-                    this._adapterCommanded.uvc = null;
-                    throw err;
-                }
-                if (this._api._lastCommandConfirmed) {
-                    await this.setStatusCheck('success');
-                    this._scheduleCommandedReset('uvc', boolVal);
-                    this.setState('control.uvc', boolVal, true);
-                } else {
-                    this._adapterCommanded.uvc = null;
-
-                    if (fromAutomation) {
-                        throw new Error(`setFeature('uvc', ${boolVal}): not confirmed by device after polling`);
-                    }
-
-                    await this.setStatusCheck('error');
-                    this.log.warn('uvc command not confirmed by device – state will be corrected on next poll');
-
-                }
-                return;
-        }
+        return commands.setFeature(this, feature, boolVal, {fromUser, fromAutomation});
     }
 
     async setTargetTemp(temp) {
-        // Validate range (MSpa: 20–42 °C)
-        const MIN_TEMP = 20;
-        const MAX_TEMP = 42;
-        const t = Number(temp);
-        if (isNaN(t) || t < MIN_TEMP || t > MAX_TEMP) {
-            this.log.warn(`target_temperature ${temp}°C out of range (${MIN_TEMP}–${MAX_TEMP}°C) – command ignored`);
-            await this.setStatusCheck('error');
-            return;
-        }
-
-        // If heater is not currently on (user command via state), store as pending.
-        // Automations that just called setFeature('heater', true) use _scheduleTargetTempAfterHeaterOn().
-        // Use live API data + _adapterCommanded as fallback so we don't queue unnecessarily
-        // when the heater was just switched ON but the poll hasn't confirmed it yet.
-
-        const heaterState = await this.getStateAsync('control.heater');
-        const heaterOnState = heaterState.val;
-        const heaterOnCommanded = this._adapterCommanded.heater === true;
-        const heaterOnLive = this._lastData && this._lastData.heater === 'on';
-        const heaterOn = heaterOnState || heaterOnCommanded || heaterOnLive;
-
-        if (!heaterOn) {
-            this._pendingTargetTemp = t;
-            if (this.config.more_log_enabled) {
-                this.log.info(`target_temperature ${t}°C queued – will be sent 10 s after heater is switched ON`);
-            }
-            await this.setStatusCheck('queued');
-            // Immediate ack so UI shows queued value
-            this.setState('control.target_temperature', t, true);
-            return;
-        }
-        this._pendingTargetTemp = null;
-        return this.sendTargetTempDirect(t, {fromUser: true});
+        return commands.setTargetTemp(this, temp);
     }
 
     /**
      * Sends the target temperature directly to the API (no heater-state check).
-     * Use this in automations that have just called setFeature('heater', true).
      *
      * @param {number} temp
-     * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts] - set fromUser=true for direct user commands, fromAutomation=true for automations (both update _lastCommandTime for app-change detection grace period)
+     * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts]
      */
     async sendTargetTempDirect(temp, {fromUser = false, fromAutomation = false} = {}) {
-        this._adapterCommanded.target_temperature = temp;
-        if (fromUser || fromAutomation) {
-            this._lastCommandTime = Date.now();
-        }
-        await this.setStatusCheck('send');
-        let result;
-        try {
-            result = await this._api.setTemperatureSetting(temp);
-        } catch (err) {
-            // FIX: API exception → set error status, clear commanded marker, rethrow.
-            await this.setStatusCheck('error');
-            this._adapterCommanded.target_temperature = null;
-            this.log.warn(`target_temperature: command could not be sent – ${err.message}`);
-            throw err;
-        }
-        await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-        if (!this._api._lastCommandConfirmed) {
-            // Command was not processed/confirmed by the device – drop the
-            // commanded marker so the next poll writes the real device value.
-            this._adapterCommanded.target_temperature = null;
-            this.log.warn('target_temperature command not confirmed by device – state will be corrected on next poll');
-        }
-        // Immediate ack so UI confirms value without waiting for next poll
-        this.setState('control.target_temperature', temp, true);
-        return result;
+        return commands.sendTargetTempDirect(this, temp, {fromUser, fromAutomation});
     }
 
     // -------------------------------------------------------------------------
@@ -1903,101 +597,7 @@ return false;
      * @param {number|null} [durationMin]
      */
     async setManualOverride(enable, durationMin = null) {
-        // Atomic cancel BEFORE any await – prevents two concurrent calls from both starting a timer
-        const existingTimer = this._manualOverrideTimer;
-        this._manualOverrideTimer = null;
-        if (existingTimer) {
-            clearTimeout(existingTimer);
-        }
-
-        this._manualOverride = enable;
-        this.setState('control.manual_override', enable, true);
-
-        if (enable) {
-            // PV may currently be active – cancel all deactivation timers and
-            // mark PV inactive so no stale _pvActive=true remains while automations are paused.
-            // _resumeAfterOverride() will re-evaluate surplus when override ends.
-            if (this._pvActive || this._pvDeactivateTimer || this._pvStageTimer) {
-                await this.pvCancelAllDeactivationTimers();
-                if (this._pvActive) {
-                    this._pvActive = false;
-                    this.setState('computed.pv_active', false, true);
-                    this.log.debug('Manual override: PV deactivated (will re-evaluate on override end)');
-                }
-            }
-            // read duration from state if not explicitly passed
-            if (durationMin === null) {
-                // FIX: getStateAsync statt getState – funktioniert auch beim Adapter-Start
-                const ds = await this.getStateAsync('control.manual_override_duration');
-                durationMin = ds && ds.val !== null ? Number(ds.val) : 0;
-            } else {
-                this.setState('control.manual_override_duration', durationMin, true);
-            }
-
-            if (durationMin > 0) {
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Manual override: ENABLED for ${durationMin} min – all automations paused`);
-                }
-
-                // FIX: Timer ZUERST setup (synchron), DANN notification awaiten.
-                // So kann ein concurrent disable-Aufruf den Timer noch korrekt canceln.
-                const timerId = setTimeout(() => {
-                    // Guard: adapter is already shutting down
-                    if (this._unloading) {
-                        return;
-                    }
-                    this._manualOverrideTimer = null;
-                    // Guard: another call may have concurrently disabled override
-                    if (!this._manualOverride) {
-                        return;
-                    }
-                    if (this.config.more_log_enabled) {
-                        this.log.info('Manual override: duration elapsed – automations RESUMED');
-                    }
-                    this._manualOverride = false;
-                    this.setState('control.manual_override', false, true);
-                    this.setState('control.manual_override_duration', 0, true);
-
-                    if (this.config.more_log_enabled) {
-                        notificationHelper.send(notificationHelper.format('overrideEnded'))
-                            .catch(e => this.log.error(`manualOverride auto-disable failed: ${e.message}`));
-                    }
-
-                    this._resumeAfterOverride()
-                        .catch(e => this.log.error(`manualOverride auto-disable failed: ${e.message}`));
-                }, Math.round(durationMin * 60 * 1000));
-
-                this._manualOverrideTimer = timerId;
-
-                if (this.config.more_log_enabled) {
-                    await notificationHelper.send(notificationHelper.format('overrideOnTimed', {durationMin}))
-                        .catch(e => this.log.error(`overrideOnTimed notification: ${e.message}`));
-                }
-
-                // Guard: a concurrent call may have already disabled override during the await above
-                if (!this._manualOverride || this._unloading || this._manualOverrideTimer !== timerId) {
-                    this.log.debug('Manual override: aborted during notification send – cancelling timer');
-                    clearTimeout(timerId);
-                    this._manualOverrideTimer = null;
-                    return;
-                }
-            } else {
-                if (this.config.more_log_enabled) {
-                    this.log.info('Manual override: ENABLED indefinitely – all automations paused (set to false to resume)');
-                }
-                await notificationHelper.send(notificationHelper.format('overrideOnIndefinite'))
-                    .catch(e => this.log.error(`overrideOnIndefinite notification: ${e.message}`));
-            }
-        } else {
-            if (this.config.more_log_enabled) {
-                this.log.info('Manual override: DISABLED – all automations RESUMED');
-            }
-            await notificationHelper.send(notificationHelper.format('overrideOff'))
-                .catch(e => this.log.error(`overrideOff notification: ${e.message}`));
-            this.setState('control.manual_override_duration', 0, true);
-            // immediately re-evaluate automations with latest data
-            await this._resumeAfterOverride();
-        }
+        return manualOverride.setManualOverride(this, enable, durationMin);
     }
 
     /**
@@ -2005,239 +605,14 @@ return false;
      * Each task runs independently so one failure does not block the others.
      */
     async _resumeAfterOverride() {
-        // Guard: adapter is shutting down – do not start new automations
-        if (this._unloading) {
-            this.log.debug('_resumeAfterOverride: adapter unloading – skipped');
-            return;
-        }
-        const tasks = [];
-        if (this._lastData && Object.keys(this._lastData).length) {
-            tasks.push(this.checkFrostProtection(this._lastData).catch(e => this.log.error(`resumeAfterOverride/checkFrostProtection: ${e.message}`)));
-        } else if (this._winterModeActive) {
-            // No poll data yet but winter mode is active – trigger immediate poll
-            this.log.warn('resumeAfterOverride: no poll data yet but winter mode active – triggering immediate poll');
-            if (this._pollTimer) {
-                clearTimeout(this._pollTimer);
-                this._pollTimer = null;
-            }
-            this._pollTimer = setTimeout(() => this.doPoll(), 500);
-        }
-        tasks.push(this.checkTimeWindows().catch(e => this.log.error(`resumeAfterOverride/checkTimeWindows: ${e.message}`)));
-        tasks.push(this.evaluatePvSurplus().catch(e => this.log.error(`resumeAfterOverride/evaluatePvSurplus: ${e.message}`)));
-        await Promise.all(tasks);
+        return manualOverride._resumeAfterOverride(this);
     }
 
     // -------------------------------------------------------------------------
     // State change handler (writable controls)
     // -------------------------------------------------------------------------
     async onStateChange(id, state) {
-        if (!state) {
-            return;
-        }
-
-        // -- Foreign states (PV, house, MSpa power, energy meter) ---------
-        // Sie werden über subscribeForeignStates() abonniert und kommen mit ack=true.
-        // Eigene States dieses Adapters beginnen mit `${this.namespace}.` (z. B. mspa.0.).
-        if (!id.startsWith(`${this.namespace}.`)) {
-            try {
-                await this.onForeignStateChange(id, state);
-            } catch (e) {
-                this.log.error(`onForeignStateChange(${id}) failed: ${e.message}`);
-            }
-            return;
-        }
-
-        // Eigene Control-States: nur unbestätigte Schreibvorgänge verarbeiten
-        if (state.ack) {
-            return;
-        }
-
-        const key = id.split('.').pop();
-
-        // ── status.time_windows_json – write back to adapter jsonConfig ─────
-        if (key === 'time_windows_json') {
-            await this._applyTimeWindowsJson(state.val);
-            return;
-        }
-
-        // ── status.uvc_hours_used – manual correction after lamp replacement ──
-        if (key === 'uvc_hours_used') {
-            const newVal = parseFloat(state.val);
-            if (isNaN(newVal) || newVal < 0) {
-                this.log.warn(`uvc_hours_used: invalid value "${state.val}" – ignoring`);
-                this.setState('status.uvc_hours_used', Math.round(this._uvcHoursUsed * 100) / 100, true);
-                return;
-            }
-            const wasRunning = this._uvcOnSince !== null;
-            this._uvcHoursUsed = newVal;
-            this._uvcOnSince = wasRunning ? Date.now() : null; // restart session to avoid adding old delta
-            const today = this.todayStr();
-            this._uvcDayStartHours = newVal;
-            this._uvcDayStartDate = today;
-            this._uvcTodayResetDate = today;
-            this.setState('status.uvc_hours_used', Math.round(newVal * 100) / 100, true);
-            this.setState('status.uvc_today_hours', 0, true);
-            this.computeUvcExpiry().catch(e => this.log.error(`computeUvcExpiry after manual reset: ${e.message}`));
-            this.log.info(`UVC hours manually set to ${newVal.toFixed(2)} h (UVC was ${wasRunning ? 'running – session restarted' : 'off'})`);
-            return;
-        }
-
-        try {
-            if (['heater', 'filter', 'bubble', 'jet', 'ozone', 'uvc'].includes(key)) {
-                if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa command: ${key} ? ${state.val}`);
-                }
-                // fromUser=true: setzt _lastCommandTime für App-Change-Detection-Suppression
-                await this.setFeature(key, !!state.val, {fromUser: true});
-                this.enableRapidPolling();
-            } else if (key === 'target_temperature') {
-                if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa command: set temperature ? ${state.val}°C`);
-                }
-                await this.setTargetTemp(state.val);
-                this.enableRapidPolling();
-            } else if (key === 'bubble_level') {
-                const lvl = Number(state.val);
-                if (isNaN(lvl) || lvl < 0 || lvl > 3) {
-                    this.log.warn(`bubble_level ${state.val} out of range (0–3) – command ignored`);
-                    await this.setStatusCheck('error');
-                    // Ack with previous valid value from state store
-                    const cur = await this.getStateAsync('control.bubble_level');
-                    this.setState('control.bubble_level', (cur && cur.val != null) ? cur.val : 1, true);
-                    return;
-                }
-                if (this.config.more_log_enabled) {
-                    this.log.info(`MSpa command: bubble level → ${lvl}`);
-                }
-                await this.setStatusCheck('send');
-                await this._api.setBubbleLevel(lvl);
-                await this.setStatusCheck(this._api._lastCommandConfirmed ? 'success' : 'error');
-                // Immediate ack so UI confirms without waiting for next poll
-                this.setState('control.bubble_level', lvl, true);
-                this.enableRapidPolling();
-            } else if (key === 'winter_mode') {
-                this._winterModeActive = !!state.val;
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Winter mode: ${this._winterModeActive ? 'ENABLED' : 'DISABLED'} via control state`);
-                }
-                this.setState('control.winter_mode', this._winterModeActive, true);
-                if (this._lastData && Object.keys(this._lastData).length) {
-                    await this.checkFrostProtection(this._lastData);
-                } else if (this._winterModeActive) {
-                    // No poll data yet – trigger immediate poll so frost protection is evaluated
-                    this.log.warn('winter_mode enabled but no poll data yet – triggering immediate poll');
-                    if (this._pollTimer) {
-                        clearTimeout(this._pollTimer);
-                        this._pollTimer = null;
-                    }
-                    this._pollTimer = setTimeout(() => this.doPoll(), 500);
-                }
-            } else if (key === 'season_enabled') {
-                const wasEnabled = this._seasonEnabled;
-                this._seasonEnabled = !!state.val;
-                if (this.config.more_log_enabled) {
-                    this.log.info(`Season control: ${this._seasonEnabled ? 'ENABLED' : 'DISABLED'} via control state`);
-                }
-                this.setState('control.season_enabled', this._seasonEnabled, true);
-
-                // Season just started (false → true) → allow first time-window of the day to reset uvc_today_hours
-                if (!wasEnabled && this._seasonEnabled) {
-                    this._uvcTodayResetDate = ''; // force reset on next window start
-                    this.log.debug('UVC: season enabled – uvc_today_hours will reset on first time-window start today');
-                }
-                // FIX: sofort Zeitfenster neu auswerten statt bis zum nächsten 60s-Tick zu warten
-                this.checkTimeWindows().catch(e => this.log.error(`checkTimeWindows after season_enabled change: ${e.message}`));
-
-            } else if (key === 'manual_override') {
-                const enable = !!state.val;
-                try {
-                    await this.setManualOverride(enable);
-                } catch (err) {
-                    this.log.error(`manual_override command failed: ${err.message}`);
-                    // Rollback: write previous value with ack so UI shows correct state
-                    this.setState('control.manual_override', !enable, true);
-                    return;
-                }
-
-            } else if (key === 'uvc_ensure_skip_today') {
-                const skip = !!state.val;
-                this._uvcEnsureSkipToday = skip;
-                this._uvcEnsureSkipDate = skip ? this.todayStr() : '';
-                this.setState('control.uvc_ensure_skip_today', skip, true);
-                this.setState('control.uvc_ensure_skip_date', this._uvcEnsureSkipDate, true);
-                if (skip) {
-                    if (this.config.more_log_enabled) {
-                        this.log.info('UVC daily ensure: skip requested by user – pausing for today');
-                    }
-                    await notificationHelper.send(notificationHelper.format('uvcEnsureSkipped'));
-                    // stop immediately if ensure is currently running – but only if UVC actually runs
-                    if (this._uvcEnsureActive) {
-                        try {
-                            const uvcState = await this.getStateAsync('control.uvc');
-                            if (uvcState && uvcState.val) {
-                                if (this.config.more_log_enabled) {
-                                    this.log.info('UVC daily ensure: skip requested – UVC läuft, wird gestoppt');
-                                }
-                                await this.stopUvcEnsure();
-                            } else {
-                                if (this.config.more_log_enabled) {
-                                    this.log.info('UVC daily ensure: skip requested – UVC bereits aus, kein Befehl gesendet');
-                                }
-                                this._uvcEnsureActive = false;
-                            }
-                        } catch (e) {
-                            this.log.warn(`UVC daily ensure: skip-check fehlgeschlagen – ${e.message}`);
-                            // Fallback: sicher stoppen
-                            await this.stopUvcEnsure();
-                        }
-                    } else {
-                        // ensure was not active – skip only affects the daily ensure scheduler,
-                        // NOT a UVC that runs via time window or manually.
-                        if (this.config.more_log_enabled) {
-                            this.log.info('UVC daily ensure: skip set – ensure scheduler paused for today (UVC not affected if running via window/manual)');
-                        }
-                    }
-                } else {
-                    if (this.config.more_log_enabled) {
-                        this.log.info('UVC daily ensure: skip cancelled – ensure active again');
-                    }
-                    // trigger immediate re-check so ensure starts without waiting up to 60s
-                    this.checkUvcDailyMinimum().catch(e => this.log.error(`UVC ensure re-check: ${e.message}`));
-                }
-
-            } else if (key === 'manual_override_duration') {
-                const rawDuration = parseFloat(state.val);
-                if (isNaN(rawDuration) || rawDuration < 0) {
-                    this.log.warn(`manual_override_duration: invalid value "${state.val}" – resetting to 0`);
-                    this.setState('control.manual_override_duration', 0, true);
-                    return;
-                }
-                const newDuration = Math.floor(rawDuration); // nur ganze Minuten
-                // Always persist the new value with ack first
-                this.setState('control.manual_override_duration', newDuration, true);
-                // Only restart override timer if override is currently active
-                if (this._manualOverride) {
-                    await this.setManualOverride(true, newDuration);
-                }
-
-            } else if (key === 'filter_reset') {
-                if (state.val) {
-                    // Flush any currently running session into _filterHoursUsed first,
-                    // then reset to 0 and start a fresh session from now if filter is still ON.
-                    const wasRunning = this._filterOnSince !== null;
-                    this._filterHoursUsed = 0;
-                    this._filterOnSince = wasRunning ? Date.now() : null;
-                    this.setState('control.filter_running', {val: 0, ack: true});
-                    // Reset button ? always write false back (it's a momentary trigger)
-                    this.setState('control.filter_reset', {val: false, ack: true});
-                    if (this.config.more_log_enabled) {
-                        this.log.info(`Filter runtime counter reset to 0 (filter was ${wasRunning ? 'running – new session started' : 'off'})`);
-                    }
-                }
-            }
-        } catch (err) {
-            this.log.error(`MSpa command failed (${key}): ${err.message}`);
-        }
+        return stateChangeHandler.onStateChange(this, id, state);
     }
 }
 

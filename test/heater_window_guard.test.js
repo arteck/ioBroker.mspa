@@ -472,19 +472,19 @@ describe('H. restoreSavedState – Saison-Guard verhindert Heizungs-Einschalten'
 // ---------------------------------------------------------------------------
 describe('I. checkStartupDeviceState – Quelltext-Audit', () => {
     it('main.js: checkStartupDeviceState schaltet Heizung aus wenn kein Fenster aktiv', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/startupCheck.js'), 'utf8');
         assert.ok(
             src.includes('heaterOn && anyWindowManagesHeater'),
             'checkStartupDeviceState muss Heizung abschalten wenn kein Fenster aktiv'
         );
         assert.ok(
-            src.includes("setFeature('heater', false, {fromAutomation: true})"),
+            src.includes("setFeature(adapter, 'heater', false, {fromAutomation: true})"),
             'Heizungs-Abschalten muss fromAutomation:true haben'
         );
     });
 
     it('main.js: restoreSavedState enthält allowHeaterRestore-Guard', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/powerCycle.js'), 'utf8');
         assert.ok(
             src.includes('allowHeaterRestore'),
             'restoreSavedState muss allowHeaterRestore-Guard enthalten'
@@ -496,10 +496,10 @@ describe('I. checkStartupDeviceState – Quelltext-Audit', () => {
     });
 
     it('main.js: restoreSavedState ruft checkTimeWindows zur Reconciliation auf', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '../main.js'), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '../lib/powerCycle.js'), 'utf8');
         // Suche nach checkTimeWindows im restoreSavedState-Kontext
-        const restoreIdx = src.indexOf('async restoreSavedState()');
-        assert.ok(restoreIdx !== -1, 'restoreSavedState muss existieren');
+        const restoreIdx = src.indexOf('async function restoreSavedState');
+        assert.ok(restoreIdx !== -1, 'restoreSavedState-Funktion muss in lib/powerCycle.js existieren');
         const restoreBlock = src.slice(restoreIdx, restoreIdx + 2500);
         assert.ok(
             restoreBlock.includes('checkTimeWindows()'),
