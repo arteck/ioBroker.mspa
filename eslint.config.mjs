@@ -31,7 +31,7 @@ export default [
              'no-prototype-builtins': 'off',
              '@typescript-eslint/no-unused-vars': 'warn',
              'no-useless-escape': 'warn',
-            // 'jsdoc/require-returns-description': 'off',
+             'jsdoc/require-param-description': 'off',
             // 'jsdoc/require-returns-check': 'off',
                       
         },
