@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "news": {
+      "0.4.1": {
+        "en": "refactoring\nfix offline status",
+        "de": "refactoring\noffline-fix-status",
+        "ru": "рефакторинг\nфиксировать статус offline",
+        "pt": "refatorização\ncorrigir o estado offline",
+        "nl": "refactoring\noffline status herstellen",
+        "fr": "refactoration\ncorriger l'état hors ligne",
+        "it": "refactoring\nfissare lo stato offline",
+        "es": "refactoring\narreglos de estado fuera de línea",
+        "pl": "refaktoring\nustaw status offline",
+        "uk": "рефакторинг\nфіксувати статус офлайн",
+        "zh-cn": "正在重构\n固定离线状态"
+      },
       "0.4.0": {
         "en": "new logic for heater",
         "de": "neue logik für heizung",
@@ -80,19 +93,6 @@
         "pl": "kod czysty\nmniej powiadomień",
         "uk": "чистий код\nменше повідомлення",
         "zh-cn": "清洁代码\n减去通知"
-      },
-      "0.3.4": {
-        "en": "fix manual override\nfix manual override",
-        "de": "manuelles override reparieren\nmanuelles override reparieren",
-        "ru": "исправить ручное отключение\nисправить ручное отключение",
-        "pt": "corrigir sobreposição manual\ncorrigir sobreposição manual",
-        "nl": "fix handmatige override\nfix handmatige override",
-        "fr": "correction du dépassement manuel\ncorrection du dépassement manuel",
-        "it": "correzione manuale override\ncorrezione manuale override",
-        "es": "corrección manual\ncorrección manual",
-        "pl": "naprawić ręczne sterowanie\nnaprawić ręczne sterowanie",
-        "uk": "ручна накладна\nручна накладна",
-        "zh-cn": "修补手动覆盖\n修补手动覆盖"
       }
     },
     "titleLang": {
