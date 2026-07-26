@@ -163,6 +163,7 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ### **WORK IN PROGRESS**
 * (arteck) add offline message
 * (arteck) fix app override
+* (arteck) fix pv
 
 ### 0.4.1 (2026-06-16)
 * (arteck) refactoring
