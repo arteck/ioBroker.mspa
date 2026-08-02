@@ -43,6 +43,7 @@ class MspaAdapter extends utils.Adapter {
         this._lastSnapshot = {};
         this._lastIsOnline = null;
         this._consecutiveErrors = 0;
+        this._failedPollCount = 0;  // count consecutive failed polls; set is_online=false after 5
         this._maxReconnectTries = CONSTANTS.MAX_RECONNECT_TRIES;
 
         // What the adapter last commanded to the device (heater/filter/uvc/target_temp).
