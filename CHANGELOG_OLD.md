@@ -47,6 +47,9 @@
 
 ### 0.0.1 (2026-04-16)
 * (arteck) first release
+## 0.3.7 (2026-05-12)
+* (arteck) add warning as text
+
 ## 0.3.6 (2026-05-12)
 * (arteck) fix daily uvc timer after adapter restart
 

@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "news": {
+      "0.4.2": {
+        "en": "add offline message\nfix app override\nfix pv\nonline - offline detection",
+        "de": "Offline-Nachricht hinzufügen\nApp-Überschreibung beheben\nPV-Fix\nOnline-Offline-Erkennung",
+        "ru": "добавить сообщение об отсутствии на рабочем месте\nисправить переопределение приложения\nисправление PV\nонлайн - офлайн обнаружение",
+        "pt": "adicionar mensagem offline\ncorrigir substituição de aplicativo\ncorrigir pv\ndetecção online - offline",
+        "nl": "offline bericht toevoegen\napp-override corrigeren\nfix pv\nonline - offline detectie",
+        "fr": "ajouter un message hors ligne\ncorrection de la surcharge de l'application\nréparer le PV\ndétection en ligne - hors ligne",
+        "it": "aggiungi messaggio offline\ncorrezione appoverride\nriparare il PV\nrilevamento online - offline",
+        "es": "agregar mensaje sin conexión\nCorregir la anulación de la aplicación\nreparar pv\ndetección en línea - fuera de línea",
+        "pl": "dodaj wiadomość offline\nnapraw nadpisanie aplikacji\nnaprawa fotowoltaiki\nwykrywanie online-offline",
+        "uk": "додати повідомлення офлайн\nвиправити перевизначення програми\nвиправити фотозображення\nвиявлення онлайн - офлайн",
+        "zh-cn": "添加离线消息\n修复应用程序覆盖\n修复光伏\n在线 - 离线检测"
+      },
       "0.4.1": {
         "en": "refactoring\nfix offline status",
         "de": "refactoring\noffline-fix-status",
@@ -80,19 +93,6 @@
         "pl": "naprawiać codziennie uvc timer po ponownym uruchomieniu adaptera",
         "uk": "фіксувати щоденний uvc таймер після перезавантаження адаптера",
         "zh-cn": "适配器重新启动后, 每日修正 uvc 计时器"
-      },
-      "0.3.5": {
-        "en": "clean code\nless notification",
-        "de": "reiner code\nweniger benachrichtigung",
-        "ru": "чистый код\nменьшее уведомление",
-        "pt": "código limpo\nmenos notificação",
-        "nl": "schone code\nminder kennisgeving",
-        "fr": "code propre\nmoins notification",
-        "it": "codice pulito\nmeno notifica",
-        "es": "código limpio\nmenos notificación",
-        "pl": "kod czysty\nmniej powiadomień",
-        "uk": "чистий код\nменше повідомлення",
-        "zh-cn": "清洁代码\n减去通知"
       }
     },
     "titleLang": {
