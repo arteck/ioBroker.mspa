@@ -162,7 +162,8 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 ## Changelog
 
 ### **WORK IN PROGRESS**
-* (arteck) fix pv and heater start 
+* (arteck) fix pv and heater start
+* (arteck) clean code
 
 ### 0.4.2 (2026-08-22)
 * (arteck) add offline message

@@ -17,8 +17,10 @@
  *   1. stopEnsure()          → setFeature(..., {fromAutomation: true})
  *   2. checkDailyMinimum()   → setFeature(..., {fromAutomation: true})
  *   3. stagedDeactivate()    → setFeature(..., {fromAutomation: true})
- *   4. reactivate()          → setFeature(..., {fromAutomation: true})
- *   5. evaluateSurplus()     → setFeature(..., {fromAutomation: true})
+ *   4. evaluateSurplus()     → setFeature(..., {fromAutomation: true})
+ *
+ * (reactivate() wurde entfernt – der zugehörige _pvStageTimer-Pfad hat nie
+ *  einen echten Timer gesetzt und war daher unerreichbarer Totcode.)
  *
  * Run:  npx mocha test/heating_uvc_done.test.js --no-config
  */
@@ -239,19 +241,21 @@ describe('stopEnsure() – fromAutomation:true bei allen setFeature-Aufrufen', (
             '_lastCommandTime muss nach stopEnsure aktualisiert sein');
     });
 
-    it('stopEnsure: kein setFeature wenn UVC von anderer Automation gehalten', async () => {
-        // UVC owned by PV
+    it('stopEnsure: kein setFeature wenn UVC von aktivem Zeitfenster gehalten', async () => {
+        // UVC owned by an active time window (action_uvc=true) – PV kann UVC nicht
+        // mehr besitzen (nur der Heizer wird von PV verwaltet).
         const adapter = makeAdapter({
             uvcOn: true, filterOn: true,
-            pvActive: true, pvManagedUvc: true,
+            timeWindowActive: [true],
+            config: { timeWindows: [{ active: true, action_uvc: true }] },
         });
         adapter._uvcEnsureActive      = true;
-        adapter._uvcEnsureFilterStart = false; // PV owns filter too
+        adapter._uvcEnsureFilterStart = false; // Zeitfenster besitzt Filter auch
 
         await uvcModule.stopEnsure(adapter);
 
         const uvcCall = adapter.calls.find(c => c.feature === 'uvc');
-        assert.strictEqual(uvcCall, undefined, 'UVC darf NICHT abgeschaltet werden wenn PV es hält');
+        assert.strictEqual(uvcCall, undefined, 'UVC darf NICHT abgeschaltet werden wenn Zeitfenster es hält');
     });
 
     it('stopEnsure: Filter bleibt ON wenn Frost aktiv', async () => {
@@ -518,53 +522,9 @@ describe('stagedDeactivate() – fromAutomation:true', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. reactivate – fromAutomation:true
+// 5. reactivate – entfernt (wurde nur beim nicht mehr existierenden
+//    _pvStageTimer-Pfad aufgerufen, der nie einen echten Timer gesetzt hat).
 // ---------------------------------------------------------------------------
-describe('reactivate() – fromAutomation:true', () => {
-    const pvModule = require('../lib/pv');
-
-    function makePvReactivateAdapter() {
-        const adapter = makeAdapter({ filterOn: false, heaterOn: false, uvcOn: false });
-        adapter._pvManagedFeatures = { heater: false, filter: false, uvc: false };
-        adapter._lastCommandTime   = 0;
-        adapter.getStateAsync      = async () => ({ val: 0 }); // target_temp = 0 → no temp cmd
-        adapter.sendTargetTempDirect = async () => {};
-        adapter.setStray           = (fn, ms) => setTimeout(fn, ms);
-        adapter._strayTimers       = new Set();
-        return adapter;
-    }
-
-    it('filter ON wird NICHT in reactivate aufgerufen (Zeitfenster verwaltet Filter)', async () => {
-        const adapter = makePvReactivateAdapter();
-        const windows = [{ action_heating: true, action_filter: false, action_uvc: false, target_temp: 0 }];
-
-        await pvModule.reactivate(adapter, windows, 800);
-
-        const call = adapter.calls.find(c => c.feature === 'filter' && c.val === true);
-        assert.strictEqual(call, undefined, 'PV darf Filter NICHT starten – Zeitfenster verwaltet Filter');
-    });
-
-    it('heater ON in reactivate hat fromAutomation:true', async () => {
-        const adapter = makePvReactivateAdapter();
-        const windows = [{ action_heating: true, action_filter: false, action_uvc: false, target_temp: 0 }];
-
-        await pvModule.reactivate(adapter, windows, 800);
-
-        const call = adapter.calls.find(c => c.feature === 'heater' && c.val === true);
-        assert.ok(call, 'Heater ON muss aufgerufen sein');
-        assert.strictEqual(call.opts.fromAutomation, true);
-    });
-
-    it('uvc ON wird NICHT in reactivate aufgerufen (Zeitfenster verwaltet UVC)', async () => {
-        const adapter = makePvReactivateAdapter();
-        const windows = [{ action_heating: false, action_filter: false, action_uvc: true }];
-
-        await pvModule.reactivate(adapter, windows, 800);
-
-        const call = adapter.calls.find(c => c.feature === 'uvc' && c.val === true);
-        assert.strictEqual(call, undefined, 'PV darf UVC NICHT starten – Zeitfenster verwaltet UVC');
-    });
-});
 
 // ---------------------------------------------------------------------------
 // 6. Vollständiges Szenario: Fenster-Ende → UVC weiterläuft → Ensure stoppt →

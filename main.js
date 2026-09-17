@@ -79,10 +79,9 @@ class MspaAdapter extends utils.Adapter {
         this._pvDeactivateTimer = null;  // debounce timer for deactivation
         this._pvDeactivateCountdown = 0;     // remaining minutes for deactivation delay
         this._pvDeactivateCountdownInt = null;  // 1-min interval for countdown
-        this._pvStageTimer = null;  // timer between staged-deactivation steps
-        // Tracks which features PV currently has switched ON
-        // (heater/filter/uvc may differ from window config if staging is in progress)
-        this._pvManagedFeatures = {heater: false, filter: false, uvc: false};
+        // Tracks whether PV currently has the heater switched ON
+        // (heater may differ from window config while PV owns it)
+        this._pvManagedFeatures = {heater: false};
 
         // Manual override – pauses ALL automations (time windows, PV, frost protection)
         this._manualOverride = false;  // true = all automations paused
@@ -262,9 +261,6 @@ class MspaAdapter extends utils.Adapter {
             }
             if (this._pvDeactivateCountdownInt) {
                 clearInterval(this._pvDeactivateCountdownInt);
-            }
-            if (this._pvStageTimer) {
-                clearTimeout(this._pvStageTimer);
             }
             if (this._uvcEnsureTimer) {
                 clearInterval(this._uvcEnsureTimer);

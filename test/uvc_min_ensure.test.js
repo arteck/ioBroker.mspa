@@ -333,26 +333,10 @@ describe('Normalfall: ensureTime erreicht, Minimum noch nicht erreicht → Ensur
 // ---------------------------------------------------------------------------
 describe('Ownership-Übernahme nur wenn wirklich herrenlos', () => {
 
-    it('PV besitzt UVC → kein Ensure-Takeover', async () => {
-        const adapter = makeAdapter({
-            uvcOn:         true,
-            filterOn:      true,
-            uvcHoursUsed:  0.5,
-            uvcDayStartH:  0,
-            ensureTime:    '10:00',
-            nowHour:       8,
-            nowMin:        0,
-            pvActive:      true,
-            pvManagedUvc:  true,
-            timeWindowActive: [false],
-            uvcEnsureActive: false,
-        });
-
-        await runCheck(adapter);
-
-        assert.strictEqual(adapter._uvcEnsureActive, false,
-            'Ensure darf NICHT Ownership übernehmen wenn PV UVC besitzt');
-    });
+    // Hinweis: Der frühere Test "PV besitzt UVC → kein Ensure-Takeover" wurde entfernt.
+    // PV verwaltet ausschließlich den Heizer – UVC/Filter werden ausschließlich vom
+    // Zeitfenster besessen (siehe Test "Zeitfenster aktiv → kein Ensure-Takeover" unten),
+    // daher konnte "PV besitzt UVC" in der Praxis nie eintreten.
 
     it('Zeitfenster aktiv → kein Ensure-Takeover', async () => {
         const adapter = makeAdapter({
