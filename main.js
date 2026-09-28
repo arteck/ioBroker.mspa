@@ -87,6 +87,12 @@ class MspaAdapter extends utils.Adapter {
         this._manualOverride = false;  // true = all automations paused
         this._manualOverrideTimer = null;   // auto-reset timer (optional duration)
 
+        // Heater manual lock – if the heater was switched OFF manually (via
+        // control.heater or the physical app), automations (PV / time windows /
+        // frost protection) must NOT switch it back ON until the user turns it
+        // ON again. Filter / UVC / PV surplus evaluation are NOT affected.
+        this._heaterUserLocked = false;
+
         // Winter mode (frost protection)
         this._winterModeActive = false;  // runtime override (from control state)
         this._winterFrostActive = false;  // true while frost protection heating is running
@@ -566,10 +572,10 @@ class MspaAdapter extends utils.Adapter {
     /**
      * @param {string} feature
      * @param {boolean} boolVal
-     * @param {{ fromUser?: boolean, fromAutomation?: boolean }} [opts]
+     * @param {{ fromUser?: boolean, fromAutomation?: boolean, bypassHeaterLock?: boolean }} [opts]
      */
-    async setFeature(feature, boolVal, {fromUser = false, fromAutomation = false} = {}) {
-        return commands.setFeature(this, feature, boolVal, {fromUser, fromAutomation});
+    async setFeature(feature, boolVal, {fromUser = false, fromAutomation = false, bypassHeaterLock = false} = {}) {
+        return commands.setFeature(this, feature, boolVal, {fromUser, fromAutomation, bypassHeaterLock});
     }
 
     async setTargetTemp(temp) {
