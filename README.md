@@ -160,8 +160,7 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
-
-### **WORK IN PROGRESS**
+### 0.4.3 (2026-09-30)
 * (arteck) fix pv and heater start
 * (arteck) clean code
 
@@ -180,11 +179,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 ### 0.3.9 (2026-05-27)
 * (arteck) fix heater start
-
-### 0.3.8 (2026-05-23)
-* (copilot) Adapter requires node.js >= 22 now
-* (arteck) optimization, automatic detection
-* (arteck) fix uvc start
 
 [Older changelogs can be found there](CHANGELOG_OLD.md)
 

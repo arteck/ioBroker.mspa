@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.4.2",
+    "version": "0.4.3",
     "news": {
+      "0.4.3": {
+        "en": "fix pv and heater start\nclean code",
+        "de": "Fix PV und Heizung\nClean Code",
+        "ru": "исправить запуск фотоэлектрической системы и обогревателя\nчистый код",
+        "pt": "fixar o PV e o aquecedor\nclean code",
+        "nl": "pv-installatie en start van de verwarming repareren\nschone code",
+        "fr": "fix pv and heat start\ncode propre",
+        "it": "Fix PV e Heater Start\nclean code",
+        "es": "arreglar la fotovoltaica y la estufa\ncódigo limpio",
+        "pl": "naprawić PV i rozruch grzejnika\nczysty kod",
+        "uk": "фіксуйте пВ і запуск обігрівача\nчистий код",
+        "zh-cn": "修复 pv 和加热器启动\n干净的代码"
+      },
       "0.4.2": {
         "en": "add offline message\nfix app override\nfix pv\nonline - offline detection",
         "de": "Offline-Nachricht hinzufügen\nApp-Überschreibung beheben\nPV-Fix\nOnline-Offline-Erkennung",
@@ -80,19 +93,6 @@
         "pl": "dodaj ostrzeżenie jako tekst",
         "uk": "додати попередження як текст",
         "zh-cn": "添加警告为文本"
-      },
-      "0.3.6": {
-        "en": "fix daily uvc timer after adapter restart",
-        "de": "täglich uvc timer nach dem adapter neustart",
-        "ru": "uvc таймер после перезапуска адаптера",
-        "pt": "corrigir o temporizador uvc diário após o reinício do adaptador",
-        "nl": "fix dagelijkse uvc timer na herstart van de adapter",
-        "fr": "correction quotidienne du minuteur uvc après redémarrage de l'adaptateur",
-        "it": "correggere il timer giornaliero uvc dopo il riavvio dell'adattatore",
-        "es": "fijar el temporizador uvc diario después del reinicio del adaptador",
-        "pl": "naprawiać codziennie uvc timer po ponownym uruchomieniu adaptera",
-        "uk": "фіксувати щоденний uvc таймер після перезавантаження адаптера",
-        "zh-cn": "适配器重新启动后, 每日修正 uvc 计时器"
       }
     },
     "titleLang": {
