@@ -65,6 +65,7 @@ declare global {
             pv_stage_delay_min?: number;
             pv_deactivate_delay_min?: number;
             pv_cloud_delay_min?: number;
+            pv_state_start_temporary?: string;
 
             // ── Notifications ───────────────────────────────────────────────
             telegram_enabled?: boolean;

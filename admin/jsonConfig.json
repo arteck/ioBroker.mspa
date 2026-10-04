@@ -205,7 +205,7 @@
         "app_change_override_min": {
           "type": "number",
           "label": "Auto manual-override duration after app change (minutes)",
-          "help": "If the MSpa app changes heater, filter, UVC or target temperature while the adapter is active, manual override is automatically set for this many minutes. Set to 0 to disable auto-detection.",
+          "help": "When season, winter or PV automation is active, changes to heater, filter, UVC, ozone, jet or target temperature in the MSpa app activate manual override. This setting controls the override duration in minutes; set to 0 for no timeout (unless a duration is set in control.manual_override_duration).",
           "default": 30,
           "min": 0,
           "max": 480,
@@ -315,6 +315,18 @@
           "md": 3,
           "lg": 3,
           "xl": 3
+        },
+        "pv_state_start_temporary": {
+          "type": "objectId",
+          "label": "External heater start interlock (optional)",
+          "help": "If an object ID is set and its value is false, automatic heater starts are blocked. Manual starts from the adapter or MSpa app remain possible. If the state is unavailable, automatic starts are allowed.",
+          "default": "",
+          "newLine": true,
+          "xs": 12,
+          "sm": 6,
+          "md": 6,
+          "lg": 6,
+          "xl": 6
         },
         "consumption_header": {
           "type": "header",
