@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "mspa",
-    "version": "0.4.3",
+    "version": "0.5.0",
     "news": {
+      "0.5.0": {
+        "en": "Dependencies have been updated",
+        "de": "Abhängigkeiten wurden aktualisiert",
+        "ru": "Зависимости обновлены",
+        "pt": "As dependências foram atualizadas",
+        "nl": "Afhankelijkheden zijn bijgewerkt",
+        "fr": "Les dépendances ont été mises à jour",
+        "it": "Le dipendenze sono aggiornate",
+        "es": "Se han actualizado las dependencias",
+        "pl": "Zależności zostały zaktualizowane",
+        "uk": "Залежності оновлено",
+        "zh-cn": "依赖关系已更新"
+      },
       "0.4.3": {
         "en": "fix pv and heater start\nclean code",
         "de": "Fix PV und Heizung\nClean Code",
@@ -80,19 +93,6 @@
         "pl": "Adapter wymaga node.js > = 22\noptymalizacja, automatyczne wykrywanie\nfix uvc start",
         "uk": "Адаптер вимагає node.js >= 22 тепер\nоптимізація, автоматичне виявлення\nзафіксувати uvc старт",
         "zh-cn": "适配器需要节点.js 现在22\n优化、自动检测\n修复 uvc 启动"
-      },
-      "0.3.7": {
-        "en": "add warning as text",
-        "de": "warnung hinzufügen als text",
-        "ru": "добавить предупреждение в текст",
-        "pt": "adicionar aviso como texto",
-        "nl": "waarschuwing toevoegen als tekst",
-        "fr": "ajouter un avertissement comme texte",
-        "it": "aggiungere avviso come testo",
-        "es": "añadir advertencia como texto",
-        "pl": "dodaj ostrzeżenie jako tekst",
-        "uk": "додати попередження як текст",
-        "zh-cn": "添加警告为文本"
       }
     },
     "titleLang": {

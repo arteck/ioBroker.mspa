@@ -160,6 +160,9 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 
 ## Changelog
+### 0.5.0 (2026-11-27)
+* (arteck) Dependencies have been updated
+
 ### 0.4.3 (2026-09-30)
 * (arteck) fix pv and heater start
 * (arteck) clean code
@@ -176,9 +179,6 @@ Supports heating, filter, UVC, bubble and jet control with full automation via t
 
 ### 0.4.0 (2026-06-03)
 * (arteck) new logic for heater
-
-### 0.3.9 (2026-05-27)
-* (arteck) fix heater start
 
 [Older changelogs can be found there](CHANGELOG_OLD.md)
 
